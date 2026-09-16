@@ -1,0 +1,2 @@
+# Local project configuration. Both true and false are valid TOML booleans.
+color = true
