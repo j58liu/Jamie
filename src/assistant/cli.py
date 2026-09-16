@@ -1,5 +1,6 @@
-"""Typer commands for the milestone 0 foundation."""
+"""Typer commands for Jamie."""
 
+import math
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -11,11 +12,14 @@ from rich.text import Text
 
 from assistant import __version__
 from assistant.config import ConfigurationError, load_config
+from assistant.llm.base import LLMBackend, LLMError, Message
+from assistant.llm.llamacpp import LlamaCppBackend
 
 MINIMUM_PYTHON = (3, 12)
 
 app = typer.Typer(
-    help="A local-first macOS assistant. Milestone 0: project diagnostics only.",
+    name="jamie",
+    help="A local-first macOS assistant.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -23,7 +27,7 @@ app = typer.Typer(
 
 def version_callback(value: bool) -> None:
     if value:
-        Console().print(f"assistant {__version__}", markup=False, highlight=False)
+        Console().print(f"jamie {__version__}", markup=False, highlight=False)
         raise typer.Exit()
 
 
@@ -39,7 +43,46 @@ def main(
         ),
     ] = False,
 ) -> None:
-    """Run the assistant CLI."""
+    """Run the Jamie CLI."""
+
+
+@app.command()
+def ask(
+    prompt: Annotated[str, typer.Argument(help="Text to send to the local model.")],
+    temperature: Annotated[float, typer.Option(min=0.0, help="Sampling temperature.")] = 0.6,
+    max_tokens: Annotated[
+        int, typer.Option(min=1, help="Maximum number of generated tokens.")
+    ] = 1024,
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Read a specific TOML configuration file."),
+    ] = None,
+) -> None:
+    """Send one prompt to llama.cpp and print its answer."""
+    if not prompt.strip():
+        raise typer.BadParameter("Prompt must not be empty.", param_hint="PROMPT")
+    if not math.isfinite(temperature):
+        raise typer.BadParameter("Temperature must be finite.", param_hint="--temperature")
+
+    try:
+        settings = load_config(config)
+        backend: LLMBackend = LlamaCppBackend()
+        response = backend.chat(
+            [Message(role="user", content=prompt)],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    except (ConfigurationError, LLMError) as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+
+    Console(no_color=not settings.color).print(response.content, markup=False, highlight=False)
+    if response.finish_reason == "length":
+        Console(stderr=True, no_color=not settings.color).print(
+            "The response reached the token limit; use --max-tokens to allow a longer answer.",
+            markup=False,
+            highlight=False,
+        )
 
 
 @app.command()
@@ -52,7 +95,7 @@ def doctor(
     """Check only the Python version and local project configuration."""
     python_ok = sys.version_info[:2] >= MINIMUM_PYTHON
     python_version = ".".join(str(part) for part in sys.version_info[:3])
-    table = Table(title="Assistant doctor")
+    table = Table(title="Jamie doctor")
     table.add_column("Check")
     table.add_column("Status")
     table.add_column("Details")

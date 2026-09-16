@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 
 class ProjectConfig(BaseModel):
-    """Milestone 0 settings; unknown keys and incorrect types are rejected."""
+    """Local settings; unknown keys and incorrect types are rejected."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 

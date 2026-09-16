@@ -12,3 +12,4 @@ build/
 dist/
 .env
 .env.*
+AGENTS.md

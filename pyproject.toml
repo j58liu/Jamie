@@ -5,10 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "j-cli"
 version = "0.1.0"
-description = "A local-first macOS assistant: milestone 0 project foundation."
+description = "Jamie, an assistant."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "httpx>=0.28,<1",
     "pydantic>=2.10,<3",
     "rich>=14,<15",
     "typer>=0.16,<1",
@@ -21,7 +22,7 @@ dev = [
 ]
 
 [project.scripts]
-assistant = "assistant.cli:app"
+jamie = "assistant.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/assistant"]
