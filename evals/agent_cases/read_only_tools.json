@@ -1,0 +1,38 @@
+[
+  {
+    "id": "agent-read-001",
+    "prompt": "What does README.md contain? Read the file before answering.",
+    "files": {"README.md": "hello world\n"},
+    "expected_tool": "read_file",
+    "expected_args": {"path": "README.md"},
+    "tool_output_contains": ["hello world"],
+    "answer_contains": ["hello world"]
+  },
+  {
+    "id": "agent-list-001",
+    "prompt": "List the immediate entries in the workspace root, then name them in your answer.",
+    "files": {"alpha.txt": "alpha\n", "docs/guide.md": "guide\n"},
+    "expected_tool": "list_directory",
+    "expected_args": {},
+    "tool_output_contains": ["alpha.txt", "docs/"],
+    "answer_contains": ["alpha.txt", "docs"]
+  },
+  {
+    "id": "agent-find-001",
+    "prompt": "Find every Markdown file in this workspace recursively and report both paths.",
+    "files": {"README.md": "root\n", "docs/guide.md": "guide\n", "src/app.py": "pass\n"},
+    "expected_tool": "find_files",
+    "expected_args": {},
+    "tool_output_contains": ["README.md", "docs/guide.md"],
+    "answer_contains": ["README.md", "docs/guide.md"]
+  },
+  {
+    "id": "agent-search-001",
+    "prompt": "Search the workspace text files for the exact word orchid and report the matching file.",
+    "files": {"notes.txt": "rose\n", "docs/plants.txt": "orchid\n"},
+    "expected_tool": "search_files",
+    "expected_args": {"query": "orchid"},
+    "tool_output_contains": ["docs/plants.txt", "orchid"],
+    "answer_contains": ["docs/plants.txt"]
+  }
+]

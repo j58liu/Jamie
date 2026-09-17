@@ -140,8 +140,9 @@ system instruction. Protocol evaluations use that instruction unchanged.
 `run_agent` starts a fresh conversation with the action protocol instructions
 and a user prompt. A finish action returns its message. A tool action is passed
 to a `ToolExecutor`, and its typed `ToolResult` is returned to the model as a
-JSON observation before the next action. Concrete tools are supplied by the
-caller and are not part of this loop.
+JSON observation before the next action. When the executor supplies tool
+instructions, the loop includes the tool descriptions and JSON argument schemas
+in the system message.
 
 The loop applies these limits from its first version:
 
@@ -157,6 +158,36 @@ three-failure threshold, which is fixed. Tool implementations should enforce
 their own operation timeout as well: once Jamie's total deadline expires, the
 loop stops waiting for the active synchronous call but cannot forcibly terminate
 that Python function.
+
+## Read-only tools
+
+`create_read_only_registry(root)` creates a registry containing exactly these
+tools:
+
+- `read_file` reads a bounded line range from one UTF-8 file.
+- `list_directory` lists and sorts immediate directory entries.
+- `find_files` recursively finds files using a glob pattern.
+- `search_files` recursively searches UTF-8 files for literal text and reports
+  matching paths and line numbers.
+
+Each tool publishes its name, description, Pydantic input schema, and
+`read_only` risk value. The registry validates model arguments before execution
+and converts expected validation and filesystem errors into failed tool
+observations. Paths must be relative to the configured workspace root. Resolved
+paths and symlink targets cannot leave that root. File matching skips symlinks,
+and every tool applies a configurable result limit with a fixed upper bound.
+
+The registry can be passed directly to the agent loop:
+
+```python
+from pathlib import Path
+
+from assistant.agent import run_agent
+from assistant.tools import create_read_only_registry
+
+tools = create_read_only_registry(Path.cwd())
+answer = run_agent(backend, tools, "What does README.md contain?")
+```
 
 ## Model evaluations
 
@@ -246,6 +277,55 @@ and `--config`. Keep the cases and settings unchanged when comparing results.
 Model outputs are stochastic, so repeated runs need not produce identical
 results.
 
+## Agent evaluations
+
+With the local server running, evaluate the complete model, action loop, tools,
+observations, and final answers with:
+
+```sh
+jamie eval agent --runs 5
+```
+
+The four fixed cases create isolated temporary workspaces and exercise
+`read_file`, `list_directory`, `find_files`, and `search_files`. Each attempt
+passes only when the expected tool is called, its successful result contains
+the expected workspace content, and the final answer contains the expected
+text. A model answer that happens to be correct without the required tool call
+fails.
+
+The summary reports passes, expected tool calls, correct tool outputs, answer
+checks, median end-to-end latency, output tokens, and total duration. Reports
+are checkpointed under `evals/results/` after each attempt and include the case
+fixtures, tool arguments and observations, final answers, errors, timestamps,
+model ID, raw model outputs, token usage, and a hash of the case definitions.
+Temporary workspaces are removed after each attempt.
+
+The [saved agent baseline](evals/results/agent-baseline.md) contains five runs
+of each fixed case against Qwen3.8-9B-Distill Q4_K_M. All 20 attempts passed
+the tool-call, tool-output, and final-answer checks.
+
+Use a custom case file, run count, result directory, or per-run timeout when
+needed:
+
+```sh
+jamie eval agent --cases evals/agent_cases/read_only_tools.json --runs 1
+jamie eval agent --runs 5 --timeout 300 --output-dir evals/results
+```
+
+Agent evaluation cases define their workspace files and checks explicitly:
+
+```json
+{
+  "id": "agent-read-001",
+  "prompt": "What does README.md contain? Read the file before answering.",
+  "files": {"README.md": "hello world\n"},
+  "expected_tool": "read_file",
+  "expected_args": {"path": "README.md"},
+  "tool_output_contains": ["hello world"],
+  "answer_contains": ["hello world"]
+}
+```
+
 The [saved baseline](evals/results/baseline.md) contains all 100 attempts with
 Qwen3.8-9B-Distill Q4_K_M. It used the earlier 120-second read timeout; the
 current default is 600 seconds. The original results are preserved, with the
@@ -292,10 +372,13 @@ works independently of configuration and reads the installed package version.
 - `src/assistant/llm/llamacpp.py`: llama.cpp HTTP transport.
 - `src/assistant/agent/protocol.py`: validated tool and finish action parsing.
 - `src/assistant/agent/loop.py`: bounded model actions and tool observations.
+- `src/assistant/tools/`: the read-only tool contracts, implementations, and registry.
 - `src/assistant/evaluation.py`: evaluation loading, scoring, metrics, and report saving.
+- `src/assistant/agent_evaluation.py`: complete agent evaluation and scoring.
 - `src/assistant/eval_cli.py`: evaluation command and terminal summaries.
 - `evals/runner.py`: checkout entry point for the evaluation command.
 - `evals/cases/`: fixed baseline case files, also bundled in installed wheels.
+- `evals/agent_cases/`: isolated workspace and tool-use cases, also bundled in wheels.
 - `evals/results/`: saved evaluation reports.
 - `tests/`: CLI, configuration, transport, and evaluation behavior and failure cases.
 - `assistant.toml`: minimal project configuration.

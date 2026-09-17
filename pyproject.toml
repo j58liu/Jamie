@@ -29,6 +29,7 @@ packages = ["src/assistant"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "evals/cases" = "assistant/eval_cases"
+"evals/agent_cases" = "assistant/agent_eval_cases"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

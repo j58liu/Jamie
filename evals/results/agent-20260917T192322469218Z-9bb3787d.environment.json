@@ -1,0 +1,22 @@
+{
+  "report": "agent-20260917T192322469218Z-9bb3787d.json",
+  "model_repository": "empero-ai/Qwen3.8-9B-Distill-GGUF",
+  "model_revision": "760121cd70bb4c36b2b5ec58eb765e0df5987efe",
+  "model_file": "Qwen3.8-9B-Q4_K_M.gguf",
+  "model_sha256": "df13d66021cef676f82be74053220fd75af6bf2a6a7fb77f5222ab9e50744a7a",
+  "model_alias": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+  "server_build": "b10964-b29c606e2",
+  "server_url": "http://127.0.0.1:8080",
+  "server_slots": 1,
+  "server_context_tokens": 4096,
+  "server_reasoning": "off",
+  "server_temperature": 0.6000000238418579,
+  "server_top_p": 0.949999988079071,
+  "server_top_k": 20,
+  "agent_temperature": 0.6,
+  "agent_max_tokens_per_response": 1024,
+  "agent_timeout_seconds": 300.0,
+  "client_read_timeout_seconds": 600.0,
+  "client_connect_timeout_seconds": 5.0,
+  "notes": "Each attempt used a fresh temporary workspace and the fixed read-only agent case. No output repair or JSON constraint was used. Invalid protocol output was eligible for the agent loop's two retries."
+}

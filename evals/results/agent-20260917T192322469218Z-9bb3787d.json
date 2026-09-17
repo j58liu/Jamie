@@ -1,0 +1,744 @@
+{
+  "schema_version": 1,
+  "package_version": "0.1.0",
+  "started_at": "2026-09-17T19:23:22.469218+00:00",
+  "finished_at": "2026-09-17T19:29:27.441296+00:00",
+  "status": "completed",
+  "cases": [
+    {
+      "id": "agent-find-001",
+      "prompt": "Find every Markdown file in this workspace recursively and report both paths.",
+      "files": {
+        "README.md": "root\n",
+        "docs/guide.md": "guide\n",
+        "src/app.py": "pass\n"
+      },
+      "expected_tool": "find_files",
+      "expected_args": {},
+      "tool_output_contains": [
+        "README.md",
+        "docs/guide.md"
+      ],
+      "answer_contains": [
+        "README.md",
+        "docs/guide.md"
+      ]
+    },
+    {
+      "id": "agent-list-001",
+      "prompt": "List the immediate entries in the workspace root, then name them in your answer.",
+      "files": {
+        "alpha.txt": "alpha\n",
+        "docs/guide.md": "guide\n"
+      },
+      "expected_tool": "list_directory",
+      "expected_args": {},
+      "tool_output_contains": [
+        "alpha.txt",
+        "docs/"
+      ],
+      "answer_contains": [
+        "alpha.txt",
+        "docs"
+      ]
+    },
+    {
+      "id": "agent-read-001",
+      "prompt": "What does README.md contain? Read the file before answering.",
+      "files": {
+        "README.md": "hello world\n"
+      },
+      "expected_tool": "read_file",
+      "expected_args": {
+        "path": "README.md"
+      },
+      "tool_output_contains": [
+        "hello world"
+      ],
+      "answer_contains": [
+        "hello world"
+      ]
+    },
+    {
+      "id": "agent-search-001",
+      "prompt": "Search the workspace text files for the exact word orchid and report the matching file.",
+      "files": {
+        "notes.txt": "rose\n",
+        "docs/plants.txt": "orchid\n"
+      },
+      "expected_tool": "search_files",
+      "expected_args": {
+        "query": "orchid"
+      },
+      "tool_output_contains": [
+        "docs/plants.txt",
+        "orchid"
+      ],
+      "answer_contains": [
+        "docs/plants.txt"
+      ]
+    }
+  ],
+  "cases_sha256": "9041afa2b649f7c204105481338625812c3b24f5d197212da18f30fb919d1c9a",
+  "runs_per_case": 5,
+  "timeout_seconds": 300.0,
+  "total_duration_seconds": 364.98562066700833,
+  "results": [
+    {
+      "case_id": "agent-find-001",
+      "run": 1,
+      "answer": "Found 2 Markdown files in this workspace:\n\n1. README.md\n2. docs/guide.md",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 58,
+      "latency_seconds": 15.933715124992887,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"find_files\",\"args\":{\"pattern\":\"*.md\",\"path\":\".\",\"limit\":200}}",
+        "{\"action\":\"finish\",\"message\":\"Found 2 Markdown files in this workspace:\\n\\n1. README.md\\n2. docs/guide.md\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "find_files",
+          "args": {
+            "pattern": "*.md",
+            "path": ".",
+            "limit": 200
+          },
+          "success": true,
+          "output": "README.md\ndocs/guide.md"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-list-001",
+      "run": 1,
+      "answer": "The workspace root contains two entries:\n1. alpha.txt\n2. docs/",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 41,
+      "latency_seconds": 11.861213500000304,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"list_directory\",\"args\":{}}",
+        "{\"action\":\"finish\",\"message\":\"The workspace root contains two entries:\\n1. alpha.txt\\n2. docs/\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "list_directory",
+          "args": {},
+          "success": true,
+          "output": "alpha.txt\ndocs/"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-read-001",
+      "run": 1,
+      "answer": "README.md contains: 'hello world'",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 35,
+      "latency_seconds": 10.736595333000878,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"read_file\",\"args\":{\"path\":\"README.md\"}}",
+        "{\"action\":\"finish\",\"message\":\"README.md contains: 'hello world'\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "read_file",
+          "args": {
+            "path": "README.md"
+          },
+          "success": true,
+          "output": "hello world\n"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-search-001",
+      "run": 1,
+      "answer": "The word 'orchid' was found in the file docs/plants.txt. The file contains a single line with the word 'orchid'.",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 91,
+      "latency_seconds": 25.793854374991497,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"search_files\",\"args\":{\"query\":\"orchid\",\"path\":\".\",\"limit\":100}}",
+        "{\"action\":\"tool\",\"tool\":\"read_file\",\"args\":{\"path\":\"docs/plants.txt\",\"limit\":100}}",
+        "{\"action\":\"finish\",\"message\":\"The word 'orchid' was found in the file docs/plants.txt. The file contains a single line with the word 'orchid'.\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "search_files",
+          "args": {
+            "query": "orchid",
+            "path": ".",
+            "limit": 100
+          },
+          "success": true,
+          "output": "docs/plants.txt:1:orchid"
+        },
+        {
+          "tool": "read_file",
+          "args": {
+            "path": "docs/plants.txt",
+            "limit": 100
+          },
+          "success": true,
+          "output": "orchid\n"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-find-001",
+      "run": 2,
+      "answer": "Found 2 Markdown files in the workspace:\n\n1. README.md\n2. docs/guide.md",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 53,
+      "latency_seconds": 14.845887957999366,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"find_files\",\"args\":{\"pattern\":\"*.md\",\"path\":\".\"}}",
+        "{\"action\":\"finish\",\"message\":\"Found 2 Markdown files in the workspace:\\n\\n1. README.md\\n2. docs/guide.md\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "find_files",
+          "args": {
+            "pattern": "*.md",
+            "path": "."
+          },
+          "success": true,
+          "output": "README.md\ndocs/guide.md"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-list-001",
+      "run": 2,
+      "answer": "The workspace root contains two entries:\n1. alpha.txt\n2. docs/",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 41,
+      "latency_seconds": 11.954674458000227,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"list_directory\",\"args\":{}}",
+        "{\"action\":\"finish\",\"message\":\"The workspace root contains two entries:\\n1. alpha.txt\\n2. docs/\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "list_directory",
+          "args": {},
+          "success": true,
+          "output": "alpha.txt\ndocs/"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-read-001",
+      "run": 2,
+      "answer": "README.md contains the text: 'hello world'",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 37,
+      "latency_seconds": 11.037313958004233,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"read_file\",\"args\":{\"path\":\"README.md\"}}",
+        "{\"action\":\"finish\",\"message\":\"README.md contains the text: 'hello world'\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "read_file",
+          "args": {
+            "path": "README.md"
+          },
+          "success": true,
+          "output": "hello world\n"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-search-001",
+      "run": 2,
+      "answer": "The word 'orchid' was found in the file docs/plants.txt. The file contains the single word 'orchid'.",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 84,
+      "latency_seconds": 24.099628999989363,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"search_files\",\"args\":{\"query\":\"orchid\",\"pattern\":\"*\",\"limit\":100}}",
+        "{\"action\":\"tool\",\"tool\":\"read_file\",\"args\":{\"path\":\"docs/plants.txt\"}}",
+        "{\"action\":\"finish\",\"message\":\"The word 'orchid' was found in the file docs/plants.txt. The file contains the single word 'orchid'.\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "search_files",
+          "args": {
+            "query": "orchid",
+            "pattern": "*",
+            "limit": 100
+          },
+          "success": true,
+          "output": "docs/plants.txt:1:orchid"
+        },
+        {
+          "tool": "read_file",
+          "args": {
+            "path": "docs/plants.txt"
+          },
+          "success": true,
+          "output": "orchid\n"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-find-001",
+      "run": 3,
+      "answer": "Found 2 Markdown files in the workspace:\n1. README.md\n2. docs/guide.md",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 58,
+      "latency_seconds": 17.102790417004144,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"find_files\",\"args\":{\"pattern\":\"*.md\",\"path\":\".\",\"limit\":1000}}",
+        "{\"action\":\"finish\",\"message\":\"Found 2 Markdown files in the workspace:\\n1. README.md\\n2. docs/guide.md\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "find_files",
+          "args": {
+            "pattern": "*.md",
+            "path": ".",
+            "limit": 1000
+          },
+          "success": true,
+          "output": "README.md\ndocs/guide.md"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-list-001",
+      "run": 3,
+      "answer": "The workspace root contains the following immediate entries:\n\n1. alpha.txt - a text file\n2. docs/ - a directory",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 51,
+      "latency_seconds": 16.248942750011338,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"list_directory\",\"args\":{}}",
+        "{\"action\":\"finish\",\"message\":\"The workspace root contains the following immediate entries:\\n\\n1. alpha.txt - a text file\\n2. docs/ - a directory\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "list_directory",
+          "args": {},
+          "success": true,
+          "output": "alpha.txt\ndocs/"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-read-001",
+      "run": 3,
+      "answer": "README.md contains: hello world",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 33,
+      "latency_seconds": 10.505183500004932,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"read_file\",\"args\":{\"path\":\"README.md\"}}",
+        "{\"action\":\"finish\",\"message\":\"README.md contains: hello world\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "read_file",
+          "args": {
+            "path": "README.md"
+          },
+          "success": true,
+          "output": "hello world\n"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-search-001",
+      "run": 3,
+      "answer": "The file 'docs/plants.txt' contains the word 'orchid' on line 1.",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 76,
+      "latency_seconds": 22.008045333001064,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"search_files\",\"args\":{\"query\":\"orchid\",\"path\":\".\",\"limit\":100}}",
+        "{\"action\":\"tool\",\"tool\":\"read_file\",\"args\":{\"path\":\"docs/plants.txt\"}}",
+        "{\"action\":\"finish\",\"message\":\"The file 'docs/plants.txt' contains the word 'orchid' on line 1.\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "search_files",
+          "args": {
+            "query": "orchid",
+            "path": ".",
+            "limit": 100
+          },
+          "success": true,
+          "output": "docs/plants.txt:1:orchid"
+        },
+        {
+          "tool": "read_file",
+          "args": {
+            "path": "docs/plants.txt"
+          },
+          "success": true,
+          "output": "orchid\n"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-find-001",
+      "run": 4,
+      "answer": "Found 2 Markdown files in the workspace:\n1. README.md\n2. docs/guide.md",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 54,
+      "latency_seconds": 20.84996554198733,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"find_files\",\"args\":{\"pattern\":\"*.md\",\"limit\":200}}",
+        "{\"action\":\"finish\",\"message\":\"Found 2 Markdown files in the workspace:\\n1. README.md\\n2. docs/guide.md\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "find_files",
+          "args": {
+            "pattern": "*.md",
+            "limit": 200
+          },
+          "success": true,
+          "output": "README.md\ndocs/guide.md"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-list-001",
+      "run": 4,
+      "answer": "The immediate entries in the workspace root are: alpha.txt and docs/.",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 143,
+      "latency_seconds": 46.268988417010405,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"list_directory\",\"args\":{}}",
+        "The immediate entries in the workspace root are:\n- `alpha.txt`\n- `docs/`",
+        "{\"action\":\"tool\",\"tool\":\"list_directory\",\"args\":{\"path\":\"docs\"}}",
+        "{\"action\":\"tool\",\"tool\":\"read_file\",\"args\":{\"path\":\"docs/guide.md\"}}",
+        "The immediate entries in the workspace root are:\n- `alpha.txt`\n- `docs/`\n\nInside `docs/`, there is a file named `guide.md` containing the text: `guide\\n`.",
+        "{\"action\":\"finish\",\"message\":\"The immediate entries in the workspace root are: alpha.txt and docs/.\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "list_directory",
+          "args": {},
+          "success": true,
+          "output": "alpha.txt\ndocs/"
+        },
+        {
+          "tool": "list_directory",
+          "args": {
+            "path": "docs"
+          },
+          "success": true,
+          "output": "guide.md"
+        },
+        {
+          "tool": "read_file",
+          "args": {
+            "path": "docs/guide.md"
+          },
+          "success": true,
+          "output": "guide\n"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-read-001",
+      "run": 4,
+      "answer": "README.md contains the text: 'hello world'",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 37,
+      "latency_seconds": 12.372594417000073,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"read_file\",\"args\":{\"path\":\"README.md\"}}",
+        "{\"action\":\"finish\",\"message\":\"README.md contains the text: 'hello world'\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "read_file",
+          "args": {
+            "path": "README.md"
+          },
+          "success": true,
+          "output": "hello world\n"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-search-001",
+      "run": 4,
+      "answer": "Found the exact word 'orchid' in the file docs/plants.txt. The file contains a single line with the word 'orchid'.",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 95,
+      "latency_seconds": 27.672526082998957,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"search_files\",\"args\":{\"query\":\"orchid\",\"path\":\".\",\"pattern\":\"*\",\"limit\":100}}",
+        "{\"action\":\"tool\",\"tool\":\"read_file\",\"args\":{\"path\":\"docs/plants.txt\",\"limit\":50}}",
+        "{\"action\":\"finish\",\"message\":\"Found the exact word 'orchid' in the file docs/plants.txt. The file contains a single line with the word 'orchid'.\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "search_files",
+          "args": {
+            "query": "orchid",
+            "path": ".",
+            "pattern": "*",
+            "limit": 100
+          },
+          "success": true,
+          "output": "docs/plants.txt:1:orchid"
+        },
+        {
+          "tool": "read_file",
+          "args": {
+            "path": "docs/plants.txt",
+            "limit": 50
+          },
+          "success": true,
+          "output": "orchid\n"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-find-001",
+      "run": 5,
+      "answer": "Found 2 Markdown files in the workspace:\n1. README.md\n2. docs/guide.md",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 57,
+      "latency_seconds": 16.791347082995344,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"find_files\",\"args\":{\"pattern\":\"*.md\",\"path\":\".\",\"limit\":200}}",
+        "{\"action\":\"finish\",\"message\":\"Found 2 Markdown files in the workspace:\\n1. README.md\\n2. docs/guide.md\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "find_files",
+          "args": {
+            "pattern": "*.md",
+            "path": ".",
+            "limit": 200
+          },
+          "success": true,
+          "output": "README.md\ndocs/guide.md"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-list-001",
+      "run": 5,
+      "answer": "The immediate entries in the workspace root are:\n1. alpha.txt\n2. docs/",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 43,
+      "latency_seconds": 12.603710208000848,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"list_directory\",\"args\":{}}",
+        "{\"action\":\"finish\",\"message\":\"The immediate entries in the workspace root are:\\n1. alpha.txt\\n2. docs/\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "list_directory",
+          "args": {},
+          "success": true,
+          "output": "alpha.txt\ndocs/"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-read-001",
+      "run": 5,
+      "answer": "README.md contains: hello world",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 33,
+      "latency_seconds": 10.082534208006109,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"read_file\",\"args\":{\"path\":\"README.md\"}}",
+        "{\"action\":\"finish\",\"message\":\"README.md contains: hello world\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "read_file",
+          "args": {
+            "path": "README.md"
+          },
+          "success": true,
+          "output": "hello world\n"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    },
+    {
+      "case_id": "agent-search-001",
+      "run": 5,
+      "answer": "Found the exact word 'orchid' in the file docs/plants.txt. The file contains the single word 'orchid'.",
+      "model": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "output_tokens": 89,
+      "latency_seconds": 26.08225979100098,
+      "model_outputs": [
+        "{\"action\":\"tool\",\"tool\":\"search_files\",\"args\":{\"query\":\"orchid\",\"path\":\".\",\"limit\":100}}",
+        "{\"action\":\"tool\",\"tool\":\"read_file\",\"args\":{\"path\":\"docs/plants.txt\",\"limit\":100}}",
+        "{\"action\":\"finish\",\"message\":\"Found the exact word 'orchid' in the file docs/plants.txt. The file contains the single word 'orchid'.\"}"
+      ],
+      "tool_calls": [
+        {
+          "tool": "search_files",
+          "args": {
+            "query": "orchid",
+            "path": ".",
+            "limit": 100
+          },
+          "success": true,
+          "output": "docs/plants.txt:1:orchid"
+        },
+        {
+          "tool": "read_file",
+          "args": {
+            "path": "docs/plants.txt",
+            "limit": 100
+          },
+          "success": true,
+          "output": "orchid\n"
+        }
+      ],
+      "expected_tool_called": true,
+      "correct_tool_output": true,
+      "answer_check": true,
+      "success": true,
+      "failure_reason": null,
+      "error": null
+    }
+  ],
+  "summary": {
+    "models": [
+      "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M"
+    ],
+    "cases": 4,
+    "runs_per_case": 5,
+    "planned_runs": 20,
+    "completed_runs": 20,
+    "passes": 20,
+    "failures": 0,
+    "expected_tool_calls": 20,
+    "correct_tool_outputs": 20,
+    "answer_checks": 20,
+    "median_latency_seconds": 16.091328937502112,
+    "output_tokens": 1209,
+    "token_usage_reported_runs": 20,
+    "total_duration_seconds": 364.98562066700833,
+    "success": true
+  }
+}

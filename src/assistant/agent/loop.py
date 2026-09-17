@@ -27,7 +27,9 @@ TIMEOUT_SECONDS = 300.0
 
 INVALID_OUTPUT_MESSAGE = """\
 Your previous response was invalid JSON or did not match the action protocol.
-Return exactly one valid action.\
+Return exactly one valid action. A tool call must use
+{"action":"tool","tool":"tool_name","args":{}}.
+Keep the tool name in "tool" and put every argument inside "args".\
 """
 
 
@@ -168,6 +170,18 @@ def _action_key(action: ToolAction) -> str:
     )
 
 
+def _system_instructions(tools: ToolExecutor) -> str:
+    instructions = getattr(tools, "instructions", None)
+    if instructions is None:
+        return ACTION_PROTOCOL_INSTRUCTIONS
+    extra = instructions()
+    if not isinstance(extra, str):
+        raise TypeError("ToolExecutor.instructions must return a string.")
+    if not extra.strip():
+        return ACTION_PROTOCOL_INSTRUCTIONS
+    return f"{extra.strip()}\n\n{ACTION_PROTOCOL_INSTRUCTIONS}"
+
+
 def _run_loop(
     llm: LLMBackend,
     tools: ToolExecutor,
@@ -178,7 +192,7 @@ def _run_loop(
     deadline: float,
 ) -> str:
     messages = [
-        Message(role="system", content=ACTION_PROTOCOL_INSTRUCTIONS),
+        Message(role="system", content=_system_instructions(tools)),
         Message(role="user", content=prompt),
     ]
     last_failed_action: str | None = None
