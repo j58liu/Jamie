@@ -24,11 +24,18 @@ class _Choice(BaseModel):
     finish_reason: str | None = None
 
 
+class _Usage(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    completion_tokens: int | None = Field(default=None, ge=0)
+
+
 class _ChatCompletion(BaseModel):
     model_config = ConfigDict(strict=True)
 
     choices: list[_Choice] = Field(min_length=1)
     model: str | None = None
+    usage: _Usage | None = None
 
 
 class LlamaCppBackend:
@@ -38,12 +45,17 @@ class LlamaCppBackend:
         self,
         base_url: str = "http://127.0.0.1:8080",
         *,
-        timeout: float = 120.0,
+        timeout: float = 600.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._url = f"{base_url.rstrip('/')}/v1/chat/completions"
         self._timeout = httpx.Timeout(timeout, connect=5.0)
         self._transport = transport
+
+    @property
+    def read_timeout_seconds(self) -> float | None:
+        """Return the configured read timeout for evaluation reports."""
+        return self._timeout.read
 
     def chat(
         self,
@@ -93,13 +105,16 @@ class LlamaCppBackend:
             raise LLMError("llama.cpp returned an invalid chat response.") from exc
 
         choice = completion.choices[0]
-        if not choice.message.content.strip():
-            raise LLMError(
-                "llama.cpp returned no answer text. Try increasing --max-tokens "
-                "if the model used its token budget for reasoning."
-            )
-        return LLMResponse(
+        result = LLMResponse(
             content=choice.message.content,
             model=completion.model,
             finish_reason=choice.finish_reason,
+            output_tokens=completion.usage.completion_tokens if completion.usage else None,
         )
+        if not choice.message.content.strip():
+            raise LLMError(
+                "llama.cpp returned no answer text. Try increasing --max-tokens "
+                "if the model used its token budget for reasoning.",
+                response=result,
+            )
+        return result

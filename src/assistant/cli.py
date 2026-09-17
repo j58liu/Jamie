@@ -12,6 +12,7 @@ from rich.text import Text
 
 from assistant import __version__
 from assistant.config import ConfigurationError, load_config
+from assistant.eval_cli import app as eval_app
 from assistant.llm.base import LLMBackend, LLMError, Message
 from assistant.llm.llamacpp import LlamaCppBackend
 
@@ -23,6 +24,7 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+app.add_typer(eval_app, name="eval")
 
 
 def version_callback(value: bool) -> None:

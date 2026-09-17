@@ -1,0 +1,42 @@
+[
+  {
+    "id": "json-001",
+    "prompt": "Return a JSON object with action=finish and message=hello.",
+    "expected": {"action": "finish"}
+  },
+  {
+    "id": "json-002",
+    "prompt": "Return a JSON object with action set to wait and seconds set to the integer 3.",
+    "expected": {"action": "wait", "seconds": 3}
+  },
+  {
+    "id": "json-003",
+    "prompt": "Return a JSON object with success set to the boolean true and count set to the integer 0.",
+    "expected": {"success": true, "count": 0}
+  },
+  {
+    "id": "json-004",
+    "prompt": "Return a JSON object whose items field is an array containing alpha, beta, and gamma in that order.",
+    "expected": {"items": ["alpha", "beta", "gamma"]}
+  },
+  {
+    "id": "json-005",
+    "prompt": "Return a JSON object with a result object containing status equal to ok and count equal to the integer 2.",
+    "expected": {"result": {"status": "ok", "count": 2}}
+  },
+  {
+    "id": "json-006",
+    "prompt": "Return a JSON object with error set to null and success set to the boolean true.",
+    "expected": {"error": null, "success": true}
+  },
+  {
+    "id": "json-007",
+    "prompt": "Return a JSON object with a message field containing exactly this text: He said \"hello\".",
+    "expected": {"message": "He said \"hello\"."}
+  },
+  {
+    "id": "json-008",
+    "prompt": "Return a JSON object with action set to finish and numbers set to an array of the integers 1, 2, and 3 in that order.",
+    "expected": {"action": "finish", "numbers": [1, 2, 3]}
+  }
+]

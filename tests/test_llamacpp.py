@@ -39,7 +39,7 @@ def test_chat_posts_messages_and_reads_response():
         ]
     )
 
-    assert result == LLMResponse("Hi, café!\nSecond line.", "local-qwen", "stop")
+    assert result == LLMResponse("Hi, café!\nSecond line.", "local-qwen", "stop", 8)
     assert len(requests) == 1
     request = requests[0]
     assert request.method == "POST"
@@ -57,7 +57,7 @@ def test_chat_posts_messages_and_reads_response():
         "stream": False,
     }
     assert request.extensions["timeout"]["connect"] == 5.0
-    assert request.extensions["timeout"]["read"] == 120.0
+    assert request.extensions["timeout"]["read"] == 600.0
 
 
 def test_chat_accepts_server_and_generation_options():
@@ -185,3 +185,36 @@ def test_empty_conversation_fails_before_http():
 
     with pytest.raises(ValueError, match="At least one message"):
         backend.chat([])
+
+
+@pytest.mark.parametrize("usage", [None, {}, {"prompt_tokens": 10}])
+def test_missing_completion_usage_is_unknown(usage):
+    payload = completion()
+    payload["usage"] = usage
+    backend = LlamaCppBackend(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
+    )
+    assert backend.chat([Message("user", "Hi")]).output_tokens is None
+
+
+@pytest.mark.parametrize("tokens", [-1, True, "12", 1.5])
+def test_invalid_completion_usage_is_rejected(tokens):
+    payload = completion()
+    payload["usage"] = {"completion_tokens": tokens}
+    backend = LlamaCppBackend(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
+    )
+    with pytest.raises(LLMError, match="invalid chat response"):
+        backend.chat([Message("user", "Hi")])
+
+
+def test_empty_answer_preserves_model_finish_reason_and_token_usage():
+    payload = completion("")
+    payload["choices"][0]["finish_reason"] = "length"
+    payload["usage"] = {"completion_tokens": 1024}
+    backend = LlamaCppBackend(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
+    )
+    with pytest.raises(LLMError) as error:
+        backend.chat([Message("user", "Hi")])
+    assert error.value.response == LLMResponse("", "local-qwen", "length", 1024)

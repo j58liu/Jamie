@@ -1,0 +1,32 @@
+[
+  {
+    "id": "plan-001",
+    "prompt": "Plan making tea using each step once: serve, steep, boil, pour. Water must boil before pouring, pouring must happen before steeping, and steeping before serving. Return a JSON object with a steps array of the step names in order.",
+    "expected": {"steps": ["boil", "pour", "steep", "serve"]}
+  },
+  {
+    "id": "plan-002",
+    "prompt": "Order these debugging steps: test, fix, inspect, reproduce. Inspect before reproducing, reproduce before fixing, and fix before testing. Return a JSON object with a steps array using each listed step exactly once.",
+    "expected": {"steps": ["inspect", "reproduce", "fix", "test"]}
+  },
+  {
+    "id": "plan-003",
+    "prompt": "Schedule tasks A, B, C, D once each. D must precede B, B must precede A, and A must precede C. Return a JSON object with a steps array containing the task letters in order.",
+    "expected": {"steps": ["D", "B", "A", "C"]}
+  },
+  {
+    "id": "plan-004",
+    "prompt": "Plan laundry using these steps: fold, wash, sort, dry. Sorting must finish before washing, washing before drying, and drying before folding. Return a JSON object with a steps array using each step once.",
+    "expected": {"steps": ["sort", "wash", "dry", "fold"]}
+  },
+  {
+    "id": "plan-005",
+    "prompt": "Create a release plan using announce, migrate, backup, verify exactly once. Migration requires a completed backup. Verification requires a completed migration. Announcement requires completed verification. Return a JSON object with a steps array of those step names in order.",
+    "expected": {"steps": ["backup", "migrate", "verify", "announce"]}
+  },
+  {
+    "id": "plan-006",
+    "prompt": "Order the tasks ship, label, check, pack. Check must happen before pack, pack before label, and label before ship. Return a JSON object with a steps array containing each task exactly once.",
+    "expected": {"steps": ["check", "pack", "label", "ship"]}
+  }
+]

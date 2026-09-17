@@ -1,0 +1,38 @@
+[
+  {
+    "id": "text-001",
+    "prompt": "Reply with exactly READY and nothing else.",
+    "format": "text",
+    "expected": "READY"
+  },
+  {
+    "id": "text-002",
+    "prompt": "Sort pear, apple, banana alphabetically. Reply only with the words separated by commas, without spaces.",
+    "format": "text",
+    "expected": "apple,banana,pear"
+  },
+  {
+    "id": "text-003",
+    "prompt": "Convert jamie to uppercase. Reply only with the converted word.",
+    "format": "text",
+    "expected": "JAMIE"
+  },
+  {
+    "id": "text-004",
+    "prompt": "Reply with exactly two lines. The first line must be north and the second line must be south. Do not add any other text.",
+    "format": "text",
+    "expected": "north\nsouth"
+  },
+  {
+    "id": "text-005",
+    "prompt": "From the words red blue green, return only the second word.",
+    "format": "text",
+    "expected": "blue"
+  },
+  {
+    "id": "text-006",
+    "prompt": "Write the integers from 3 down to 1 separated by single spaces. Reply with nothing else.",
+    "format": "text",
+    "expected": "3 2 1"
+  }
+]

@@ -19,10 +19,15 @@ class LLMResponse:
     content: str
     model: str | None = None
     finish_reason: str | None = None
+    output_tokens: int | None = None
 
 
 class LLMError(RuntimeError):
     """A backend request failed or returned an invalid response."""
+
+    def __init__(self, message: str, *, response: LLMResponse | None = None) -> None:
+        super().__init__(message)
+        self.response = response
 
 
 class LLMBackend(Protocol):

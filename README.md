@@ -83,7 +83,7 @@ No OpenAI SDK or API key is used. See the
 for server setup and chat template options.
 
 The defaults are temperature `0.6` and a maximum of `1024` generated tokens.
-The transport allows 5 seconds to connect and 120 seconds of read inactivity.
+The transport allows 5 seconds to connect and 600 seconds of read inactivity.
 Requests go directly to the server without using environment proxy settings,
 following redirects, or automatically retrying.
 
@@ -101,6 +101,87 @@ curl --noproxy '*' http://127.0.0.1:8080/health
 jamie ask "Reply with one short greeting."
 ```
 
+## Model evaluations
+
+With the local server running, establish a baseline with:
+
+```sh
+jamie eval model --runs 5
+```
+
+This runs 20 fixed cases five times each: eight structured-output cases, six
+planning cases, and six text instruction-following cases. The planning cases
+check small dependency-ordering tasks with a single expected order. They do not
+measure general planning ability or execute any actions.
+
+Each round visits cases in case-ID order. Every request contains only the case's
+unchanged user prompt, with a fresh conversation, temperature `0.6`, and a
+`1024`-token limit. There are no additional instructions, JSON constraints,
+retries, warm-up prompts, or prompt adjustments. Server-side sampling settings
+and caching remain as configured on the running llama.cpp server.
+
+The summary shows passes and failures, JSON validity, instruction following,
+median latency, output tokens, token-count coverage, and total duration:
+
+- **JSON validity:** complete response text must parse as JSON. Surrounding JSON
+  whitespace is accepted; Markdown fences, explanatory text, duplicate keys,
+  and non-finite numbers fail. This metric applies to the 14 JSON cases, so
+  five runs produce 70 JSON attempts. Request failures count as failed parses.
+- **Instruction following:** JSON responses must contain the expected fields,
+  with matching types and values. Extra object fields are allowed; arrays must
+  have the exact expected length and order. Text cases match exactly after
+  removing surrounding whitespace. JSON parse failures and missing responses
+  fail this check. It is measured across all cases.
+- **Success:** a response must pass its expectation checks and complete without
+  a request error, empty answer, or token-limit truncation. Parse success alone
+  does not count as a pass.
+- **Latency:** elapsed time for each complete backend call, including connection
+  time and failures. The displayed median includes all completed attempts; it
+  is not time to first token. Total duration includes evaluation overhead.
+- **Output tokens:** the server's `usage.completion_tokens`, including reasoning
+  tokens when counted by the server. Missing usage is recorded as `null`, not
+  estimated or treated as zero. The summary shows the sum of available counts
+  and how many attempts reported usage.
+
+Reports are saved under `evals/results/` with unique timestamped names. Each
+JSON report includes the exact case definitions and their SHA-256 hash,
+settings (including the read timeout), timestamps, model IDs, unmodified answer
+text, per-run metrics, failure reasons, and summary. Results are checkpointed after every completed
+attempt. Ctrl-C saves an interrupted report; unfinished requests are not counted
+as completed attempts. Earlier reports are preserved.
+
+Exit codes are `0` when all attempts pass, `1` for failed evaluations or input /
+report errors, `2` for invalid CLI options, and `130` for interruption. Model
+failures do not stop the remaining cases.
+
+Use a different case file or output directory when needed:
+
+```sh
+jamie eval model --cases evals/cases/planning.json --runs 5 --output-dir evals/results
+python evals/runner.py --runs 5
+```
+
+Each case file contains a non-empty JSON array. IDs must be unique across all
+loaded files. Cases default to JSON expectations:
+
+```json
+{
+  "id": "json-001",
+  "prompt": "Return a JSON object with action=finish and message=hello.",
+  "expected": {"action": "finish"}
+}
+```
+
+For exact text checks, use `"format": "text"` and a string `"expected"` value.
+The CLI also accepts `--temperature`, `--max-tokens`, and `--config`. Keep the
+cases and settings unchanged when comparing results to this baseline. Model
+outputs are stochastic, so repeated runs need not produce identical results.
+
+The [saved baseline](evals/results/baseline.md) contains all 100 attempts with
+Qwen3.8-9B-Distill Q4_K_M. It used the earlier 120-second read timeout; the
+current default is 600 seconds. The original results are preserved, with the
+timeout and server settings recorded in a companion environment file.
+
 ## Configuration and diagnostics
 
 `jamie doctor` checks exactly two things: Python is version 3.12 or newer,
@@ -117,7 +198,7 @@ color = true
 
 Set `color = false` for uncolored output. Unknown fields, incorrect types
 (including strings instead of booleans), and malformed TOML are rejected.
-Both commands accept an explicit configuration file:
+Commands accept an explicit configuration file:
 
 ```sh
 jamie doctor --config /path/to/assistant.toml
@@ -134,5 +215,10 @@ works independently of configuration and reads the installed package version.
 - `src/assistant/config.py`: local Pydantic configuration loading.
 - `src/assistant/llm/base.py`: `Message`, `LLMResponse`, `LLMError`, and `LLMBackend`.
 - `src/assistant/llm/llamacpp.py`: llama.cpp HTTP transport.
-- `tests/`: CLI, configuration, and HTTP transport behavior and failure cases.
+- `src/assistant/evaluation.py`: evaluation loading, scoring, metrics, and report saving.
+- `src/assistant/eval_cli.py`: evaluation command and terminal summaries.
+- `evals/runner.py`: checkout entry point for the evaluation command.
+- `evals/cases/`: fixed baseline case files, also bundled in installed wheels.
+- `evals/results/`: saved evaluation reports.
+- `tests/`: CLI, configuration, transport, and evaluation behavior and failure cases.
 - `assistant.toml`: minimal project configuration.
