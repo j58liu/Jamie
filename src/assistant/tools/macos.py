@@ -1,0 +1,220 @@
+"""Approved macOS tools implemented with fixed executable argument arrays."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from assistant.security.policy import PermissionLevel
+from assistant.tools.base import ToolError
+from assistant.tools.filesystem import _resolve, _workspace_root
+
+MAX_NAME_CHARACTERS = 200
+MAX_TEXT_CHARACTERS = 2_000_000
+MAX_COMMAND_OUTPUT = 200_000
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    stdout: str
+    stderr: str
+
+
+class CommandRunner(Protocol):
+    def run(
+        self,
+        arguments: list[str],
+        *,
+        input_text: str | None = None,
+        timeout: float,
+    ) -> CommandResult: ...
+
+
+class SubprocessCommandRunner:
+    """Run one allowlisted macOS executable without shell parsing."""
+
+    def run(
+        self,
+        arguments: list[str],
+        *,
+        input_text: str | None = None,
+        timeout: float,
+    ) -> CommandResult:
+        if sys.platform != "darwin":
+            raise ToolError("This tool is available only on macOS.")
+        try:
+            completed = subprocess.run(
+                arguments,
+                input=input_text,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise ToolError(f"macOS command is unavailable: {arguments[0]}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ToolError(f"macOS command timed out: {arguments[0]}") from exc
+        except OSError as exc:
+            raise ToolError(f"Cannot run macOS command: {arguments[0]}") from exc
+        if completed.returncode != 0:
+            detail = completed.stderr.strip()[:500]
+            suffix = f": {detail}" if detail else ""
+            raise ToolError(f"macOS command failed ({completed.returncode}){suffix}")
+        stdout = completed.stdout
+        if len(stdout) > MAX_COMMAND_OUTPUT:
+            stdout = f"{stdout[:MAX_COMMAND_OUTPUT]}\n[truncated]"
+        return CommandResult(stdout=stdout, stderr=completed.stderr)
+
+
+class _Input(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+def _validated_name(value: str) -> str:
+    if not value.strip():
+        raise ValueError("Name must not be blank.")
+    if value.startswith("-"):
+        raise ValueError("Name must not begin with a hyphen.")
+    if "\x00" in value or any(character in value for character in "\r\n"):
+        raise ValueError("Name must be one line without null characters.")
+    return value
+
+
+def _output(message: str, result: CommandResult) -> str:
+    output = result.stdout.strip()
+    return f"{message}\n{output}" if output else message
+
+
+class OpenApplicationTool:
+    name = "open_application"
+    description = "Open a named macOS application."
+    risk = PermissionLevel.SAFE_WRITE
+
+    class Input(_Input):
+        name: str = Field(max_length=MAX_NAME_CHARACTERS)
+
+        @field_validator("name")
+        @classmethod
+        def validate_name(cls, value: str) -> str:
+            return _validated_name(value)
+
+    input_schema = Input
+
+    def __init__(self, runner: CommandRunner | None = None) -> None:
+        self._runner = runner if runner is not None else SubprocessCommandRunner()
+
+    def execute(self, arguments: Input) -> str:
+        result = self._runner.run(["open", "-a", arguments.name], timeout=30)
+        return _output(f"Opened application {arguments.name}.", result)
+
+
+class RevealInFinderTool:
+    name = "reveal_in_finder"
+    description = "Reveal an existing workspace path in Finder."
+    risk = PermissionLevel.SAFE_WRITE
+
+    class Input(_Input):
+        path: Path
+
+    input_schema = Input
+
+    def __init__(self, root: Path, runner: CommandRunner | None = None) -> None:
+        self._root = _workspace_root(root)
+        self._runner = runner if runner is not None else SubprocessCommandRunner()
+
+    def execute(self, arguments: Input) -> str:
+        path = _resolve(self._root, arguments.path)
+        result = self._runner.run(["open", "-R", str(path)], timeout=30)
+        return _output(f"Revealed {arguments.path.as_posix()} in Finder.", result)
+
+
+class ClipboardReadTool:
+    name = "clipboard_read"
+    description = "Read text from the macOS clipboard."
+    risk = PermissionLevel.SENSITIVE
+
+    class Input(_Input):
+        pass
+
+    input_schema = Input
+
+    def __init__(self, runner: CommandRunner | None = None) -> None:
+        self._runner = runner if runner is not None else SubprocessCommandRunner()
+
+    def execute(self, arguments: Input) -> str:
+        result = self._runner.run(["pbpaste"], timeout=10)
+        return result.stdout if result.stdout else "Clipboard is empty."
+
+
+class ClipboardWriteTool:
+    name = "clipboard_write"
+    description = "Replace the macOS clipboard with text."
+    risk = PermissionLevel.SAFE_WRITE
+
+    class Input(_Input):
+        text: str = Field(max_length=MAX_TEXT_CHARACTERS)
+
+    input_schema = Input
+
+    def __init__(self, runner: CommandRunner | None = None) -> None:
+        self._runner = runner if runner is not None else SubprocessCommandRunner()
+
+    def execute(self, arguments: Input) -> str:
+        self._runner.run(["pbcopy"], input_text=arguments.text, timeout=10)
+        return f"Copied {len(arguments.text)} characters to the clipboard."
+
+
+class RunShortcutTool:
+    name = "run_shortcut"
+    description = "Run a named shortcut with the macOS Shortcuts command."
+    risk = PermissionLevel.SENSITIVE
+
+    class Input(_Input):
+        name: str = Field(max_length=MAX_NAME_CHARACTERS)
+
+        @field_validator("name")
+        @classmethod
+        def validate_name(cls, value: str) -> str:
+            return _validated_name(value)
+
+    input_schema = Input
+
+    def __init__(self, runner: CommandRunner | None = None) -> None:
+        self._runner = runner if runner is not None else SubprocessCommandRunner()
+
+    def execute(self, arguments: Input) -> str:
+        result = self._runner.run(["shortcuts", "run", arguments.name], timeout=300)
+        return _output(f"Ran shortcut {arguments.name}.", result)
+
+
+class RunAppleScriptTool:
+    name = "run_applescript"
+    description = "Run approved AppleScript source with osascript."
+    risk = PermissionLevel.SENSITIVE
+
+    class Input(_Input):
+        script: str = Field(min_length=1, max_length=MAX_TEXT_CHARACTERS)
+
+        @field_validator("script")
+        @classmethod
+        def validate_script(cls, value: str) -> str:
+            if not value.strip():
+                raise ValueError("AppleScript must not be blank.")
+            if "\x00" in value:
+                raise ValueError("AppleScript must not contain null characters.")
+            return value
+
+    input_schema = Input
+
+    def __init__(self, runner: CommandRunner | None = None) -> None:
+        self._runner = runner if runner is not None else SubprocessCommandRunner()
+
+    def execute(self, arguments: Input) -> str:
+        result = self._runner.run(["osascript", "-e", arguments.script], timeout=60)
+        return _output("AppleScript completed.", result)

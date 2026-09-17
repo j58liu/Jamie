@@ -201,11 +201,12 @@ Tool permissions come from a fixed application policy:
 | `DESTRUCTIVE` | Confirm |
 | `EXTERNAL` | Confirm |
 
-The default policy assigns the four read tools to `READ` and the five reversible
-editing tools to `SAFE_WRITE`. It reserves classifications for future names
-such as `open_application`, `shell`, `delete_file`, and `send_email`; those
-tools are not registered or implemented. A tool cannot register without a
-central policy entry, and its declared permission must match that entry.
+The default policy assigns the four read tools to `READ`; the five reversible
+editing tools, application opening, Finder reveal, and clipboard writing to
+`SAFE_WRITE`; and clipboard reading, Shortcuts, and AppleScript to `SENSITIVE`.
+It reserves classifications for unimplemented names such as `shell`,
+`delete_file`, and `send_email`. A tool cannot register without a central policy
+entry, and its declared permission must match that entry.
 
 `ToolRegistry.execute` validates arguments, asks `PermissionPolicy` for an
 allow-or-confirm decision, and calls an `ApprovalProvider` for confirmation
@@ -270,6 +271,38 @@ needed. A later edit reinstates the corresponding check.
 Snapshots last for the lifetime of the workspace registry and are stored
 outside the workspace. Undo and diff commands are audited; entering `/undo` is
 the user's explicit approval for that restoration.
+
+## macOS tools
+
+`create_macos_registry(root, approvals=...)` adds six macOS tools to the
+workspace registry:
+
+- `open_application` runs `open -a` with an application name.
+- `reveal_in_finder` runs `open -R` for an existing workspace path.
+- `clipboard_read` reads text with `pbpaste`.
+- `clipboard_write` replaces clipboard text with `pbcopy`.
+- `run_shortcut` runs a named shortcut with `shortcuts run`.
+- `run_applescript` runs supplied AppleScript with `osascript -e`.
+
+The tools pass fixed argument lists directly to the macOS commands without a
+command shell. Finder paths must remain inside the configured workspace.
+Application opening, Finder reveal, and clipboard writing require
+`SAFE_WRITE` approval. Clipboard reading, Shortcuts, and AppleScript require
+`SENSITIVE` approval because they can expose data or perform broader
+automation. The terminal shows the exact tool, permission, and arguments and
+defaults to denying the request.
+
+Use the agent command for model-directed tools:
+
+```sh
+jamie "open Safari"
+```
+
+Jamie sends the task to Qwen, validates its action, applies the permission
+policy, and asks for approval before running the macOS command. `jamie ask`
+continues to send a prompt directly to the model without tools. The explicit
+form `jamie agent "open Safari"` is also available. No screenshot or
+screen-capture tool is included.
 
 ## Model evaluations
 
@@ -454,7 +487,7 @@ works independently of configuration and reads the installed package version.
 - `src/assistant/llm/llamacpp.py`: llama.cpp HTTP transport.
 - `src/assistant/agent/protocol.py`: validated tool and finish action parsing.
 - `src/assistant/agent/loop.py`: bounded model actions and tool observations.
-- `src/assistant/tools/`: read and editing tools, turn snapshots, diffs, undo, and registry.
+- `src/assistant/tools/`: read, editing, and macOS tools, turn snapshots, diffs, undo, and registry.
 - `src/assistant/security/`: permission policy, trusted approvals, and audit records.
 - `src/assistant/evaluation.py`: evaluation loading, scoring, metrics, and report saving.
 - `src/assistant/agent_evaluation.py`: complete agent evaluation and scoring.

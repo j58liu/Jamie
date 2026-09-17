@@ -27,10 +27,11 @@ def test_version_matches_installed_package_and_does_not_load_config(tmp_path: Pa
     assert result.output.strip() == f"jamie {version('j-cli')}"
 
 
-def test_help_exposes_ask_doctor_and_version():
+def test_help_exposes_agent_ask_doctor_and_version():
     result = runner.invoke(cli.app, ["--help"])
 
     assert result.exit_code == 0
+    assert "agent" in result.output
     assert "doctor" in result.output
     assert "ask" in result.output
     assert "jamie" in result.output

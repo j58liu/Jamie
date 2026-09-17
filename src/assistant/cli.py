@@ -1,5 +1,6 @@
 """Typer commands for Jamie."""
 
+import json
 import math
 import sys
 from pathlib import Path
@@ -9,22 +10,61 @@ import typer
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
+from typer.core import TyperGroup
 
 from assistant import __version__
+from assistant.agent import AgentError, run_agent
 from assistant.config import ConfigurationError, load_config
 from assistant.eval_cli import app as eval_app
 from assistant.llm.base import LLMBackend, LLMError, Message
 from assistant.llm.llamacpp import LlamaCppBackend
+from assistant.security import ApprovalRequest
+from assistant.tools import create_macos_registry
 
 MINIMUM_PYTHON = (3, 12)
 
+
+class JamieGroup(TyperGroup):
+    """Route a prompt without a command name to the agent command."""
+
+    def resolve_command(self, ctx, args):
+        if args and not args[0].startswith("-") and self.get_command(ctx, args[0]) is None:
+            agent_command = self.get_command(ctx, "agent")
+            if agent_command is not None:
+                return "agent", agent_command, args
+        return super().resolve_command(ctx, args)
+
+
 app = typer.Typer(
     name="jamie",
+    cls=JamieGroup,
     help="A local-first macOS assistant.",
     no_args_is_help=True,
     add_completion=False,
 )
 app.add_typer(eval_app, name="eval")
+
+
+class TerminalApprovalProvider:
+    """Show the exact requested action and ask the terminal user to approve it."""
+
+    def __init__(self, console: Console) -> None:
+        self._console = console
+
+    def request(self, approval: ApprovalRequest) -> bool:
+        arguments = json.dumps(
+            approval.arguments,
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        )
+        self._console.print("Approval required", markup=False, highlight=False)
+        self._console.print(f"Tool: {approval.tool}", markup=False, highlight=False)
+        self._console.print(
+            f"Permission: {approval.permission.value}", markup=False, highlight=False
+        )
+        self._console.print(f"Arguments:\n{arguments}", markup=False, highlight=False)
+        return typer.confirm("Allow this action?", default=False)
 
 
 def version_callback(value: bool) -> None:
@@ -85,6 +125,46 @@ def ask(
             markup=False,
             highlight=False,
         )
+
+
+@app.command()
+def agent(
+    prompt: Annotated[str, typer.Argument(help="Task for the local agent.")],
+    workspace: Annotated[Path, typer.Option(help="Workspace available to file tools.")] = Path("."),
+    max_steps: Annotated[int, typer.Option(min=1, help="Maximum number of model actions.")] = 12,
+    timeout: Annotated[
+        float, typer.Option(min=0.001, help="Maximum seconds for the complete task.")
+    ] = 300.0,
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Read a specific TOML configuration file."),
+    ] = None,
+) -> None:
+    """Run the local model with approved workspace and macOS tools."""
+    if not prompt.strip():
+        raise typer.BadParameter("Prompt must not be empty.", param_hint="PROMPT")
+    if not math.isfinite(timeout):
+        raise typer.BadParameter("Timeout must be finite.", param_hint="--timeout")
+
+    try:
+        settings = load_config(config)
+        console = Console(no_color=not settings.color)
+        tools = create_macos_registry(
+            workspace,
+            approvals=TerminalApprovalProvider(console),
+        )
+        answer = run_agent(
+            LlamaCppBackend(),
+            tools,
+            prompt,
+            max_steps=max_steps,
+            timeout_seconds=timeout,
+        )
+    except (AgentError, ConfigurationError, LLMError, ValueError) as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+
+    console.print(answer, markup=False, highlight=False)
 
 
 @app.command()

@@ -43,8 +43,29 @@ from assistant.tools.filesystem import (
     ReadFileTool,
     SearchFilesTool,
 )
+from assistant.tools.macos import (
+    ClipboardReadTool,
+    ClipboardWriteTool,
+    CommandRunner,
+    OpenApplicationTool,
+    RevealInFinderTool,
+    RunAppleScriptTool,
+    RunShortcutTool,
+)
 
 _TOOL_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _compact_schema(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            key: _compact_schema(item)
+            for key, item in value.items()
+            if key not in {"title", "$schema"}
+        }
+    if isinstance(value, list):
+        return [_compact_schema(item) for item in value]
+    return value
 
 
 class ToolRegistry:
@@ -96,7 +117,16 @@ class ToolRegistry:
 
     def instructions(self) -> str:
         """Describe the registered tools for the model."""
-        definitions = json.dumps(self.definitions(), ensure_ascii=False, separators=(",", ":"))
+        prompt_definitions = [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": _compact_schema(tool.input_schema.model_json_schema()),
+                "risk": tool.risk.value,
+            }
+            for tool in self._tools.values()
+        ]
+        definitions = json.dumps(prompt_definitions, ensure_ascii=False, separators=(",", ":"))
         examples = {
             "read_file": '{"action":"tool","tool":"read_file","args":{"path":"README.md"}}',
             "list_directory": '{"action":"tool","tool":"list_directory","args":{}}',
@@ -117,6 +147,22 @@ class ToolRegistry:
                 '{"action":"tool","tool":"create_directory","args":{"path":"new"}}'
             ),
             "trash_file": ('{"action":"tool","tool":"trash_file","args":{"path":"old.txt"}}'),
+            "open_application": (
+                '{"action":"tool","tool":"open_application","args":{"name":"Safari"}}'
+            ),
+            "reveal_in_finder": (
+                '{"action":"tool","tool":"reveal_in_finder","args":{"path":"README.md"}}'
+            ),
+            "clipboard_read": ('{"action":"tool","tool":"clipboard_read","args":{}}'),
+            "clipboard_write": (
+                '{"action":"tool","tool":"clipboard_write","args":{"text":"hello"}}'
+            ),
+            "run_shortcut": (
+                '{"action":"tool","tool":"run_shortcut","args":{"name":"Morning Routine"}}'
+            ),
+            "run_applescript": (
+                '{"action":"tool","tool":"run_applescript","args":{"script":"return 1"}}'
+            ),
         }
         registered_examples = "\n".join(
             examples.get(
@@ -311,4 +357,22 @@ def create_workspace_registry(
     registry.register(MoveFileTool(changes))
     registry.register(CreateDirectoryTool(changes))
     registry.register(TrashFileTool(changes))
+    return registry
+
+
+def create_macos_registry(
+    root: Path,
+    *,
+    approvals: ApprovalProvider | None = None,
+    audit: AuditSink | None = None,
+    runner: CommandRunner | None = None,
+) -> ToolRegistry:
+    """Register workspace and approved macOS tools for one agent session."""
+    registry = create_workspace_registry(root, approvals=approvals, audit=audit)
+    registry.register(OpenApplicationTool(runner))
+    registry.register(RevealInFinderTool(root, runner))
+    registry.register(ClipboardReadTool(runner))
+    registry.register(ClipboardWriteTool(runner))
+    registry.register(RunShortcutTool(runner))
+    registry.register(RunAppleScriptTool(runner))
     return registry
