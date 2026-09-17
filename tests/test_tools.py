@@ -33,7 +33,7 @@ def test_default_registry_contains_only_four_read_only_tools(sandbox: Path):
         "find_files",
         "search_files",
     ]
-    assert {definition["risk"] for definition in definitions} == {Risk.READ_ONLY.value}
+    assert {definition["risk"] for definition in definitions} == {Risk.READ.value}
     assert all(definition["description"] for definition in definitions)
     assert all(definition["input_schema"]["type"] == "object" for definition in definitions)
     assert "shell" not in registry.instructions()
@@ -167,7 +167,7 @@ def test_registry_instructions_are_sent_to_model(sandbox: Path):
     instructions = model.messages[0].content
     assert "Available tools" in instructions
     assert '"name":"read_file"' in instructions
-    assert '"risk":"read_only"' in instructions
+    assert '"risk":"READ"' in instructions
 
 
 def test_agent_reads_real_file_before_answering(sandbox: Path):
@@ -210,7 +210,7 @@ def test_registry_rejects_invalid_tool_metadata():
         name = "Run Shell"
         description = "bad"
         input_schema = Input
-        risk = Risk.READ_ONLY
+        risk = Risk.READ
 
         def execute(self, arguments):
             return ""

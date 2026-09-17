@@ -1,15 +1,12 @@
 """Shared contracts for tools exposed to the agent."""
 
-from enum import StrEnum
 from typing import Protocol
 
 from pydantic import BaseModel
 
+from assistant.security.policy import PermissionLevel
 
-class Risk(StrEnum):
-    """The effect a tool may have outside the agent process."""
-
-    READ_ONLY = "read_only"
+Risk = PermissionLevel
 
 
 class ToolError(ValueError):
@@ -22,6 +19,6 @@ class Tool(Protocol):
     name: str
     description: str
     input_schema: type[BaseModel]
-    risk: Risk
+    risk: PermissionLevel
 
     def execute(self, arguments: BaseModel) -> str: ...

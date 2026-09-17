@@ -71,7 +71,7 @@ def _matching_files(root: Path, directory: Path, pattern: str):
 class ReadFileTool:
     name = "read_file"
     description = "Read a range of lines from a UTF-8 text file inside the workspace."
-    risk = Risk.READ_ONLY
+    risk = Risk.READ
 
     class Input(_Input):
         path: Path
@@ -99,7 +99,7 @@ class ReadFileTool:
 class ListDirectoryTool:
     name = "list_directory"
     description = "List immediate entries in a directory inside the workspace."
-    risk = Risk.READ_ONLY
+    risk = Risk.READ
 
     class Input(_Input):
         path: Path = Path(".")
@@ -131,7 +131,7 @@ class ListDirectoryTool:
 class FindFilesTool:
     name = "find_files"
     description = "Find files recursively by a glob pattern inside the workspace."
-    risk = Risk.READ_ONLY
+    risk = Risk.READ
 
     class Input(_Input):
         path: Path = Path(".")
@@ -168,7 +168,7 @@ class FindFilesTool:
 class SearchFilesTool:
     name = "search_files"
     description = "Search UTF-8 text files recursively for a literal query."
-    risk = Risk.READ_ONLY
+    risk = Risk.READ
 
     class Input(_Input):
         query: str = Field(min_length=1)

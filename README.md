@@ -170,8 +170,8 @@ tools:
 - `search_files` recursively searches UTF-8 files for literal text and reports
   matching paths and line numbers.
 
-Each tool publishes its name, description, Pydantic input schema, and
-`read_only` risk value. The registry validates model arguments before execution
+Each tool publishes its name, description, Pydantic input schema, and `READ`
+permission value. The registry validates model arguments before execution
 and converts expected validation and filesystem errors into failed tool
 observations. Paths must be relative to the configured workspace root. Resolved
 paths and symlink targets cannot leave that root. File matching skips symlinks,
@@ -188,6 +188,40 @@ from assistant.tools import create_read_only_registry
 tools = create_read_only_registry(Path.cwd())
 answer = run_agent(backend, tools, "What does README.md contain?")
 ```
+
+## Permission system
+
+Tool permissions come from a fixed application policy:
+
+| Permission | Policy decision |
+| --- | --- |
+| `READ` | Allow |
+| `SAFE_WRITE` | Confirm |
+| `SENSITIVE` | Confirm |
+| `DESTRUCTIVE` | Confirm |
+| `EXTERNAL` | Confirm |
+
+The default policy assigns the four registered filesystem tools to `READ`. It
+also reserves classifications for future names such as `write_file`, `shell`,
+`delete_file`, and `send_email`, although those tools are not registered or
+implemented. A tool cannot register without a central policy entry, and its
+declared permission must match that entry.
+
+`ToolRegistry.execute` validates arguments, asks `PermissionPolicy` for an
+allow-or-confirm decision, and calls an `ApprovalProvider` for confirmation
+when required. The default provider denies every confirmation request. A user
+interface can inject `CallbackApprovalProvider`; its request is bound to the
+exact tool name, permission, and normalized arguments. Approval-like fields in
+model arguments do not bypass validation or policy.
+
+Audit recording starts before approval or execution. The default in-memory log
+records the request and its completion, denial, rejection, or error. An optional
+`JsonlAuditLog` flushes each event to disk. Records contain a SHA-256 digest of
+the arguments instead of their raw values. If the initial audit write fails,
+execution does not begin.
+
+The model only produces an action. The policy and approval provider determine
+whether Jamie may execute it.
 
 ## Model evaluations
 
@@ -373,6 +407,7 @@ works independently of configuration and reads the installed package version.
 - `src/assistant/agent/protocol.py`: validated tool and finish action parsing.
 - `src/assistant/agent/loop.py`: bounded model actions and tool observations.
 - `src/assistant/tools/`: the read-only tool contracts, implementations, and registry.
+- `src/assistant/security/`: permission policy, trusted approvals, and audit records.
 - `src/assistant/evaluation.py`: evaluation loading, scoring, metrics, and report saving.
 - `src/assistant/agent_evaluation.py`: complete agent evaluation and scoring.
 - `src/assistant/eval_cli.py`: evaluation command and terminal summaries.
