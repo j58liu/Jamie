@@ -45,9 +45,12 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
         "open_application": PermissionLevel.SAFE_WRITE,
         "move_file": PermissionLevel.SAFE_WRITE,
         "write_file": PermissionLevel.SAFE_WRITE,
+        "edit_file": PermissionLevel.SAFE_WRITE,
+        "create_directory": PermissionLevel.SAFE_WRITE,
         "shell": PermissionLevel.SENSITIVE,
         "send_email": PermissionLevel.EXTERNAL,
         "delete_file": PermissionLevel.DESTRUCTIVE,
+        "trash_file": PermissionLevel.SAFE_WRITE,
     }
 )
 

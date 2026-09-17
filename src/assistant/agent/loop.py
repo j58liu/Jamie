@@ -182,6 +182,22 @@ def _system_instructions(tools: ToolExecutor) -> str:
     return f"{extra.strip()}\n\n{ACTION_PROTOCOL_INSTRUCTIONS}"
 
 
+def _optional_text(tools: ToolExecutor, method: str, *args: object) -> str | None:
+    callback = getattr(tools, method, None)
+    if callback is None:
+        return None
+    value = callback(*args)
+    if value is not None and not isinstance(value, str):
+        raise TypeError(f"ToolExecutor.{method} must return a string or None.")
+    return value
+
+
+def _optional_call(tools: ToolExecutor, method: str) -> None:
+    callback = getattr(tools, method, None)
+    if callback is not None:
+        callback()
+
+
 def _run_loop(
     llm: LLMBackend,
     tools: ToolExecutor,
@@ -191,50 +207,58 @@ def _run_loop(
     max_parse_retries: int,
     deadline: float,
 ) -> str:
-    messages = [
-        Message(role="system", content=_system_instructions(tools)),
-        Message(role="user", content=prompt),
-    ]
-    last_failed_action: str | None = None
-    repeated_failures = 0
+    _optional_call(tools, "begin_turn")
+    try:
+        messages = [
+            Message(role="system", content=_system_instructions(tools)),
+            Message(role="user", content=prompt),
+        ]
+        last_failed_action: str | None = None
+        repeated_failures = 0
 
-    for _ in range(max_steps):
-        action = _request_action(
-            llm,
-            messages,
-            deadline,
-            max_parse_retries,
-        )
-        if isinstance(action, FinishAction):
-            return action.message
-
-        if perf_counter() >= deadline:
-            raise _DeadlineExceeded
-        result = tools.execute(action.tool, dict(action.args))
-        if perf_counter() >= deadline:
-            raise _DeadlineExceeded
-        if not isinstance(result, ToolResult):
-            raise TypeError("ToolExecutor.execute must return ToolResult.")
-        messages.append(tool_observation(action, result))
-
-        action_key = _action_key(action)
-        if result.success:
-            last_failed_action = None
-            repeated_failures = 0
-        elif action_key == last_failed_action:
-            repeated_failures += 1
-        else:
-            last_failed_action = action_key
-            repeated_failures = 1
-
-        if repeated_failures >= MAX_REPEATED_FAILED_ACTIONS:
-            raise AgentRepeatedActionError(
-                f"The tool action {action.tool!r} failed "
-                f"{MAX_REPEATED_FAILED_ACTIONS} consecutive times."
+        for _ in range(max_steps):
+            action = _request_action(
+                llm,
+                messages,
+                deadline,
+                max_parse_retries,
             )
-    if perf_counter() >= deadline:
-        raise _DeadlineExceeded
-    raise AgentStepLimitError(f"The agent reached the {max_steps}-step limit.")
+            if isinstance(action, FinishAction):
+                verification = _optional_text(tools, "verification_message")
+                if verification is not None:
+                    messages.append(Message(role="user", content=verification))
+                    continue
+                return action.message
+
+            if perf_counter() >= deadline:
+                raise _DeadlineExceeded
+            result = tools.execute(action.tool, dict(action.args))
+            if perf_counter() >= deadline:
+                raise _DeadlineExceeded
+            if not isinstance(result, ToolResult):
+                raise TypeError("ToolExecutor.execute must return ToolResult.")
+            messages.append(tool_observation(action, result))
+
+            action_key = _action_key(action)
+            if result.success:
+                last_failed_action = None
+                repeated_failures = 0
+            elif action_key == last_failed_action:
+                repeated_failures += 1
+            else:
+                last_failed_action = action_key
+                repeated_failures = 1
+
+            if repeated_failures >= MAX_REPEATED_FAILED_ACTIONS:
+                raise AgentRepeatedActionError(
+                    f"The tool action {action.tool!r} failed "
+                    f"{MAX_REPEATED_FAILED_ACTIONS} consecutive times."
+                )
+        if perf_counter() >= deadline:
+            raise _DeadlineExceeded
+        raise AgentStepLimitError(f"The agent reached the {max_steps}-step limit.")
+    finally:
+        _optional_call(tools, "end_turn")
 
 
 def run_agent(
@@ -250,6 +274,10 @@ def run_agent(
     if not isinstance(prompt, str) or not prompt.strip():
         raise ValueError("prompt must be a non-blank string.")
     _validate_limits(max_steps, max_parse_retries, timeout_seconds)
+
+    command_result = _optional_text(tools, "handle_command", prompt.strip())
+    if command_result is not None:
+        return command_result
 
     deadline = perf_counter() + timeout_seconds
     try:

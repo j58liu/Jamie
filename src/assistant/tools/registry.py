@@ -22,8 +22,21 @@ from assistant.security.audit import (
     InMemoryAuditLog,
     argument_digest,
 )
-from assistant.security.policy import PermissionPolicy, PolicyDecision
+from assistant.security.policy import (
+    PermissionLevel,
+    PermissionPolicy,
+    PolicyAction,
+    PolicyDecision,
+)
 from assistant.tools.base import Risk, Tool, ToolError
+from assistant.tools.changes import WorkspaceChanges
+from assistant.tools.editing import (
+    CreateDirectoryTool,
+    EditFileTool,
+    MoveFileTool,
+    TrashFileTool,
+    WriteFileTool,
+)
 from assistant.tools.filesystem import (
     FindFilesTool,
     ListDirectoryTool,
@@ -43,11 +56,13 @@ class ToolRegistry:
         policy: PermissionPolicy | None = None,
         approvals: ApprovalProvider | None = None,
         audit: AuditSink | None = None,
+        changes: WorkspaceChanges | None = None,
     ) -> None:
         self._tools: dict[str, Tool] = {}
         self._policy = policy if policy is not None else PermissionPolicy()
         self._approvals = approvals if approvals is not None else DenyAllApprovals()
         self._audit = audit if audit is not None else InMemoryAuditLog()
+        self._changes = changes
 
     @property
     def audit(self) -> AuditSink:
@@ -82,14 +97,85 @@ class ToolRegistry:
     def instructions(self) -> str:
         """Describe the registered tools for the model."""
         definitions = json.dumps(self.definitions(), ensure_ascii=False, separators=(",", ":"))
+        examples = {
+            "read_file": '{"action":"tool","tool":"read_file","args":{"path":"README.md"}}',
+            "list_directory": '{"action":"tool","tool":"list_directory","args":{}}',
+            "find_files": ('{"action":"tool","tool":"find_files","args":{"pattern":"*.md"}}'),
+            "search_files": ('{"action":"tool","tool":"search_files","args":{"query":"text"}}'),
+            "write_file": (
+                '{"action":"tool","tool":"write_file","args":{"path":"file.txt","content":"text"}}'
+            ),
+            "edit_file": (
+                '{"action":"tool","tool":"edit_file","args":{"path":"file.txt",'
+                '"old_text":"before","new_text":"after"}}'
+            ),
+            "move_file": (
+                '{"action":"tool","tool":"move_file","args":{"source":"old.txt",'
+                '"destination":"new.txt"}}'
+            ),
+            "create_directory": (
+                '{"action":"tool","tool":"create_directory","args":{"path":"new"}}'
+            ),
+            "trash_file": ('{"action":"tool","tool":"trash_file","args":{"path":"old.txt"}}'),
+        }
+        registered_examples = "\n".join(
+            examples.get(
+                name,
+                json.dumps(
+                    {"action": "tool", "tool": name, "args": {}},
+                    separators=(",", ":"),
+                ),
+            )
+            for name in self._tools
+        )
         return (
             f"Available tools and their argument schemas:\n{definitions}\n"
             "The schema properties belong inside the action's args object. Examples:\n"
-            '{"action":"tool","tool":"read_file","args":{"path":"README.md"}}\n'
-            '{"action":"tool","tool":"list_directory","args":{}}\n'
-            '{"action":"tool","tool":"find_files","args":{"pattern":"*.md"}}\n'
-            '{"action":"tool","tool":"search_files","args":{"query":"text"}}'
+            f"{registered_examples}"
         )
+
+    def begin_turn(self) -> None:
+        if self._changes is not None:
+            self._changes.begin_turn()
+
+    def end_turn(self) -> None:
+        if self._changes is not None:
+            self._changes.end_turn()
+
+    def verification_message(self) -> str | None:
+        return self._changes.verification_message() if self._changes is not None else None
+
+    def handle_command(self, command: str) -> str | None:
+        if self._changes is None or command not in {"/diff", "/undo"}:
+            return None
+        if command == "/diff":
+            decision = PolicyDecision(command, PermissionLevel.READ, PolicyAction.ALLOW)
+            approval = ApprovalStatus.NOT_REQUIRED
+        else:
+            decision = PolicyDecision(command, PermissionLevel.SAFE_WRITE, PolicyAction.CONFIRM)
+            approval = ApprovalStatus.APPROVED
+        self._record(command, {}, AuditPhase.REQUESTED, decision=decision)
+        try:
+            result = self._changes.handle_command(command)
+        except Exception:
+            self._record(
+                command,
+                {},
+                AuditPhase.ERROR,
+                decision=decision,
+                approval=approval,
+                success=False,
+            )
+            raise
+        self._record(
+            command,
+            {},
+            AuditPhase.COMPLETED,
+            decision=decision,
+            approval=approval,
+            success=result not in {"Nothing to undo.", "No changes to show."},
+        )
+        return result
 
     def _record(
         self,
@@ -192,6 +278,8 @@ class ToolRegistry:
             approval=approval,
             success=result.success,
         )
+        if result.success and self._changes is not None:
+            self._changes.observe(tool, normalized, result.output)
         return result
 
 
@@ -202,4 +290,25 @@ def create_read_only_registry(root: Path) -> ToolRegistry:
     registry.register(ListDirectoryTool(root))
     registry.register(FindFilesTool(root))
     registry.register(SearchFilesTool(root))
+    return registry
+
+
+def create_workspace_registry(
+    root: Path,
+    *,
+    approvals: ApprovalProvider | None = None,
+    audit: AuditSink | None = None,
+) -> ToolRegistry:
+    """Register read and approved editing tools for one tracked workspace."""
+    changes = WorkspaceChanges(root)
+    registry = ToolRegistry(approvals=approvals, audit=audit, changes=changes)
+    registry.register(ReadFileTool(root))
+    registry.register(ListDirectoryTool(root))
+    registry.register(FindFilesTool(root))
+    registry.register(SearchFilesTool(root))
+    registry.register(WriteFileTool(changes))
+    registry.register(EditFileTool(changes))
+    registry.register(MoveFileTool(changes))
+    registry.register(CreateDirectoryTool(changes))
+    registry.register(TrashFileTool(changes))
     return registry

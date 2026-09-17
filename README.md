@@ -201,11 +201,11 @@ Tool permissions come from a fixed application policy:
 | `DESTRUCTIVE` | Confirm |
 | `EXTERNAL` | Confirm |
 
-The default policy assigns the four registered filesystem tools to `READ`. It
-also reserves classifications for future names such as `write_file`, `shell`,
-`delete_file`, and `send_email`, although those tools are not registered or
-implemented. A tool cannot register without a central policy entry, and its
-declared permission must match that entry.
+The default policy assigns the four read tools to `READ` and the five reversible
+editing tools to `SAFE_WRITE`. It reserves classifications for future names
+such as `open_application`, `shell`, `delete_file`, and `send_email`; those
+tools are not registered or implemented. A tool cannot register without a
+central policy entry, and its declared permission must match that entry.
 
 `ToolRegistry.execute` validates arguments, asks `PermissionPolicy` for an
 allow-or-confirm decision, and calls an `ApprovalProvider` for confirmation
@@ -222,6 +222,54 @@ execution does not begin.
 
 The model only produces an action. The policy and approval provider determine
 whether Jamie may execute it.
+
+## Editing, diffs, and undo
+
+`create_workspace_registry(root, approvals=...)` adds five approved editing
+tools to the four read tools:
+
+- `write_file` creates or replaces a UTF-8 text file.
+- `edit_file` replaces exact text, rejecting ambiguous matches unless
+  `replace_all` is explicitly set.
+- `move_file` moves a file or directory to an unused workspace path.
+- `create_directory` creates one directory, with optional parent creation.
+- `trash_file` removes a file or directory while retaining its turn snapshot.
+
+All five tools are classified as `SAFE_WRITE`, so the default approval provider
+denies them. A trusted user interface must approve the exact normalized
+arguments before snapshots or filesystem changes occur. Paths stay within the
+workspace, editing through symbolic links is rejected, and no shell command is
+used.
+
+The registry groups changes made by one `run_agent` call into one turn. Each
+affected path is copied to temporary snapshot storage before its first change
+in that turn. Every successful editing result includes the cumulative unified
+diff, for example:
+
+```diff
+-    return a - b
++    return a + b
+```
+
+The harness handles two slash commands directly, without sending them to the
+model:
+
+- `/diff` returns the active turn's diff, or the most recently completed turn's
+  diff.
+- `/undo` restores every snapshot from the most recently completed changed
+  turn. Multiple edits to one path restore the content from before its first
+  edit in that turn.
+
+After a successful edit, Jamie tracks a relevant verification check. A changed
+file must be read with `read_file` or matched with `search_files`. Directory
+creation, moves, and trash operations require a relevant `list_directory` call.
+If the model attempts to finish while checks remain, the harness rejects that
+finish action and tells the model exactly which read operations are still
+needed. A later edit reinstates the corresponding check.
+
+Snapshots last for the lifetime of the workspace registry and are stored
+outside the workspace. Undo and diff commands are audited; entering `/undo` is
+the user's explicit approval for that restoration.
 
 ## Model evaluations
 
@@ -406,7 +454,7 @@ works independently of configuration and reads the installed package version.
 - `src/assistant/llm/llamacpp.py`: llama.cpp HTTP transport.
 - `src/assistant/agent/protocol.py`: validated tool and finish action parsing.
 - `src/assistant/agent/loop.py`: bounded model actions and tool observations.
-- `src/assistant/tools/`: the read-only tool contracts, implementations, and registry.
+- `src/assistant/tools/`: read and editing tools, turn snapshots, diffs, undo, and registry.
 - `src/assistant/security/`: permission policy, trusted approvals, and audit records.
 - `src/assistant/evaluation.py`: evaluation loading, scoring, metrics, and report saving.
 - `src/assistant/agent_evaluation.py`: complete agent evaluation and scoring.

@@ -49,9 +49,12 @@ def test_default_policy_classifies_named_tools():
         "open_application": PermissionLevel.SAFE_WRITE,
         "move_file": PermissionLevel.SAFE_WRITE,
         "write_file": PermissionLevel.SAFE_WRITE,
+        "edit_file": PermissionLevel.SAFE_WRITE,
+        "create_directory": PermissionLevel.SAFE_WRITE,
         "shell": PermissionLevel.SENSITIVE,
         "send_email": PermissionLevel.EXTERNAL,
         "delete_file": PermissionLevel.DESTRUCTIVE,
+        "trash_file": PermissionLevel.SAFE_WRITE,
     }
 
 
