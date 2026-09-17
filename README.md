@@ -135,6 +135,29 @@ search for embedded JSON or repair model output.
 `ACTION_PROTOCOL_INSTRUCTIONS` gives Qwen the two response shapes as a fixed
 system instruction. Protocol evaluations use that instruction unchanged.
 
+## Agent loop
+
+`run_agent` starts a fresh conversation with the action protocol instructions
+and a user prompt. A finish action returns its message. A tool action is passed
+to a `ToolExecutor`, and its typed `ToolResult` is returned to the model as a
+JSON observation before the next action. Concrete tools are supplied by the
+caller and are not part of this loop.
+
+The loop applies these limits from its first version:
+
+- At most 12 valid model actions are processed.
+- An invalid response receives a correction asking for exactly one valid
+  action. Two additional parse attempts are allowed for each step.
+- Three consecutive failures of the same tool name and arguments stop the run.
+  A successful call or a different failed action resets this count.
+- The complete run has a 300-second timeout covering model and tool calls.
+
+All limits can be reduced or extended through `run_agent` arguments except the
+three-failure threshold, which is fixed. Tool implementations should enforce
+their own operation timeout as well: once Jamie's total deadline expires, the
+loop stops waiting for the active synchronous call but cannot forcibly terminate
+that Python function.
+
 ## Model evaluations
 
 With the local server running, establish a baseline with:
@@ -268,6 +291,7 @@ works independently of configuration and reads the installed package version.
 - `src/assistant/llm/base.py`: `Message`, `LLMResponse`, `LLMError`, and `LLMBackend`.
 - `src/assistant/llm/llamacpp.py`: llama.cpp HTTP transport.
 - `src/assistant/agent/protocol.py`: validated tool and finish action parsing.
+- `src/assistant/agent/loop.py`: bounded model actions and tool observations.
 - `src/assistant/evaluation.py`: evaluation loading, scoring, metrics, and report saving.
 - `src/assistant/eval_cli.py`: evaluation command and terminal summaries.
 - `evals/runner.py`: checkout entry point for the evaluation command.
