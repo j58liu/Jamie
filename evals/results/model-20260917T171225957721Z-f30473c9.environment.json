@@ -1,0 +1,23 @@
+{
+  "report": "model-20260917T171225957721Z-f30473c9.json",
+  "model_repository": "empero-ai/Qwen3.8-9B-Distill-GGUF",
+  "model_revision": "760121cd70bb4c36b2b5ec58eb765e0df5987efe",
+  "model_file": "Qwen3.8-9B-Q4_K_M.gguf",
+  "model_sha256": "df13d66021cef676f82be74053220fd75af6bf2a6a7fb77f5222ab9e50744a7a",
+  "model_alias": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+  "model_ftype": "Q4_K - Medium",
+  "server_build": "b10964-b29c606e2",
+  "server_url": "http://127.0.0.1:8080",
+  "server_slots": 1,
+  "server_context_tokens": 4096,
+  "server_reasoning": "off",
+  "server_reasoning_format": "none",
+  "server_temperature": 0.6000000238418579,
+  "server_top_p": 0.949999988079071,
+  "server_top_k": 20,
+  "client_temperature": 0.6,
+  "client_max_tokens": 1024,
+  "client_read_timeout_seconds": 600.0,
+  "client_connect_timeout_seconds": 5.0,
+  "notes": "The server was already loaded. Protocol cases used the fixed action protocol system instruction. No JSON constraint, prompt adjustment, output repair, retry, or evaluation warm-up request was used."
+}

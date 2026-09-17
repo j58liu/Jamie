@@ -1,0 +1,62 @@
+[
+  {
+    "id": "protocol-001",
+    "prompt": "Use the action protocol to ask the harness to read README.md with the read_file tool. Return one tool action and no explanation.",
+    "format": "protocol",
+    "expected": {"action": "tool", "tool": "read_file", "args": {"path": "README.md"}}
+  },
+  {
+    "id": "protocol-002",
+    "prompt": "Use the action protocol to ask the harness to read pyproject.toml with the read_file tool. Return one tool action and no explanation.",
+    "format": "protocol",
+    "expected": {"action": "tool", "tool": "read_file", "args": {"path": "pyproject.toml"}}
+  },
+  {
+    "id": "protocol-003",
+    "prompt": "Use the action protocol to call list_files with path set to src. Return one tool action and no explanation.",
+    "format": "protocol",
+    "expected": {"action": "tool", "tool": "list_files", "args": {"path": "src"}}
+  },
+  {
+    "id": "protocol-004",
+    "prompt": "Use the action protocol to call search_files with query set to timeout and path set to src. Return one tool action and no explanation.",
+    "format": "protocol",
+    "expected": {"action": "tool", "tool": "search_files", "args": {"query": "timeout", "path": "src"}}
+  },
+  {
+    "id": "protocol-005",
+    "prompt": "Use the action protocol to call inspect_line with path README.md and line set to the integer 1. Return one tool action and no explanation.",
+    "format": "protocol",
+    "expected": {"action": "tool", "tool": "inspect_line", "args": {"path": "README.md", "line": 1}}
+  },
+  {
+    "id": "protocol-006",
+    "prompt": "Use the action protocol to finish with this exact message: The README describes Jamie. Return one finish action and no explanation.",
+    "format": "protocol",
+    "expected": {"action": "finish", "message": "The README describes Jamie."}
+  },
+  {
+    "id": "protocol-007",
+    "prompt": "Use the action protocol to finish with this exact message: No matching files were found. Return one finish action and no explanation.",
+    "format": "protocol",
+    "expected": {"action": "finish", "message": "No matching files were found."}
+  },
+  {
+    "id": "protocol-008",
+    "prompt": "Use the action protocol to finish with the message whose exact text is: The value is \"ready\". Return one finish action and no explanation.",
+    "format": "protocol",
+    "expected": {"action": "finish", "message": "The value is \"ready\"."}
+  },
+  {
+    "id": "protocol-009",
+    "prompt": "Use the action protocol to call get_status with an empty args object. Return one tool action and no explanation.",
+    "format": "protocol",
+    "expected": {"action": "tool", "tool": "get_status", "args": {}}
+  },
+  {
+    "id": "protocol-010",
+    "prompt": "Use the action protocol to ask read_file for the path notes/My File.md. Return one tool action and no explanation.",
+    "format": "protocol",
+    "expected": {"action": "tool", "tool": "read_file", "args": {"path": "notes/My File.md"}}
+  }
+]

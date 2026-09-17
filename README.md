@@ -101,6 +101,40 @@ curl --noproxy '*' http://127.0.0.1:8080/health
 jamie ask "Reply with one short greeting."
 ```
 
+## Action protocol
+
+Model responses intended for action handling have exactly two forms. A tool
+action names a tool and supplies a JSON object of arguments:
+
+```json
+{
+  "action": "tool",
+  "tool": "read_file",
+  "args": {
+    "path": "README.md"
+  }
+}
+```
+
+A finish action contains the final user-facing message:
+
+```json
+{
+  "action": "finish",
+  "message": "The README describes..."
+}
+```
+
+`parse_action` validates these responses with Pydantic. It accepts direct JSON,
+JSON enclosed by one outer `json` Markdown fence, and either form following one
+leading `<think>...</think>` block. It rejects malformed JSON, unknown actions,
+missing or incorrectly typed fields, duplicate JSON keys, extra top-level
+fields, surrounding prose, and incomplete fences or think blocks. It does not
+search for embedded JSON or repair model output.
+
+`ACTION_PROTOCOL_INSTRUCTIONS` gives Qwen the two response shapes as a fixed
+system instruction. Protocol evaluations use that instruction unchanged.
+
 ## Model evaluations
 
 With the local server running, establish a baseline with:
@@ -109,28 +143,37 @@ With the local server running, establish a baseline with:
 jamie eval model --runs 5
 ```
 
-This runs 20 fixed cases five times each: eight structured-output cases, six
-planning cases, and six text instruction-following cases. The planning cases
-check small dependency-ordering tasks with a single expected order. They do not
-measure general planning ability or execute any actions.
+This runs 30 fixed cases five times each: eight structured-output cases, six
+planning cases, six text instruction-following cases, and ten action-protocol
+cases. The planning cases check small dependency-ordering tasks with a single
+expected order. The action-protocol cases validate tool and finish responses;
+they do not execute any actions.
 
-Each round visits cases in case-ID order. Every request contains only the case's
-unchanged user prompt, with a fresh conversation, temperature `0.6`, and a
-`1024`-token limit. There are no additional instructions, JSON constraints,
-retries, warm-up prompts, or prompt adjustments. Server-side sampling settings
-and caching remain as configured on the running llama.cpp server.
+Each round visits cases in case-ID order. Every request starts a fresh
+conversation with the case's unchanged user prompt, temperature `0.6`, and a
+`1024`-token limit. Protocol cases also receive the fixed protocol system
+instruction described above. Other cases receive no additional instructions.
+There are no JSON constraints, retries, warm-up prompts, or prompt adjustments.
+Server-side sampling settings and caching remain as configured on the running
+llama.cpp server.
 
-The summary shows passes and failures, JSON validity, instruction following,
-median latency, output tokens, token-count coverage, and total duration:
+The summary shows passes and failures, JSON validity, protocol parse success,
+instruction following, median latency, output tokens, token-count coverage,
+and total duration:
 
 - **JSON validity:** complete response text must parse as JSON. Surrounding JSON
   whitespace is accepted; Markdown fences, explanatory text, duplicate keys,
   and non-finite numbers fail. This metric applies to the 14 JSON cases, so
   five runs produce 70 JSON attempts. Request failures count as failed parses.
+- **Protocol parse success:** responses must parse as a `ToolAction` or
+  `FinishAction`. The limited fence and think-block handling described above is
+  allowed. This metric applies to the ten protocol cases, so five runs produce
+  50 protocol attempts. Request failures count as failed parses.
 - **Instruction following:** JSON responses must contain the expected fields,
   with matching types and values. Extra object fields are allowed; arrays must
-  have the exact expected length and order. Text cases match exactly after
-  removing surrounding whitespace. JSON parse failures and missing responses
+  have the exact expected length and order. Protocol actions must exactly match
+  the expected action, tool, arguments, or message. Text cases match exactly
+  after removing surrounding whitespace. Parse failures and missing responses
   fail this check. It is measured across all cases.
 - **Success:** a response must pass its expectation checks and complete without
   a request error, empty answer, or token-limit truncation. Parse success alone
@@ -158,6 +201,7 @@ Use a different case file or output directory when needed:
 
 ```sh
 jamie eval model --cases evals/cases/planning.json --runs 5 --output-dir evals/results
+jamie eval model --cases evals/cases/action_protocol.json --runs 5
 python evals/runner.py --runs 5
 ```
 
@@ -173,14 +217,22 @@ loaded files. Cases default to JSON expectations:
 ```
 
 For exact text checks, use `"format": "text"` and a string `"expected"` value.
-The CLI also accepts `--temperature`, `--max-tokens`, and `--config`. Keep the
-cases and settings unchanged when comparing results to this baseline. Model
-outputs are stochastic, so repeated runs need not produce identical results.
+For action checks, use `"format": "protocol"` and a complete tool or finish
+action as the expectation. The CLI also accepts `--temperature`, `--max-tokens`,
+and `--config`. Keep the cases and settings unchanged when comparing results.
+Model outputs are stochastic, so repeated runs need not produce identical
+results.
 
 The [saved baseline](evals/results/baseline.md) contains all 100 attempts with
 Qwen3.8-9B-Distill Q4_K_M. It used the earlier 120-second read timeout; the
 current default is 600 seconds. The original results are preserved, with the
-timeout and server settings recorded in a companion environment file.
+timeout and server settings recorded in a companion environment file. That run
+predates the ten action-protocol cases and contains the original 20 cases.
+
+The [action protocol baseline](evals/results/action-protocol-baseline.md)
+contains 50 attempts with the ten protocol cases. It reached 100% protocol
+parse success and 90% exact instruction following, with its server settings and
+five exact-message failures recorded alongside the raw report.
 
 ## Configuration and diagnostics
 
@@ -215,6 +267,7 @@ works independently of configuration and reads the installed package version.
 - `src/assistant/config.py`: local Pydantic configuration loading.
 - `src/assistant/llm/base.py`: `Message`, `LLMResponse`, `LLMError`, and `LLMBackend`.
 - `src/assistant/llm/llamacpp.py`: llama.cpp HTTP transport.
+- `src/assistant/agent/protocol.py`: validated tool and finish action parsing.
 - `src/assistant/evaluation.py`: evaluation loading, scoring, metrics, and report saving.
 - `src/assistant/eval_cli.py`: evaluation command and terminal summaries.
 - `evals/runner.py`: checkout entry point for the evaluation command.

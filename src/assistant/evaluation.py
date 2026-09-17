@@ -16,6 +16,12 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from assistant import __version__
+from assistant.agent.protocol import (
+    ACTION_PROTOCOL_INSTRUCTIONS,
+    ProtocolError,
+    parse_action,
+    validate_action,
+)
 from assistant.llm.base import LLMBackend, LLMError, LLMResponse, Message
 
 
@@ -24,14 +30,14 @@ class EvaluationError(ValueError):
 
 
 class EvalCase(BaseModel):
-    """An unchanged prompt and a deterministic JSON or text expectation."""
+    """An unchanged prompt and a deterministic response expectation."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
     id: str = Field(min_length=1, pattern=r"^[a-zA-Z0-9_-]+$")
     prompt: str = Field(min_length=1)
     expected: JsonValue
-    format: Literal["json", "text"] = "json"
+    format: Literal["json", "protocol", "text"] = "json"
 
     @model_validator(mode="after")
     def validate_case(self) -> Self:
@@ -39,6 +45,13 @@ class EvalCase(BaseModel):
             raise ValueError("Prompt must not be blank.")
         if self.format == "text" and not isinstance(self.expected, str):
             raise ValueError("Text cases require a string expectation.")
+        if self.format == "protocol":
+            try:
+                validate_action(self.expected)
+            except ProtocolError as exc:
+                raise ValueError(
+                    "Protocol cases require a complete valid action expectation."
+                ) from exc
         return self
 
 
@@ -58,7 +71,7 @@ class RunResult(BaseModel):
 
 
 class EvalReport(BaseModel):
-    schema_version: int = 1
+    schema_version: int = 2
     package_version: str = __version__
     started_at: str
     finished_at: str | None = None
@@ -73,11 +86,16 @@ class EvalReport(BaseModel):
     results: list[RunResult] = Field(default_factory=list)
 
     def summary(self) -> dict[str, JsonValue]:
-        json_results = [result for result in self.results if result.parse_success is not None]
+        formats = {case.id: case.format for case in self.cases}
+        json_results = [result for result in self.results if formats[result.case_id] == "json"]
+        protocol_results = [
+            result for result in self.results if formats[result.case_id] == "protocol"
+        ]
         token_counts = [r.output_tokens for r in self.results if r.output_tokens is not None]
         passes = sum(result.success for result in self.results)
         following = sum(result.instruction_following for result in self.results)
-        parses = sum(result.parse_success is True for result in json_results)
+        json_parses = sum(result.parse_success is True for result in json_results)
+        protocol_parses = sum(result.parse_success is True for result in protocol_results)
         planned = len(self.cases) * self.runs_per_case
         return {
             "models": sorted({r.model for r in self.results if r.model is not None}),
@@ -89,8 +107,13 @@ class EvalReport(BaseModel):
             "passes": passes,
             "failures": len(self.results) - passes,
             "json_attempts": len(json_results),
-            "parse_successes": parses,
-            "parse_success_rate": parses / len(json_results) if json_results else None,
+            "parse_successes": json_parses,
+            "parse_success_rate": json_parses / len(json_results) if json_results else None,
+            "protocol_attempts": len(protocol_results),
+            "protocol_parse_successes": protocol_parses,
+            "protocol_parse_success_rate": (
+                protocol_parses / len(protocol_results) if protocol_results else None
+            ),
             "instruction_following_passes": following,
             "instruction_following_rate": following / len(self.results) if self.results else None,
             "median_latency_seconds": (
@@ -173,10 +196,24 @@ def _matches(actual: JsonValue, expected: JsonValue) -> bool:
     return actual == expected
 
 
+def _matches_exact(actual: JsonValue, expected: JsonValue) -> bool:
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict) and isinstance(actual, dict):
+        return actual.keys() == expected.keys() and all(
+            _matches_exact(actual[key], value) for key, value in expected.items()
+        )
+    if isinstance(expected, list) and isinstance(actual, list):
+        return len(actual) == len(expected) and all(
+            _matches_exact(item, wanted) for item, wanted in zip(actual, expected, strict=True)
+        )
+    return actual == expected
+
+
 def score_response(
     case: EvalCase, response: LLMResponse | None, *, error: str | None = None
 ) -> tuple[bool | None, bool, bool, str | None]:
-    parse_success = False if case.format == "json" else None
+    parse_success = False if case.format in {"json", "protocol"} else None
     following = False
     if response is not None:
         if case.format == "json":
@@ -187,6 +224,14 @@ def score_response(
             else:
                 parse_success = True
                 following = _matches(value, case.expected)
+        elif case.format == "protocol":
+            try:
+                action = parse_action(response.content)
+            except ProtocolError:
+                pass
+            else:
+                parse_success = True
+                following = _matches_exact(action.model_dump(mode="json"), case.expected)
         else:
             following = response.content.strip() == case.expected
 
@@ -199,12 +244,21 @@ def score_response(
     elif error is not None:
         reason = "request_error"
     elif parse_success is False:
-        reason = "invalid_json"
+        reason = "invalid_protocol" if case.format == "protocol" else "invalid_json"
     elif not following:
         reason = "expectation_mismatch"
     else:
         reason = None
     return parse_success, following, reason is None, reason
+
+
+def messages_for_case(case: EvalCase) -> list[Message]:
+    """Build the isolated conversation used to evaluate one case."""
+    messages = []
+    if case.format == "protocol":
+        messages.append(Message(role="system", content=ACTION_PROTOCOL_INSTRUCTIONS))
+    messages.append(Message(role="user", content=case.prompt))
+    return messages
 
 
 def save_report(path: Path, report: EvalReport) -> None:
@@ -280,7 +334,7 @@ def run_evaluation(
                 request_started = perf_counter()
                 try:
                     response = backend.chat(
-                        [Message(role="user", content=case.prompt)],
+                        messages_for_case(case),
                         temperature=temperature,
                         max_tokens=max_tokens,
                     )

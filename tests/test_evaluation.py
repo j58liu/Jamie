@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from assistant import evaluation
+from assistant.agent.protocol import ACTION_PROTOCOL_INSTRUCTIONS
 from assistant.evaluation import (
     EvalCase,
     EvaluationError,
@@ -39,11 +40,21 @@ def text_case():
     return EvalCase(id="text-001", prompt="Reply READY.", format="text", expected="READY")
 
 
+def protocol_case():
+    return EvalCase(
+        id="protocol-001",
+        prompt="Finish with Done.",
+        format="protocol",
+        expected={"action": "finish", "message": "Done."},
+    )
+
+
 def test_bundled_cases_are_complete_and_unique():
     cases = load_cases()
-    assert len(cases) == 20
-    assert len({case.id for case in cases}) == 20
+    assert len(cases) == 30
+    assert len({case.id for case in cases}) == 30
     assert sum(case.format == "json" for case in cases) == 14
+    assert sum(case.format == "protocol" for case in cases) == 10
     assert cases[0].prompt == "Return a JSON object with action=finish and message=hello."
 
 
@@ -59,6 +70,7 @@ def test_bundled_cases_are_complete_and_unique():
         '[{"id": "x", "prompt": "hi", "expected": NaN}]',
         '[{"id": "x", "prompt": "hi", "expected": {}, "unknown": true}]',
         '[{"id": "x", "prompt": "hi", "format": "text", "expected": {}}]',
+        '[{"id": "x", "prompt": "hi", "format": "protocol", "expected": {}}]',
     ],
 )
 def test_invalid_case_files_are_rejected(tmp_path: Path, contents: str):
@@ -127,6 +139,67 @@ def test_text_scoring_ignores_only_surrounding_whitespace():
     assert score_response(text_case(), LLMResponse("ready"))[:3] == (None, False, False)
 
 
+@pytest.mark.parametrize(
+    ("content", "parsed", "following"),
+    [
+        ('{"action":"finish","message":"Done."}', True, True),
+        ('```json\n{"action":"finish","message":"Done."}\n```', True, True),
+        (
+            '<think>Use finish.</think>\n{"action":"finish","message":"Done."}',
+            True,
+            True,
+        ),
+        ('{"action":"finish","message":"Different."}', True, False),
+        ('{"action":"wait","message":"Done."}', False, False),
+        ('{"action":"finish"}', False, False),
+        ("not JSON", False, False),
+    ],
+)
+def test_protocol_scoring_distinguishes_parse_and_instruction_success(content, parsed, following):
+    result = score_response(protocol_case(), LLMResponse(content))
+    assert result[:3] == (parsed, following, parsed and following)
+    assert result[3] == (
+        None if parsed and following else "expectation_mismatch" if parsed else "invalid_protocol"
+    )
+
+
+def test_protocol_expectations_require_exact_arguments():
+    response = LLMResponse('{"action":"finish","message":"Done.","extra":"rejected by parser"}')
+    assert score_response(protocol_case(), response)[3] == "invalid_protocol"
+
+    tool_case = EvalCase(
+        id="protocol-tool",
+        prompt="Read a file.",
+        format="protocol",
+        expected={"action": "tool", "tool": "read_file", "args": {"path": "README.md"}},
+    )
+    response = LLMResponse(
+        '{"action":"tool","tool":"read_file","args":{"path":"README.md","line":1}}'
+    )
+    assert score_response(tool_case, response)[3] == "expectation_mismatch"
+
+
+def test_protocol_summary_reports_parse_success_separately(tmp_path: Path):
+    backend = FakeBackend(
+        [
+            LLMResponse('```json\n{"action":"finish","message":"Done."}\n```'),
+            LLMResponse('{"action":"unknown"}'),
+        ]
+    )
+    report, _ = run_evaluation(backend, [protocol_case()], runs=2, output_dir=tmp_path)
+    summary = report.summary()
+    assert summary["json_attempts"] == 0
+    assert summary["parse_success_rate"] is None
+    assert summary["protocol_attempts"] == 2
+    assert summary["protocol_parse_successes"] == 1
+    assert summary["protocol_parse_success_rate"] == 0.5
+    expected_messages = [
+        Message("system", ACTION_PROTOCOL_INSTRUCTIONS),
+        Message("user", protocol_case().prompt),
+    ]
+    assert backend.requests == [(expected_messages, 0.6, 1024)] * 2
+
+
 def test_truncated_matching_response_still_fails():
     assert score_response(
         json_case(), LLMResponse('{"action":"finish"}', finish_reason="length")
@@ -160,6 +233,7 @@ def test_repeated_runs_save_exact_prompts_metrics_and_raw_outputs(tmp_path: Path
     assert summary["total_duration_seconds"] == 30
     assert summary["success"] is False
     saved = json.loads(path.read_text())
+    assert saved["schema_version"] == 2
     assert saved["summary"] == summary
     assert saved["status"] == "completed"
     assert saved["cases"] == [case.model_dump() for case in cases]

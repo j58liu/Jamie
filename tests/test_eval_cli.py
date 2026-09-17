@@ -79,6 +79,26 @@ def test_eval_defaults_to_five_runs_and_can_override_generation_options(eval_htt
     assert all(json.loads(request.content)["max_tokens"] == 64 for request in requests)
 
 
+def test_eval_reports_protocol_parse_success(eval_http):
+    cases, _, _ = eval_http
+    cases.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "protocol-001",
+                    "prompt": "Finish with Done.",
+                    "format": "protocol",
+                    "expected": {"action": "finish", "message": "Done."},
+                }
+            ]
+        )
+    )
+    result = runner.invoke(cli.app, ["eval", "model", "--runs", "1", "--cases", str(cases)])
+    assert result.exit_code == 1
+    assert "Protocol parse success" in result.stdout
+    assert "0.0% (0/1)" in result.stdout
+
+
 def test_eval_failure_does_not_skip_later_attempts(eval_http, tmp_path: Path):
     cases, requests, responses = eval_http
     responses.append(httpx.Response(503, text="Loading"))

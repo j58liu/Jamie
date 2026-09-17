@@ -40,12 +40,20 @@ def print_summary(console: Console, report: EvalReport, path: Path) -> None:
             summary["json_attempts"],
         ),
         (
+            "Protocol parse success",
+            "protocol_parse_success_rate",
+            summary["protocol_parse_successes"],
+            summary["protocol_attempts"],
+        ),
+        (
             "Instruction following",
             "instruction_following_rate",
             summary["instruction_following_passes"],
             completed,
         ),
     ):
+        if attempts == 0 and label == "Protocol parse success":
+            continue
         rate = summary[key]
         table.add_row(label, f"{rate:.1%} ({successes}/{attempts})" if rate is not None else "N/A")
     latency = summary["median_latency_seconds"]
