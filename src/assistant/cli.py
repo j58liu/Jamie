@@ -18,6 +18,12 @@ from assistant.config import ConfigurationError, load_config
 from assistant.eval_cli import app as eval_app
 from assistant.llm.base import LLMBackend, LLMError, Message
 from assistant.llm.llamacpp import LlamaCppBackend
+from assistant.memory import (
+    MemoryStore,
+    MemoryStoreError,
+    RememberingTools,
+    format_memory_context,
+)
 from assistant.research import ResearchError, ResearchWorkflow
 from assistant.security import ApprovalRequest
 from assistant.tools import WebClient, create_agent_registry
@@ -68,6 +74,33 @@ class TerminalApprovalProvider:
         return typer.confirm("Allow this action?", default=False)
 
 
+def _start_memory(settings, kind: str, prompt: str) -> tuple[MemoryStore, str, str | None]:
+    store = MemoryStore(settings.resolved_memory_path())
+    session_id = store.start_session(kind)
+    try:
+        store.add_message(session_id, "user", prompt)
+        context = format_memory_context(store.search_memories(prompt))
+    except MemoryStoreError:
+        _fail_memory(store, session_id)
+        raise
+    return store, session_id, context
+
+
+def _complete_memory(store: MemoryStore, session_id: str, prompt: str, answer: str) -> None:
+    store.add_message(session_id, "assistant", answer)
+    store.remember_exchange(session_id, prompt, answer)
+    store.finish_session(session_id, success=True)
+
+
+def _fail_memory(store: MemoryStore | None, session_id: str | None) -> None:
+    if store is None or session_id is None:
+        return
+    try:
+        store.finish_session(session_id, success=False)
+    except MemoryStoreError:
+        pass
+
+
 def version_callback(value: bool) -> None:
     if value:
         Console().print(f"jamie {__version__}", markup=False, highlight=False)
@@ -107,15 +140,24 @@ def ask(
     if not math.isfinite(temperature):
         raise typer.BadParameter("Temperature must be finite.", param_hint="--temperature")
 
+    store = None
+    session_id = None
     try:
         settings = load_config(config)
+        store, session_id, memory_context = _start_memory(settings, "ask", prompt)
         backend: LLMBackend = LlamaCppBackend()
+        messages = []
+        if memory_context is not None:
+            messages.append(Message(role="system", content=memory_context))
+        messages.append(Message(role="user", content=prompt))
         response = backend.chat(
-            [Message(role="user", content=prompt)],
+            messages,
             temperature=temperature,
             max_tokens=max_tokens,
         )
-    except (ConfigurationError, LLMError) as exc:
+        _complete_memory(store, session_id, prompt, response.content)
+    except (ConfigurationError, LLMError, MemoryStoreError) as exc:
+        _fail_memory(store, session_id)
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
 
@@ -147,9 +189,12 @@ def agent(
     if not math.isfinite(timeout):
         raise typer.BadParameter("Timeout must be finite.", param_hint="--timeout")
 
+    store = None
+    session_id = None
     try:
         settings = load_config(config)
         console = Console(no_color=not settings.color)
+        store, session_id, memory_context = _start_memory(settings, "agent", prompt)
         with WebClient() as web:
             tools = create_agent_registry(
                 workspace,
@@ -158,12 +203,15 @@ def agent(
             )
             answer = run_agent(
                 LlamaCppBackend(),
-                tools,
+                RememberingTools(tools, store, session_id),
                 prompt,
                 max_steps=max_steps,
                 timeout_seconds=timeout,
+                memory_context=memory_context,
             )
-    except (AgentError, ConfigurationError, LLMError, ValueError) as exc:
+        _complete_memory(store, session_id, prompt, answer)
+    except (AgentError, ConfigurationError, LLMError, MemoryStoreError, ValueError) as exc:
+        _fail_memory(store, session_id)
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
 
@@ -184,14 +232,26 @@ def research(
     """Research a question and return an answer with checked citations."""
     if not question.strip():
         raise typer.BadParameter("Question must not be empty.", param_hint="QUESTION")
+    store = None
+    session_id = None
     try:
         settings = load_config(config)
+        store, session_id, _ = _start_memory(settings, "research", question)
         with WebClient() as web:
             result = ResearchWorkflow(LlamaCppBackend(), web).run(
                 question,
                 max_sources=max_sources,
             )
-    except (ConfigurationError, ResearchError) as exc:
+        for source in result.sources:
+            store.add_source(
+                session_id,
+                url=source.url,
+                title=source.title,
+                content=source.text,
+            )
+        _complete_memory(store, session_id, question, result.answer)
+    except (ConfigurationError, MemoryStoreError, ResearchError) as exc:
+        _fail_memory(store, session_id)
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
     Console(no_color=not settings.color).print(result.answer, markup=False, highlight=False)

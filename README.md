@@ -338,6 +338,45 @@ retrieved URLs. A missing, unknown, or invented citation fails validation, with
 one correction attempt. A successful answer cites at least two retrieved
 sources. Use `--max-sources` to select a limit from two through eight.
 
+## Persistent memory
+
+Jamie stores completed local conversations in SQLite. On macOS the default
+database is:
+
+```text
+~/Library/Application Support/Jamie/memory.sqlite3
+```
+
+The schema contains `sessions`, `messages`, `tool_calls`, `memories`,
+`preferences`, `sources`, and `eval_runs`. Research sessions also retain their
+retrieved source records. Tool arguments use the same bounded redaction as
+audit records, and tool output is stored only as a bounded preview. The database
+file is created with user-only permissions.
+
+Completed exchanges are added to an SQLite FTS5 index. Before an `ask` or agent
+request, Jamie searches that index with the current prompt, retrieves up to five
+matching memories, and supplies bounded excerpts to Qwen in a separate system
+section. The section labels recalled text as untrusted background so an old
+conversation cannot override current instructions. For example, after a
+conversation that selected SQLite:
+
+```sh
+jamie "What was the database library we discussed?"
+```
+
+Jamie can retrieve the earlier exchange and answer from that context. Memory is
+text-only and local; no embedding model or vector database is used.
+
+Set a different database path in `assistant.toml` when needed:
+
+```toml
+memory_path = "state/memory.sqlite3"
+```
+
+The `JAMIE_MEMORY_PATH` environment variable provides a process-level override.
+Configuration loading and `jamie doctor` validate the path setting without
+creating the database.
+
 ## Model evaluations
 
 With the local server running, establish a baseline with:
@@ -426,6 +465,17 @@ and `--config`. Keep the cases and settings unchanged when comparing results.
 Model outputs are stochastic, so repeated runs need not produce identical
 results.
 
+The [saved baseline](evals/results/baseline.md) contains all 100 attempts with
+Qwen3.8-9B-Distill Q4_K_M. It used the earlier 120-second read timeout; the
+current default is 600 seconds. The original results are preserved, with the
+timeout and server settings recorded in a companion environment file. That run
+predates the ten action-protocol cases and contains the original 20 cases.
+
+The [action protocol baseline](evals/results/action-protocol-baseline.md)
+contains 50 attempts with the ten protocol cases. It reached 100% protocol
+parse success and 90% exact instruction following, with its server settings and
+five exact-message failures recorded alongside the raw report.
+
 ## Agent evaluations
 
 With the local server running, evaluate the complete model, action loop, tools,
@@ -502,16 +552,23 @@ information, token usage, and timing. Custom cases can be selected with
 jamie eval research --cases evals/research_cases/supported_claims.json --runs 1
 ```
 
-The [saved baseline](evals/results/baseline.md) contains all 100 attempts with
-Qwen3.8-9B-Distill Q4_K_M. It used the earlier 120-second read timeout; the
-current default is 600 seconds. The original results are preserved, with the
-timeout and server settings recorded in a companion environment file. That run
-predates the ten action-protocol cases and contains the original 20 cases.
+## Memory evaluations
 
-The [action protocol baseline](evals/results/action-protocol-baseline.md)
-contains 50 attempts with the ten protocol cases. It reached 100% protocol
-parse success and 90% exact instruction following, with its server settings and
-five exact-message failures recorded alongside the raw report.
+Run the fixed FTS5 retrieval cases without contacting the model:
+
+```sh
+jamie eval memory
+```
+
+Each case seeds an isolated temporary database, performs one natural-language
+query, and checks whether the expected memory appears within its configured
+top-k results. The report includes recall@k, mean reciprocal rank, retrieved
+text, case definitions, and their hash. This provides a baseline for deciding
+whether text retrieval is sufficient before considering embeddings.
+
+The [saved FTS5 baseline](evals/results/memory-fts-baseline.md) passed all five
+cases with 100% recall@k and a mean reciprocal rank of 1.000. Embeddings remain
+deferred until broader evaluations show a retrieval gap.
 
 ## Configuration and diagnostics
 
@@ -527,7 +584,8 @@ If that file is absent, built-in defaults are used:
 color = true
 ```
 
-Set `color = false` for uncolored output. Unknown fields, incorrect types
+Set `color = false` for uncolored output. `memory_path` is optional and defaults
+to Jamie's macOS application-support directory. Unknown fields, incorrect types
 (including strings instead of booleans), and malformed TOML are rejected.
 Commands accept an explicit configuration file:
 
@@ -551,14 +609,17 @@ works independently of configuration and reads the installed package version.
 - `src/assistant/tools/`: filesystem, editing, macOS, and web tools plus the registry.
 - `src/assistant/security/`: permission policy, trusted approvals, and audit records.
 - `src/assistant/research.py`: bounded search, retrieval, cross-checking, and cited synthesis.
+- `src/assistant/memory.py`: SQLite schema, FTS5 retrieval, and conversation storage.
 - `src/assistant/evaluation.py`: evaluation loading, scoring, metrics, and report saving.
 - `src/assistant/agent_evaluation.py`: complete agent evaluation and scoring.
 - `src/assistant/research_evaluation.py`: citation, source, and claim-support evaluation.
+- `src/assistant/memory_evaluation.py`: deterministic FTS5 retrieval evaluation.
 - `src/assistant/eval_cli.py`: evaluation command and terminal summaries.
 - `evals/runner.py`: checkout entry point for the evaluation command.
 - `evals/cases/`: fixed baseline case files, also bundled in installed wheels.
 - `evals/agent_cases/`: isolated workspace and tool-use cases, also bundled in wheels.
 - `evals/research_cases/`: fixed research sources and expected claims, also bundled in wheels.
+- `evals/memory_cases/`: fixed memory retrieval cases, also bundled in wheels.
 - `evals/results/`: saved evaluation reports.
 - `tests/`: CLI, configuration, transport, and evaluation behavior and failure cases.
 - `assistant.toml`: minimal project configuration.

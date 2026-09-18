@@ -3,7 +3,7 @@
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 
 class ProjectConfig(BaseModel):
@@ -12,6 +12,21 @@ class ProjectConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     color: bool = True
+    memory_path: str | None = None
+
+    @field_validator("memory_path")
+    @classmethod
+    def validate_memory_path(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or "\x00" in value):
+            raise ValueError("Memory path must not be blank or contain null characters.")
+        return value
+
+    def resolved_memory_path(self) -> Path:
+        if self.memory_path is not None:
+            return Path(self.memory_path).expanduser()
+        from assistant.memory import default_memory_path
+
+        return default_memory_path()
 
 
 class ConfigurationError(ValueError):

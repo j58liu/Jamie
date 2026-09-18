@@ -190,13 +190,17 @@ def _run_loop(
     max_steps: int,
     max_parse_retries: int,
     deadline: float,
+    memory_context: str | None,
 ) -> str:
     _optional_call(tools, "begin_turn")
     try:
+        system_content = _system_instructions(tools)
+        if memory_context is not None:
+            system_content = f"{system_content}\n\n{memory_context}"
         messages = [
-            Message(role="system", content=_system_instructions(tools)),
-            Message(role="user", content=prompt),
+            Message(role="system", content=system_content),
         ]
+        messages.append(Message(role="user", content=prompt))
         last_failed_action: str | None = None
         repeated_failures = 0
 
@@ -246,10 +250,13 @@ def run_agent(
     max_steps: int = MAX_STEPS,
     max_parse_retries: int = MAX_PARSE_RETRIES,
     timeout_seconds: float = TIMEOUT_SECONDS,
+    memory_context: str | None = None,
 ) -> str:
     """Run bounded model actions until the model returns a finish action."""
     if not prompt.strip():
         raise ValueError("prompt must be a non-blank string.")
+    if memory_context is not None and not memory_context.strip():
+        raise ValueError("memory_context must be non-blank when provided.")
     _validate_limits(max_steps, max_parse_retries, timeout_seconds)
 
     command_result = _optional_text(tools, "handle_command", prompt.strip())
@@ -267,6 +274,7 @@ def run_agent(
                 max_steps=max_steps,
                 max_parse_retries=max_parse_retries,
                 deadline=deadline,
+                memory_context=memory_context,
             ),
             deadline,
         )

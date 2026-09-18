@@ -17,6 +17,11 @@ from assistant.agent_evaluation import (
 from assistant.config import ConfigurationError, load_config
 from assistant.evaluation import EvalReport, EvaluationError, RunResult, load_cases, run_evaluation
 from assistant.llm.llamacpp import LlamaCppBackend
+from assistant.memory_evaluation import (
+    MemoryEvalReport,
+    load_memory_cases,
+    run_memory_evaluation,
+)
 from assistant.research_evaluation import (
     ResearchEvalReport,
     ResearchRunResult,
@@ -141,6 +146,28 @@ def print_research_summary(console: Console, report: ResearchEvalReport, path: P
     table.add_row("Total duration", f"{summary['total_duration_seconds']:.2f}s")
     outcome = "PASS" if summary["success"] else "FAIL"
     table.add_row("Result", "INTERRUPTED" if report.status == "interrupted" else outcome)
+    console.print(table)
+    console.print(f"Report: {path}", markup=False, highlight=False)
+
+
+def print_memory_summary(console: Console, report: MemoryEvalReport, path: Path) -> None:
+    """Print deterministic FTS5 retrieval metrics."""
+    summary = report.summary()
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("Metric")
+    table.add_column("Value")
+    table.add_row("Cases", str(summary["cases"]))
+    table.add_row("Hits", f"{summary['hits']}/{summary['cases']}")
+    table.add_row("Misses", str(summary["misses"]))
+    recall = summary["recall_at_k"]
+    reciprocal_rank = summary["mean_reciprocal_rank"]
+    table.add_row("Recall@k", f"{recall:.1%}" if recall is not None else "N/A")
+    table.add_row(
+        "Mean reciprocal rank",
+        f"{reciprocal_rank:.3f}" if reciprocal_rank is not None else "N/A",
+    )
+    table.add_row("Total duration", f"{summary['total_duration_seconds']:.2f}s")
+    table.add_row("Result", "PASS" if summary["success"] else "FAIL")
     console.print(table)
     console.print(f"Report: {path}", markup=False, highlight=False)
 
@@ -304,5 +331,31 @@ def evaluate_research(
     print_research_summary(console, report, path)
     if report.status == "interrupted":
         raise typer.Exit(code=130)
+    if not report.summary()["success"]:
+        raise typer.Exit(code=1)
+
+
+@app.command("memory")
+def evaluate_memory(
+    cases: Annotated[
+        Path | None, typer.Option(help="A JSON case file or directory of case files.")
+    ] = None,
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory for the timestamped JSON report.")
+    ] = Path("evals/results"),
+    config: Annotated[
+        Path | None, typer.Option(help="Read a specific TOML configuration file.")
+    ] = None,
+) -> None:
+    """Evaluate SQLite FTS5 memory retrieval without calling the model."""
+    try:
+        settings = load_config(config)
+        loaded = load_memory_cases(cases)
+        console = Console(no_color=not settings.color)
+        report, path = run_memory_evaluation(loaded, output_dir=output_dir)
+    except (ConfigurationError, EvaluationError) as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    print_memory_summary(console, report, path)
     if not report.summary()["success"]:
         raise typer.Exit(code=1)

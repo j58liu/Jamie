@@ -70,6 +70,19 @@ def test_finish_action_returns_message_without_calling_tools():
     ]
 
 
+def test_memory_context_is_appended_to_the_system_message():
+    backend = FakeBackend([finish_action("SQLite was discussed.")])
+    context = "Relevant memory: the database library was SQLite."
+    assert (
+        run_agent(backend, FakeTools(), "What did we discuss?", memory_context=context)
+        == "SQLite was discussed."
+    )
+    assert backend.requests[0] == [
+        Message("system", f"{ACTION_PROTOCOL_INSTRUCTIONS}\n\n{context}"),
+        Message("user", "What did we discuss?"),
+    ]
+
+
 def test_tool_result_is_added_before_the_next_action():
     backend = FakeBackend([tool_action(), finish_action("The file was read.")])
     tools = FakeTools([ToolResult(success=True, output="README contents")])
@@ -232,4 +245,11 @@ def test_invalid_prompt_fails_before_model_call(prompt):
     backend = FakeBackend([])
     with pytest.raises(ValueError, match="prompt"):
         run_agent(backend, FakeTools(), prompt)
+    assert backend.requests == []
+
+
+def test_blank_memory_context_is_rejected_before_model_call():
+    backend = FakeBackend([])
+    with pytest.raises(ValueError, match="memory_context"):
+        run_agent(backend, FakeTools(), "Prompt.", memory_context="  ")
     assert backend.requests == []

@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,7 @@ class FakeRunner:
 @pytest.fixture
 def agent_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JAMIE_MEMORY_PATH", str(tmp_path / "memory.sqlite3"))
     backend = FakeBackend()
     command_runner = FakeRunner()
     monkeypatch.setattr(cli, "LlamaCppBackend", lambda: backend)
@@ -59,6 +61,9 @@ def test_agent_cli_asks_user_before_opening_application(agent_cli):
     assert "Safari was opened." in result.output
     assert command_runner.calls == [(["open", "-a", "Safari"], None, 30)]
     assert backend.calls == 2
+    with sqlite3.connect(Path.cwd() / "memory.sqlite3") as connection:
+        tool = connection.execute("SELECT tool, success FROM tool_calls").fetchone()
+    assert tool == ("open_application", 1)
 
 
 def test_prompt_without_command_runs_agent(agent_cli):

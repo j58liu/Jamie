@@ -1,0 +1,57 @@
+[
+  {
+    "id": "memory-database-001",
+    "memories": [
+      "User: Which database library should we use? Jamie: We chose SQLite for local storage.",
+      "User: Which terminal colors should we use? Jamie: Use blue for information messages.",
+      "User: Which model is loaded? Jamie: Qwen runs through llama.cpp."
+    ],
+    "query": "What was the database library we discussed?",
+    "expected_contains": "SQLite",
+    "top_k": 3
+  },
+  {
+    "id": "memory-model-001",
+    "memories": [
+      "Jamie uses SQLite FTS5 for local text retrieval.",
+      "The selected local model is Qwen3.8-9B-Distill Q4_K_M.",
+      "Web research requires at least two cited sources."
+    ],
+    "query": "Which local model did we select?",
+    "expected_contains": "Qwen3.8-9B-Distill",
+    "top_k": 2
+  },
+  {
+    "id": "memory-stemming-001",
+    "memories": [
+      "The research workflow retrieves public pages before extracting their text.",
+      "File editing stores a snapshot before each change.",
+      "The agent asks for approval before opening an application."
+    ],
+    "query": "How are pages retrieved and extracted during research?",
+    "expected_contains": "retrieves public pages",
+    "top_k": 2
+  },
+  {
+    "id": "memory-permission-001",
+    "memories": [
+      "Opening Safari requires SAFE_WRITE approval from the terminal user.",
+      "Model evaluations run each fixed case five times.",
+      "The clipboard can contain plain text."
+    ],
+    "query": "What approval is needed to open Safari?",
+    "expected_contains": "SAFE_WRITE",
+    "top_k": 2
+  },
+  {
+    "id": "memory-timeout-001",
+    "memories": [
+      "The llama.cpp HTTP read timeout is 600 seconds.",
+      "The agent action limit is twelve steps.",
+      "Search results are limited before page retrieval."
+    ],
+    "query": "How long is the model HTTP read timeout?",
+    "expected_contains": "600 seconds",
+    "top_k": 2
+  }
+]

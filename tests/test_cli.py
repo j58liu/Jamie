@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from importlib.metadata import version
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +17,7 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def isolated_working_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("JAMIE_MEMORY_PATH", str(tmp_path / "memory.sqlite3"))
 
 
 def test_version_matches_installed_package_and_does_not_load_config(tmp_path: Path):
@@ -239,7 +241,16 @@ def test_research_prints_cited_answer(monkeypatch: pytest.MonkeyPatch):
         def run(self, question, *, max_sources):
             assert question == "What is supported?"
             assert max_sources == 4
-            return SimpleNamespace(answer="Supported claim [Source](https://example.com/).")
+            return SimpleNamespace(
+                answer="Supported claim [Source](https://example.com/).",
+                sources=[
+                    SimpleNamespace(
+                        url="https://example.com/",
+                        title="Source",
+                        text="Supported claim.",
+                    )
+                ],
+            )
 
     monkeypatch.setattr(cli, "WebClient", FakeWeb)
     monkeypatch.setattr(cli, "ResearchWorkflow", FakeWorkflow)
@@ -249,6 +260,11 @@ def test_research_prints_cited_answer(monkeypatch: pytest.MonkeyPatch):
     )
     assert result.exit_code == 0, result.output
     assert result.stdout == "Supported claim [Source](https://example.com/).\n"
+    with sqlite3.connect(Path.cwd() / "memory.sqlite3") as connection:
+        assert connection.execute("SELECT url, title FROM sources").fetchone() == (
+            "https://example.com/",
+            "Source",
+        )
 
 
 @pytest.mark.parametrize("question", ["", "   "])
