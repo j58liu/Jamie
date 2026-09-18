@@ -27,13 +27,14 @@ def test_version_matches_installed_package_and_does_not_load_config(tmp_path: Pa
     assert result.output.strip() == f"jamie {version('j-cli')}"
 
 
-def test_help_exposes_agent_ask_doctor_and_version():
+def test_help_exposes_agent_ask_research_doctor_and_version():
     result = runner.invoke(cli.app, ["--help"])
 
     assert result.exit_code == 0
     assert "agent" in result.output
     assert "doctor" in result.output
     assert "ask" in result.output
+    assert "research" in result.output
     assert "jamie" in result.output
     assert "--version" in result.output
 
@@ -220,6 +221,47 @@ def test_ask_reports_unreachable_server(monkeypatch: pytest.MonkeyPatch):
     assert result.stdout == ""
     assert "Cannot reach llama.cpp" in result.stderr
     assert "127.0.0.1:8080" in result.stderr
+    assert "Traceback" not in result.output
+
+
+def test_research_prints_cited_answer(monkeypatch: pytest.MonkeyPatch):
+    class FakeWeb:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            pass
+
+    class FakeWorkflow:
+        def __init__(self, backend, web):
+            pass
+
+        def run(self, question, *, max_sources):
+            assert question == "What is supported?"
+            assert max_sources == 4
+            return SimpleNamespace(answer="Supported claim [Source](https://example.com/).")
+
+    monkeypatch.setattr(cli, "WebClient", FakeWeb)
+    monkeypatch.setattr(cli, "ResearchWorkflow", FakeWorkflow)
+    result = runner.invoke(
+        cli.app,
+        ["research", "What is supported?", "--max-sources", "4"],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "Supported claim [Source](https://example.com/).\n"
+
+
+@pytest.mark.parametrize("question", ["", "   "])
+def test_research_rejects_empty_question_without_starting_web(
+    question: str, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(
+        cli,
+        "WebClient",
+        lambda: (_ for _ in ()).throw(AssertionError("web must not start")),
+    )
+    result = runner.invoke(cli.app, ["research", question])
+    assert result.exit_code == 2
     assert "Traceback" not in result.output
 
 

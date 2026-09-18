@@ -201,12 +201,13 @@ Tool permissions come from a fixed application policy:
 | `DESTRUCTIVE` | Confirm |
 | `EXTERNAL` | Confirm |
 
-The default policy assigns the four read tools to `READ`; the five reversible
-editing tools, application opening, Finder reveal, and clipboard writing to
-`SAFE_WRITE`; and clipboard reading, Shortcuts, and AppleScript to `SENSITIVE`.
+The default policy assigns filesystem reads and cached page extraction to
+`READ`; the five reversible editing tools, application opening, Finder reveal,
+and clipboard writing to `SAFE_WRITE`; clipboard reading, Shortcuts, and
+AppleScript to `SENSITIVE`; and web search and page retrieval to `EXTERNAL`.
 It reserves classifications for unimplemented names such as `shell`,
-`delete_file`, and `send_email`. A tool cannot register without a central policy
-entry, and its declared permission must match that entry.
+`delete_file`, and `send_email`. A tool cannot register without a central
+policy entry, and its declared permission must match that entry.
 
 `ToolRegistry.execute` validates arguments, asks `PermissionPolicy` for an
 allow-or-confirm decision, and calls an `ApprovalProvider` for confirmation
@@ -303,6 +304,39 @@ policy, and asks for approval before running the macOS command. `jamie ask`
 continues to send a prompt directly to the model without tools. The explicit
 form `jamie agent "open Safari"` is also available. No screenshot or
 screen-capture tool is included.
+
+## Web research
+
+Jamie provides three low-level web tools without browser automation:
+
+- `web_search` queries DuckDuckGo's HTML search endpoint and returns bounded
+  titles, URLs, and snippets.
+- `fetch_url` retrieves one public HTTP or HTTPS text page into an in-memory
+  session cache.
+- `extract_page` turns a cached HTML or plain-text page into bounded readable
+  text.
+
+Search and retrieval are `EXTERNAL` operations, so model-directed calls require
+approval. Extraction reads only the session cache and is classified as `READ`.
+Retrieval does not use environment proxies or automatic redirects. It validates
+every redirect, rejects credentials and private, loopback, link-local, or
+otherwise non-public addresses, restricts content types, and limits downloaded
+and extracted content. A fetched page must exist in the same session before it
+can be extracted.
+
+The higher-level command performs the complete sequence directly:
+
+```sh
+jamie research "What evidence supports this claim?"
+```
+
+Qwen first generates up to three searches. Jamie searches, retrieves and
+extracts up to five distinct pages, then asks Qwen to cross-check their
+agreements and differences before synthesizing the answer. The model cites
+source IDs such as `[S1]`; Jamie validates those IDs and replaces them with the
+retrieved URLs. A missing, unknown, or invented citation fails validation, with
+one correction attempt. A successful answer cites at least two retrieved
+sources. Use `--max-sources` to select a limit from two through eight.
 
 ## Model evaluations
 
@@ -441,6 +475,33 @@ Agent evaluation cases define their workspace files and checks explicitly:
 }
 ```
 
+## Research evaluations
+
+With the local server running, evaluate the complete research sequence against
+fixed search results and page fixtures:
+
+```sh
+jamie eval research --runs 5
+```
+
+The fixtures keep retrieval repeatable while Qwen still generates searches,
+cross-checks the supplied pages, and writes the cited answer. Each attempt
+reports the number of cited sources and checks that citations exist, resolve to
+successfully extracted pages, contain no URLs outside the search results, cover
+multiple source hosts, and support the expected claims. Claim support requires
+the expected answer text, a citation on that answer line, and the expected
+evidence in the cited page fixture.
+
+Reports are checkpointed under `evals/results/` and contain the exact fixtures,
+case hash, generated searches, extracted source URLs, cross-check notes, raw
+model outputs, answers, cited URLs, individual checks, failures, model
+information, token usage, and timing. Custom cases can be selected with
+`--cases`:
+
+```sh
+jamie eval research --cases evals/research_cases/supported_claims.json --runs 1
+```
+
 The [saved baseline](evals/results/baseline.md) contains all 100 attempts with
 Qwen3.8-9B-Distill Q4_K_M. It used the earlier 120-second read timeout; the
 current default is 600 seconds. The original results are preserved, with the
@@ -487,14 +548,17 @@ works independently of configuration and reads the installed package version.
 - `src/assistant/llm/llamacpp.py`: llama.cpp HTTP transport.
 - `src/assistant/agent/protocol.py`: validated tool and finish action parsing.
 - `src/assistant/agent/loop.py`: bounded model actions and tool observations.
-- `src/assistant/tools/`: read, editing, and macOS tools, turn snapshots, diffs, undo, and registry.
+- `src/assistant/tools/`: filesystem, editing, macOS, and web tools plus the registry.
 - `src/assistant/security/`: permission policy, trusted approvals, and audit records.
+- `src/assistant/research.py`: bounded search, retrieval, cross-checking, and cited synthesis.
 - `src/assistant/evaluation.py`: evaluation loading, scoring, metrics, and report saving.
 - `src/assistant/agent_evaluation.py`: complete agent evaluation and scoring.
+- `src/assistant/research_evaluation.py`: citation, source, and claim-support evaluation.
 - `src/assistant/eval_cli.py`: evaluation command and terminal summaries.
 - `evals/runner.py`: checkout entry point for the evaluation command.
 - `evals/cases/`: fixed baseline case files, also bundled in installed wheels.
 - `evals/agent_cases/`: isolated workspace and tool-use cases, also bundled in wheels.
+- `evals/research_cases/`: fixed research sources and expected claims, also bundled in wheels.
 - `evals/results/`: saved evaluation reports.
 - `tests/`: CLI, configuration, transport, and evaluation behavior and failure cases.
 - `assistant.toml`: minimal project configuration.

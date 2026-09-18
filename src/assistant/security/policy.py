@@ -42,6 +42,7 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
         "list_directory": PermissionLevel.READ,
         "find_files": PermissionLevel.READ,
         "search_files": PermissionLevel.READ,
+        "extract_page": PermissionLevel.READ,
         "open_application": PermissionLevel.SAFE_WRITE,
         "reveal_in_finder": PermissionLevel.SAFE_WRITE,
         "clipboard_write": PermissionLevel.SAFE_WRITE,
@@ -54,6 +55,8 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
         "run_shortcut": PermissionLevel.SENSITIVE,
         "run_applescript": PermissionLevel.SENSITIVE,
         "send_email": PermissionLevel.EXTERNAL,
+        "web_search": PermissionLevel.EXTERNAL,
+        "fetch_url": PermissionLevel.EXTERNAL,
         "delete_file": PermissionLevel.DESTRUCTIVE,
         "trash_file": PermissionLevel.SAFE_WRITE,
     }

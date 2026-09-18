@@ -17,6 +17,12 @@ from assistant.agent_evaluation import (
 from assistant.config import ConfigurationError, load_config
 from assistant.evaluation import EvalReport, EvaluationError, RunResult, load_cases, run_evaluation
 from assistant.llm.llamacpp import LlamaCppBackend
+from assistant.research_evaluation import (
+    ResearchEvalReport,
+    ResearchRunResult,
+    load_research_cases,
+    run_research_evaluation,
+)
 
 app = typer.Typer(help="Evaluate the local model with fixed prompts.", no_args_is_help=True)
 
@@ -95,6 +101,39 @@ def print_agent_summary(console: Console, report: AgentEvalReport, path: Path) -
     table.add_row("Expected tool called", f"{summary['expected_tool_calls']}/{completed}")
     table.add_row("Correct tool output", f"{summary['correct_tool_outputs']}/{completed}")
     table.add_row("Answer check", f"{summary['answer_checks']}/{completed}")
+    latency = summary["median_latency_seconds"]
+    table.add_row("Median latency", f"{latency:.2f}s" if latency is not None else "N/A")
+    tokens = summary["output_tokens"]
+    table.add_row("Output tokens", f"{tokens:,}" if tokens is not None else "Unknown")
+    table.add_row("Total duration", f"{summary['total_duration_seconds']:.2f}s")
+    outcome = "PASS" if summary["success"] else "FAIL"
+    table.add_row("Result", "INTERRUPTED" if report.status == "interrupted" else outcome)
+    console.print(table)
+    console.print(f"Report: {path}", markup=False, highlight=False)
+
+
+def print_research_summary(console: Console, report: ResearchEvalReport, path: Path) -> None:
+    """Print citation and source-support metrics for research evaluations."""
+    summary = report.summary()
+    models = summary["models"]
+    console.print(
+        ", ".join(models) if models else "Model not reported", markup=False, highlight=False
+    )
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("Metric")
+    table.add_column("Value")
+    completed = summary["completed_runs"]
+    table.add_row("Cases", str(summary["cases"]))
+    table.add_row("Runs/case", str(summary["runs_per_case"]))
+    table.add_row("Completed", f"{completed}/{summary['planned_runs']}")
+    table.add_row("Passes", f"{summary['passes']}/{completed}")
+    source_count = summary["median_source_count"]
+    table.add_row("Median source count", f"{source_count:g}" if source_count is not None else "N/A")
+    table.add_row("Citations exist", f"{summary['citations_exist']}/{completed}")
+    table.add_row("Citations resolve", f"{summary['citations_resolve']}/{completed}")
+    table.add_row("Claims supported", f"{summary['claims_supported']}/{completed}")
+    table.add_row("No fake URLs", f"{summary['no_fake_urls']}/{completed}")
+    table.add_row("Multiple-source coverage", f"{summary['multiple_source_coverage']}/{completed}")
     latency = summary["median_latency_seconds"]
     table.add_row("Median latency", f"{latency:.2f}s" if latency is not None else "N/A")
     tokens = summary["output_tokens"]
@@ -214,6 +253,55 @@ def evaluate_agent(
         raise typer.Exit(code=1) from exc
 
     print_agent_summary(console, report, path)
+    if report.status == "interrupted":
+        raise typer.Exit(code=130)
+    if not report.summary()["success"]:
+        raise typer.Exit(code=1)
+
+
+@app.command("research")
+def evaluate_research(
+    runs: Annotated[int, typer.Option(min=1, help="Number of runs per case.")] = 5,
+    cases: Annotated[
+        Path | None, typer.Option(help="A JSON case file or directory of case files.")
+    ] = None,
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory for timestamped JSON reports.")
+    ] = Path("evals/results"),
+    config: Annotated[
+        Path | None, typer.Option(help="Read a specific TOML configuration file.")
+    ] = None,
+) -> None:
+    """Evaluate source retrieval, citations, and supported claims."""
+    try:
+        settings = load_config(config)
+        loaded = load_research_cases(cases)
+        console = Console(no_color=not settings.color)
+        progress = Console(stderr=True, no_color=not settings.color)
+        total = len(loaded) * runs
+
+        def on_result(result: ResearchRunResult, completed: int) -> None:
+            outcome = "PASS" if result.success else f"FAIL ({result.failure_reason})"
+            progress.print(
+                f"[{completed}/{total}] {result.case_id} run {result.run}: "
+                f"{outcome}, {result.latency_seconds:.2f}s",
+                markup=False,
+                highlight=False,
+            )
+
+        progress.print(f"Running {len(loaded)} research cases, {runs} runs per case.")
+        report, path = run_research_evaluation(
+            LlamaCppBackend(),
+            loaded,
+            runs=runs,
+            output_dir=output_dir,
+            on_result=on_result,
+        )
+    except (ConfigurationError, EvaluationError) as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+
+    print_research_summary(console, report, path)
     if report.status == "interrupted":
         raise typer.Exit(code=130)
     if not report.summary()["success"]:

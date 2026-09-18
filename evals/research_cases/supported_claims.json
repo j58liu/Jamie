@@ -1,0 +1,68 @@
+[
+  {
+    "id": "research-water-001",
+    "question": "At standard atmospheric pressure, what is the boiling point of water, and how does lower pressure affect it?",
+    "search_results": [
+      {
+        "title": "Water boiling point reference",
+        "url": "https://chemistry.example/water-boiling",
+        "snippet": "Reference values for water at standard pressure."
+      },
+      {
+        "title": "Pressure and boiling",
+        "url": "https://physics.test/pressure-boiling",
+        "snippet": "How atmospheric pressure changes boiling temperature."
+      }
+    ],
+    "pages": {
+      "https://chemistry.example/water-boiling": "<html><head><title>Water boiling point reference</title></head><body><main><p>At standard atmospheric pressure, pure water boils at 100 °C.</p></main></body></html>",
+      "https://physics.test/pressure-boiling": "<html><head><title>Pressure and boiling</title></head><body><main><p>Reducing atmospheric pressure lowers the temperature at which water boils.</p></main></body></html>"
+    },
+    "expected_claims": [
+      {
+        "answer_contains": "100",
+        "evidence_contains": "100 °C",
+        "supported_by": ["https://chemistry.example/water-boiling"]
+      },
+      {
+        "answer_contains": "lower",
+        "evidence_contains": "lowers the temperature",
+        "supported_by": ["https://physics.test/pressure-boiling"]
+      }
+    ],
+    "min_sources": 2
+  },
+  {
+    "id": "research-honey-001",
+    "question": "Why can properly stored honey remain edible for a long time?",
+    "search_results": [
+      {
+        "title": "Honey and water activity",
+        "url": "https://foodscience.example/honey-storage",
+        "snippet": "Water activity and microbial growth in honey."
+      },
+      {
+        "title": "Honey acidity",
+        "url": "https://beekeeping.test/honey-acidity",
+        "snippet": "Acidity contributes to honey preservation."
+      }
+    ],
+    "pages": {
+      "https://foodscience.example/honey-storage": "<html><head><title>Honey and water activity</title></head><body><article><p>Honey has low water activity, which limits the growth of many microorganisms.</p></article></body></html>",
+      "https://beekeeping.test/honey-acidity": "<html><head><title>Honey acidity</title></head><body><article><p>Honey is acidic, and that acidity helps inhibit microbial growth during storage.</p></article></body></html>"
+    },
+    "expected_claims": [
+      {
+        "answer_contains": "water",
+        "evidence_contains": "low water activity",
+        "supported_by": ["https://foodscience.example/honey-storage"]
+      },
+      {
+        "answer_contains": "acid",
+        "evidence_contains": "acidity helps inhibit",
+        "supported_by": ["https://beekeeping.test/honey-acidity"]
+      }
+    ],
+    "min_sources": 2
+  }
+]

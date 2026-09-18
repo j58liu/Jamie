@@ -51,6 +51,7 @@ from assistant.tools.macos import (
     RunAppleScriptTool,
     RunShortcutTool,
 )
+from assistant.tools.web import ExtractPageTool, FetchUrlTool, WebClient, WebSearchTool
 
 
 def _compact_schema(value: object) -> object:
@@ -151,6 +152,15 @@ class ToolRegistry:
             ),
             "run_applescript": (
                 '{"action":"tool","tool":"run_applescript","args":{"script":"return 1"}}'
+            ),
+            "web_search": (
+                '{"action":"tool","tool":"web_search","args":{"query":"current topic"}}'
+            ),
+            "fetch_url": (
+                '{"action":"tool","tool":"fetch_url","args":{"url":"https://example.com/"}}'
+            ),
+            "extract_page": (
+                '{"action":"tool","tool":"extract_page","args":{"url":"https://example.com/"}}'
             ),
         }
         registered_examples = "\n".join(
@@ -355,3 +365,35 @@ def create_macos_registry(
     registry.register(RunShortcutTool(runner))
     registry.register(RunAppleScriptTool(runner))
     return registry
+
+
+def register_web_tools(registry: ToolRegistry, client: WebClient) -> ToolRegistry:
+    """Add web search, retrieval, and extraction to an existing registry."""
+    registry.register(WebSearchTool(client))
+    registry.register(FetchUrlTool(client))
+    registry.register(ExtractPageTool(client))
+    return registry
+
+
+def create_web_registry(
+    *,
+    approvals: ApprovalProvider | None = None,
+    audit: AuditSink | None = None,
+    client: WebClient | None = None,
+) -> ToolRegistry:
+    """Register only the three web research tools."""
+    registry = ToolRegistry(approvals=approvals, audit=audit)
+    return register_web_tools(registry, client if client is not None else WebClient())
+
+
+def create_agent_registry(
+    root: Path,
+    *,
+    approvals: ApprovalProvider | None = None,
+    audit: AuditSink | None = None,
+    runner: CommandRunner | None = None,
+    web: WebClient | None = None,
+) -> ToolRegistry:
+    """Register workspace, macOS, and web tools for one agent session."""
+    registry = create_macos_registry(root, approvals=approvals, audit=audit, runner=runner)
+    return register_web_tools(registry, web if web is not None else WebClient())

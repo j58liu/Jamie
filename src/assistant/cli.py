@@ -18,8 +18,9 @@ from assistant.config import ConfigurationError, load_config
 from assistant.eval_cli import app as eval_app
 from assistant.llm.base import LLMBackend, LLMError, Message
 from assistant.llm.llamacpp import LlamaCppBackend
+from assistant.research import ResearchError, ResearchWorkflow
 from assistant.security import ApprovalRequest
-from assistant.tools import create_macos_registry
+from assistant.tools import WebClient, create_agent_registry
 
 MINIMUM_PYTHON = (3, 12)
 
@@ -149,22 +150,51 @@ def agent(
     try:
         settings = load_config(config)
         console = Console(no_color=not settings.color)
-        tools = create_macos_registry(
-            workspace,
-            approvals=TerminalApprovalProvider(console),
-        )
-        answer = run_agent(
-            LlamaCppBackend(),
-            tools,
-            prompt,
-            max_steps=max_steps,
-            timeout_seconds=timeout,
-        )
+        with WebClient() as web:
+            tools = create_agent_registry(
+                workspace,
+                approvals=TerminalApprovalProvider(console),
+                web=web,
+            )
+            answer = run_agent(
+                LlamaCppBackend(),
+                tools,
+                prompt,
+                max_steps=max_steps,
+                timeout_seconds=timeout,
+            )
     except (AgentError, ConfigurationError, LLMError, ValueError) as exc:
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
 
     console.print(answer, markup=False, highlight=False)
+
+
+@app.command()
+def research(
+    question: Annotated[str, typer.Argument(help="Question to research on the public web.")],
+    max_sources: Annotated[
+        int, typer.Option(min=2, max=8, help="Maximum number of pages to use.")
+    ] = 5,
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Read a specific TOML configuration file."),
+    ] = None,
+) -> None:
+    """Research a question and return an answer with checked citations."""
+    if not question.strip():
+        raise typer.BadParameter("Question must not be empty.", param_hint="QUESTION")
+    try:
+        settings = load_config(config)
+        with WebClient() as web:
+            result = ResearchWorkflow(LlamaCppBackend(), web).run(
+                question,
+                max_sources=max_sources,
+            )
+    except (ConfigurationError, ResearchError) as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    Console(no_color=not settings.color).print(result.answer, markup=False, highlight=False)
 
 
 @app.command()
