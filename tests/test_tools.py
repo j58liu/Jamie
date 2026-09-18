@@ -4,6 +4,7 @@ import pytest
 
 from assistant.agent.loop import run_agent
 from assistant.llm.base import LLMResponse
+from assistant.security import PolicyError
 from assistant.tools import ReadFileTool, Risk, ToolRegistry, create_read_only_registry
 
 
@@ -215,5 +216,5 @@ def test_registry_rejects_invalid_tool_metadata():
         def execute(self, arguments):
             return ""
 
-    with pytest.raises(ValueError, match="Tool names"):
+    with pytest.raises(PolicyError, match="no permission policy"):
         ToolRegistry().register(InvalidTool())

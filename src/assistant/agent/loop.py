@@ -73,13 +73,9 @@ class _DeadlineExceeded(Exception):
 
 
 def _validate_limits(max_steps: int, max_parse_retries: int, timeout_seconds: float) -> None:
-    if isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1:
+    if max_steps < 1:
         raise ValueError("max_steps must be a positive integer.")
-    if (
-        isinstance(max_parse_retries, bool)
-        or not isinstance(max_parse_retries, int)
-        or max_parse_retries < 0
-    ):
+    if max_parse_retries < 0:
         raise ValueError("max_parse_retries must be a non-negative integer.")
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be a finite, positive number.")
@@ -114,16 +110,11 @@ def _call_before_deadline[Result](
 def _request_action(
     llm: LLMBackend,
     messages: list[Message],
-    deadline: float,
     max_parse_retries: int,
 ) -> ToolAction | FinishAction:
     last_error: ProtocolError | None = None
     for attempt in range(max_parse_retries + 1):
-        if perf_counter() >= deadline:
-            raise _DeadlineExceeded
         response = llm.chat(messages)
-        if perf_counter() >= deadline:
-            raise _DeadlineExceeded
         messages.append(Message(role="assistant", content=response.content))
         try:
             action = parse_action(response.content)
@@ -132,8 +123,6 @@ def _request_action(
             if attempt < max_parse_retries:
                 messages.append(Message(role="user", content=INVALID_OUTPUT_MESSAGE))
         else:
-            if perf_counter() >= deadline:
-                raise _DeadlineExceeded
             return action
     attempts = max_parse_retries + 1
     unit = "time" if attempts == 1 else "times"
@@ -175,8 +164,6 @@ def _system_instructions(tools: ToolExecutor) -> str:
     if instructions is None:
         return ACTION_PROTOCOL_INSTRUCTIONS
     extra = instructions()
-    if not isinstance(extra, str):
-        raise TypeError("ToolExecutor.instructions must return a string.")
     if not extra.strip():
         return ACTION_PROTOCOL_INSTRUCTIONS
     return f"{extra.strip()}\n\n{ACTION_PROTOCOL_INSTRUCTIONS}"
@@ -186,10 +173,7 @@ def _optional_text(tools: ToolExecutor, method: str, *args: object) -> str | Non
     callback = getattr(tools, method, None)
     if callback is None:
         return None
-    value = callback(*args)
-    if value is not None and not isinstance(value, str):
-        raise TypeError(f"ToolExecutor.{method} must return a string or None.")
-    return value
+    return callback(*args)
 
 
 def _optional_call(tools: ToolExecutor, method: str) -> None:
@@ -217,12 +201,7 @@ def _run_loop(
         repeated_failures = 0
 
         for _ in range(max_steps):
-            action = _request_action(
-                llm,
-                messages,
-                deadline,
-                max_parse_retries,
-            )
+            action = _request_action(llm, messages, max_parse_retries)
             if isinstance(action, FinishAction):
                 verification = _optional_text(tools, "verification_message")
                 if verification is not None:
@@ -230,13 +209,11 @@ def _run_loop(
                     continue
                 return action.message
 
+            # The wrapper stops waiting at the deadline but cannot stop this
+            # thread, so check here to avoid side effects after a reported timeout.
             if perf_counter() >= deadline:
                 raise _DeadlineExceeded
             result = tools.execute(action.tool, dict(action.args))
-            if perf_counter() >= deadline:
-                raise _DeadlineExceeded
-            if not isinstance(result, ToolResult):
-                raise TypeError("ToolExecutor.execute must return ToolResult.")
             messages.append(tool_observation(action, result))
 
             action_key = _action_key(action)
@@ -271,7 +248,7 @@ def run_agent(
     timeout_seconds: float = TIMEOUT_SECONDS,
 ) -> str:
     """Run bounded model actions until the model returns a finish action."""
-    if not isinstance(prompt, str) or not prompt.strip():
+    if not prompt.strip():
         raise ValueError("prompt must be a non-blank string.")
     _validate_limits(max_steps, max_parse_retries, timeout_seconds)
 

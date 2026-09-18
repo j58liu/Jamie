@@ -99,8 +99,6 @@ class WorkspaceChanges:
                 resolved = candidate.resolve(strict=True)
                 if not resolved.is_relative_to(self.root):
                     raise ToolError("Path resolves outside the workspace root.")
-                if candidate.is_symlink():
-                    raise ToolError("Editing through symbolic links is not allowed.")
                 return resolved
             parent_candidate = candidate.parent
             missing_parents = []

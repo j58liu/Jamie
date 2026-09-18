@@ -65,14 +65,7 @@ class PermissionPolicy:
 
     def __init__(self, permissions: Mapping[str, PermissionLevel] | None = None) -> None:
         source = DEFAULT_TOOL_PERMISSIONS if permissions is None else permissions
-        validated: dict[str, PermissionLevel] = {}
-        for tool, permission in source.items():
-            if not isinstance(tool, str) or not tool.strip():
-                raise PolicyError("Policy tool names must be non-blank strings.")
-            if not isinstance(permission, PermissionLevel):
-                raise PolicyError(f"Policy for {tool!r} must use a PermissionLevel value.")
-            validated[tool] = permission
-        self._permissions = MappingProxyType(validated)
+        self._permissions = MappingProxyType(dict(source))
 
     @property
     def permissions(self) -> Mapping[str, PermissionLevel]:

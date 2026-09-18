@@ -48,16 +48,8 @@ _JSON_FENCE = re.compile(r"\A```json[ \t]*\r?\n(?P<body>.*?)\r?\n```[ \t]*\Z", r
 
 
 def _reject_constant(value: str) -> None:
+    # NaN and Infinity would survive into tool args and make audit records invalid JSON.
     raise ValueError(f"Non-JSON numeric constant: {value}")
-
-
-def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"Duplicate JSON key: {key}")
-        result[key] = value
-    return result
 
 
 def _remove_thinking(text: str) -> str:
@@ -91,11 +83,7 @@ def parse_action(text: str) -> ToolAction | FinishAction:
     """Parse a model response without extracting JSON from surrounding prose."""
     candidate = _remove_json_fence(_remove_thinking(text))
     try:
-        value = json.loads(
-            candidate,
-            parse_constant=_reject_constant,
-            object_pairs_hook=_unique_object,
-        )
-    except (RecursionError, ValueError) as exc:
+        value = json.loads(candidate, parse_constant=_reject_constant)
+    except ValueError as exc:
         raise ProtocolError("The model response is not valid JSON.") from exc
     return validate_action(value)

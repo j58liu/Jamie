@@ -75,5 +75,6 @@ def authorize(
     except Exception as exc:
         raise ApprovalError("The approval provider failed.") from exc
     if not isinstance(approved, bool):
+        # CallbackApprovalProvider wraps arbitrary UI code; "no" is truthy.
         raise ApprovalError("The approval provider must return a boolean.")
     return ApprovalStatus.APPROVED if approved else ApprovalStatus.DENIED

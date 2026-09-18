@@ -1,11 +1,10 @@
 """Registration, schemas, and execution for agent tools."""
 
 import json
-import re
 from pathlib import Path
 from typing import cast
 
-from pydantic import BaseModel, JsonValue, ValidationError
+from pydantic import JsonValue, ValidationError
 
 from assistant.agent.loop import ToolResult
 from assistant.security.approvals import (
@@ -20,7 +19,7 @@ from assistant.security.audit import (
     AuditPhase,
     AuditSink,
     InMemoryAuditLog,
-    argument_digest,
+    redact_arguments,
 )
 from assistant.security.policy import (
     PermissionLevel,
@@ -28,7 +27,7 @@ from assistant.security.policy import (
     PolicyAction,
     PolicyDecision,
 )
-from assistant.tools.base import Risk, Tool, ToolError
+from assistant.tools.base import Tool, ToolError
 from assistant.tools.changes import WorkspaceChanges
 from assistant.tools.editing import (
     CreateDirectoryTool,
@@ -52,8 +51,6 @@ from assistant.tools.macos import (
     RunAppleScriptTool,
     RunShortcutTool,
 )
-
-_TOOL_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 def _compact_schema(value: object) -> object:
@@ -90,14 +87,6 @@ class ToolRegistry:
         return self._audit
 
     def register(self, tool: Tool) -> None:
-        if not _TOOL_NAME.fullmatch(tool.name):
-            raise ValueError("Tool names must use lowercase letters, numbers, and underscores.")
-        if not tool.description.strip():
-            raise ValueError("Tool descriptions must not be blank.")
-        if not isinstance(tool.risk, Risk):
-            raise ValueError("Tool risk must be a Risk value.")
-        if not isinstance(tool.input_schema, type) or not issubclass(tool.input_schema, BaseModel):
-            raise ValueError("Tool input_schema must be a Pydantic model class.")
         if tool.name in self._tools:
             raise ValueError(f"Tool {tool.name!r} is already registered.")
         self._policy.validate_declaration(tool.name, tool.risk)
@@ -240,7 +229,7 @@ class ToolRegistry:
                 policy_action=decision.action if decision is not None else None,
                 approval=approval,
                 phase=phase,
-                arguments_sha256=argument_digest(args),
+                arguments=redact_arguments(args),
                 success=success,
             )
         )
@@ -305,16 +294,6 @@ class ToolRegistry:
             )
             raise
         else:
-            if not isinstance(output, str):
-                self._record(
-                    tool,
-                    normalized,
-                    AuditPhase.ERROR,
-                    decision=decision,
-                    approval=approval,
-                    success=False,
-                )
-                raise TypeError(f"Tool {tool!r} must return a string.")
             result = ToolResult(success=True, output=output)
         self._record(
             tool,

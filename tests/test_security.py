@@ -18,7 +18,9 @@ from assistant.security import (
     PermissionPolicy,
     PolicyAction,
     PolicyError,
+    redact_arguments,
 )
+from assistant.security.audit import MAX_ARGUMENT_CHARACTERS
 from assistant.tools import ReadFileTool, ToolRegistry
 
 
@@ -210,7 +212,7 @@ def test_registry_rejects_tool_without_central_policy():
         ToolRegistry().register(tool)
 
 
-def test_jsonl_audit_excludes_raw_arguments(tmp_path: Path):
+def test_jsonl_audit_records_redacted_arguments(tmp_path: Path):
     path = tmp_path / "audit.jsonl"
     registry = ToolRegistry(audit=JsonlAuditLog(path))
     registry.register(ReadFileTool(tmp_path))
@@ -222,8 +224,7 @@ def test_jsonl_audit_excludes_raw_arguments(tmp_path: Path):
     assert len(lines) == 2
     events = [json.loads(line) for line in lines]
     assert [event["phase"] for event in events] == ["requested", "completed"]
-    assert "private.txt" not in path.read_text()
-    assert len(events[0]["arguments_sha256"]) == 64
+    assert all(event["arguments"]["path"] == "private.txt" for event in events)
 
 
 def test_audit_failure_blocks_execution():
@@ -241,3 +242,11 @@ def test_audit_failure_blocks_execution():
     with pytest.raises(AuditError, match="unavailable"):
         registry.execute("shell", {})
     assert tool.executions == 0
+
+
+def test_audit_truncates_long_argument_values():
+    recorded = redact_arguments({"path": "notes.txt", "content": "x" * 5_000, "limit": 4})
+
+    assert recorded["path"] == "notes.txt"
+    assert recorded["limit"] == 4
+    assert recorded["content"] == f"{'x' * MAX_ARGUMENT_CHARACTERS}[truncated]"

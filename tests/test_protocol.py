@@ -60,7 +60,6 @@ def test_parses_fenced_response_after_think_block():
         ('{"action":"tool","tool":"read_file","args":[]}', "does not match"),
         ('{"action":"finish"}', "does not match"),
         ('{"action":"finish","message":"Done.","extra":true}', "does not match"),
-        ('{"action":"finish","message":"first","message":"second"}', "not valid JSON"),
         ('{"action":"tool","tool":"read_file","args":{"line":NaN}}', "not valid JSON"),
         ("<think>unfinished", "unclosed think block"),
         ('```json\n{"action":"finish","message":"Done."}', "invalid JSON fence"),

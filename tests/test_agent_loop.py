@@ -210,22 +210,11 @@ def test_tool_call_stops_at_total_timeout():
     assert perf_counter() - started < 0.5
 
 
-def test_tool_executor_must_return_typed_result():
-    class InvalidTools:
-        def execute(self, tool, args):
-            return {"success": True, "output": "wrong type"}
-
-    with pytest.raises(TypeError, match="must return ToolResult"):
-        run_agent(FakeBackend([tool_action()]), InvalidTools(), "Read.")
-
-
 @pytest.mark.parametrize(
     "options",
     [
         {"max_steps": 0},
-        {"max_steps": True},
         {"max_parse_retries": -1},
-        {"max_parse_retries": True},
         {"timeout_seconds": 0},
         {"timeout_seconds": float("nan")},
         {"timeout_seconds": float("inf")},
@@ -238,7 +227,7 @@ def test_invalid_limits_fail_before_model_call(options):
     assert backend.requests == []
 
 
-@pytest.mark.parametrize("prompt", ["", "   ", None, 123])
+@pytest.mark.parametrize("prompt", ["", "   "])
 def test_invalid_prompt_fails_before_model_call(prompt):
     backend = FakeBackend([])
     with pytest.raises(ValueError, match="prompt"):

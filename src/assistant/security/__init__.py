@@ -16,7 +16,7 @@ from assistant.security.audit import (
     AuditSink,
     InMemoryAuditLog,
     JsonlAuditLog,
-    argument_digest,
+    redact_arguments,
 )
 from assistant.security.policy import (
     DEFAULT_TOOL_PERMISSIONS,
@@ -46,6 +46,6 @@ __all__ = [
     "PolicyAction",
     "PolicyDecision",
     "PolicyError",
-    "argument_digest",
+    "redact_arguments",
     "authorize",
 ]
