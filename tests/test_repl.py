@@ -3,6 +3,8 @@ import io
 from pathlib import Path
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import CompleteEvent
+from prompt_toolkit.document import Document
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from rich.console import Console
@@ -10,7 +12,7 @@ from rich.console import Console
 from assistant.config import ProjectConfig
 from assistant.llm.base import LLMError, LLMResponse, Message
 from assistant.runtime import JamieApplication
-from assistant.ui.repl import run_repl
+from assistant.ui.repl import COMMANDS, create_prompt_session, run_repl
 
 
 class FakeBackend:
@@ -90,3 +92,62 @@ def test_repl_thinking_command_toggles_reasoning_without_calling_the_model(tmp_p
     assert "Thinking: on" in output
     assert backend.thinking == [None, False, True]
     assert all(m.content != "/thinking off" for request in backend.requests for m in request)
+
+
+def _run_with_history(tmp_path: Path, keys: str, backend: FakeBackend) -> Path:
+    history_path = tmp_path / "data" / "input_history"
+    application = JamieApplication(
+        ProjectConfig(memory_path=str(tmp_path / "memory.sqlite3")),
+        backend_factory=lambda: backend,
+    )
+
+    async def main() -> None:
+        with create_pipe_input() as pipe:
+            pipe.send_text(keys)
+            session = create_prompt_session(history_path, input=pipe, output=DummyOutput())
+            async with application:
+                await run_repl(
+                    application,
+                    console=Console(file=io.StringIO(), width=200),
+                    session=session,
+                )
+
+    asyncio.run(main())
+    return history_path
+
+
+def test_history_persists_typed_prompts_only(tmp_path: Path):
+    backend = FakeBackend([LLMResponse("Secret answer"), LLMResponse("ok"), LLMResponse("again")])
+
+    history_path = _run_with_history(tmp_path, "first\n hidden\n\x04", backend)
+    stored = history_path.read_text()
+
+    assert "+first" in stored
+    assert "hidden" not in stored
+    assert "Secret answer" not in stored
+    assert history_path.stat().st_mode & 0o777 == 0o600
+
+    # Up arrow recalls the previous session's prompt.
+    _run_with_history(tmp_path, "\x1b[A\n\x04", backend)
+    assert backend.requests[-1][-1] == Message("user", "first")
+
+
+def test_emacs_editing_keys(tmp_path: Path):
+    backend = FakeBackend([LLMResponse("ok"), LLMResponse("ok")])
+
+    # Ctrl+A/E move, Ctrl+W deletes a word, Ctrl+U/K clear around the cursor.
+    keys = "bc\x01a\x05d drop\x17\n" + "junk\x15keep\x01\x0bnew\n" + "\x04"
+    _run_with_history(tmp_path, keys, backend)
+
+    assert [request[-1].content for request in backend.requests] == ["abcd", "new"]
+
+
+def _completions(text: str) -> list[str]:
+    return [c.text for c in COMMANDS.get_completions(Document(text), CompleteEvent())]
+
+
+def test_tab_completes_slash_commands_only():
+    assert _completions("/thi") == ["/thinking on", "/thinking off"]
+    assert _completions("/thinking of") == ["/thinking off"]
+    assert _completions("/") == ["/thinking on", "/thinking off", "/exit", "/quit"]
+    assert _completions("hello") == []
