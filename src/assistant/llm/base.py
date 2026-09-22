@@ -39,4 +39,5 @@ class LLMBackend(Protocol):
         *,
         temperature: float = 0.6,
         max_tokens: int = 1024,
+        thinking: bool | None = None,
     ) -> LLMResponse: ...

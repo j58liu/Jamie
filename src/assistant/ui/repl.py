@@ -12,6 +12,7 @@ from assistant.runtime import JamieApplication, JamieApplicationError
 from assistant.ui.renderer import EventRenderer
 
 EXIT_COMMANDS = frozenset({"/quit", "/exit"})
+THINKING_MODES = {"on": True, "off": False}
 
 
 async def run_repl(
@@ -25,9 +26,14 @@ async def run_repl(
     session = session or PromptSession()
     renderer = EventRenderer(console, answer_prefix="Jamie › ")
     history: list[Message] = []
+    thinking: bool | None = None
 
     console.print(f"Jamie {__version__}", markup=False, highlight=False)
-    console.print("Ctrl+D, /quit, or /exit to leave.", markup=False, highlight=False)
+    console.print(
+        "Ctrl+D, /quit, or /exit to leave. /thinking on|off toggles reasoning.",
+        markup=False,
+        highlight=False,
+    )
 
     while True:
         try:
@@ -40,10 +46,22 @@ async def run_repl(
             continue
         if prompt in EXIT_COMMANDS:
             break
+        command, _, argument = prompt.partition(" ")
+        if command == "/thinking":
+            argument = argument.strip().lower()
+            if argument in THINKING_MODES:
+                thinking = THINKING_MODES[argument]
+            elif argument:
+                console.print("Usage: /thinking on|off", markup=False, highlight=False)
+                continue
+            state = "server default" if thinking is None else ("on" if thinking else "off")
+            console.print(f"Thinking: {state}", markup=False, highlight=False)
+            continue
         try:
             result = await application.run_turn(
                 prompt,
                 history=history,
+                thinking=thinking,
                 event_sink=renderer.handle,
             )
         except (JamieApplicationError, LLMError, MemoryStoreError, ValueError) as exc:

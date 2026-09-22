@@ -75,6 +75,22 @@ def test_chat_accepts_server_and_generation_options():
     assert backend.chat([Message("user", "Hi")], temperature=0.0, max_tokens=32).content == "Hello!"
 
 
+@pytest.mark.parametrize("thinking", [True, False])
+def test_chat_sends_thinking_toggle_only_when_set(thinking: bool):
+    payloads: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        return httpx.Response(200, json=completion())
+
+    backend = LlamaCppBackend(transport=httpx.MockTransport(handler))
+    backend.chat([Message("user", "Hi")], thinking=thinking)
+    backend.chat([Message("user", "Hi")])
+
+    assert payloads[0]["chat_template_kwargs"] == {"enable_thinking": thinking}
+    assert "chat_template_kwargs" not in payloads[1]
+
+
 @pytest.mark.parametrize("status", [301, 400, 404, 429, 500, 503])
 def test_http_errors_are_reported_without_retrying(status: int):
     requests: list[httpx.Request] = []

@@ -107,9 +107,13 @@ class JamieApplication:
         history: list[Message] | None = None,
         temperature: float = 0.6,
         max_tokens: int = 1024,
+        thinking: bool | None = None,
         event_sink: EventSink = discard_event,
     ) -> TurnResult:
-        """Run one direct-chat turn with the initialized application services."""
+        """Run one direct-chat turn with the initialized application services.
+
+        ``thinking`` is forwarded only when set, so backends without it keep working.
+        """
         if self._closed:
             raise JamieApplicationError("The Jamie application is closed.")
         if self._backend is None or self._memory is None:
@@ -128,11 +132,13 @@ class JamieApplication:
                 messages.append(Message(role="system", content=memory_context))
             messages.extend(history or [])
             messages.append(Message(role="user", content=prompt))
+            options = {} if thinking is None else {"thinking": thinking}
             response = await asyncio.to_thread(
                 self._backend.chat,
                 messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                **options,
             )
             text = answer_text(response.content)
             self._memory.add_message(session_id, "assistant", text)

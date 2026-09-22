@@ -17,10 +17,12 @@ class FakeBackend:
     def __init__(self, responses: list[LLMResponse | LLMError]) -> None:
         self._responses = iter(responses)
         self.requests: list[list[Message]] = []
+        self.thinking: list[bool | None] = []
         self.close_calls = 0
 
-    def chat(self, messages, *, temperature=0.6, max_tokens=1024):
+    def chat(self, messages, *, temperature=0.6, max_tokens=1024, thinking=None):
         self.requests.append(list(messages))
+        self.thinking.append(thinking)
         response = next(self._responses)
         if isinstance(response, LLMError):
             raise response
@@ -71,3 +73,20 @@ def test_repl_reports_turn_failure_and_continues_until_ctrl_d(tmp_path: Path):
     assert "Error: model offline" in output
     assert "Jamie › Recovered" in output
     assert backend.close_calls == 1
+
+
+def test_repl_thinking_command_toggles_reasoning_without_calling_the_model(tmp_path: Path):
+    backend = FakeBackend([LLMResponse("Default"), LLMResponse("Quick"), LLMResponse("Deep")])
+
+    output, backend = _run(
+        tmp_path,
+        "/thinking\nhi\n/thinking off\nhi\n/thinking maybe\n/thinking ON\nhi\n/quit\n",
+        backend,
+    )
+
+    assert "Thinking: server default" in output
+    assert "Thinking: off" in output
+    assert "Usage: /thinking on|off" in output
+    assert "Thinking: on" in output
+    assert backend.thinking == [None, False, True]
+    assert all(m.content != "/thinking off" for request in backend.requests for m in request)

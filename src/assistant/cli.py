@@ -117,6 +117,7 @@ async def _run_ask(
     *,
     temperature: float,
     max_tokens: int,
+    thinking: bool | None,
     event_sink: EventSink,
 ) -> TurnResult:
     async with JamieApplication(settings, backend_factory=LlamaCppBackend) as application:
@@ -124,6 +125,7 @@ async def _run_ask(
             prompt,
             temperature=temperature,
             max_tokens=max_tokens,
+            thinking=thinking,
             event_sink=event_sink,
         )
 
@@ -164,6 +166,14 @@ def ask(
     max_tokens: Annotated[
         int, typer.Option(min=1, help="Maximum number of generated tokens.")
     ] = 1024,
+    thinking: Annotated[
+        bool | None,
+        typer.Option(
+            "--thinking/--no-thinking",
+            help="Turn model reasoning on or off. Defaults to the server setting.",
+            show_default=False,
+        ),
+    ] = None,
     config: Annotated[
         Path | None,
         typer.Option("--config", help="Read a specific TOML configuration file."),
@@ -187,6 +197,7 @@ def ask(
                 prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                thinking=thinking,
                 event_sink=renderer.handle,
             )
         )

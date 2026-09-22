@@ -63,8 +63,12 @@ class LlamaCppBackend:
         *,
         temperature: float = 0.6,
         max_tokens: int = 1024,
+        thinking: bool | None = None,
     ) -> LLMResponse:
-        """POST one non-streaming request; raise LLMError on transport failures."""
+        """POST one non-streaming request; raise LLMError on transport failures.
+
+        ``thinking`` toggles the chat template's reasoning; None keeps the server default.
+        """
         if not messages:
             raise ValueError("At least one message is required.")
         if not math.isfinite(temperature) or temperature < 0:
@@ -72,21 +76,22 @@ class LlamaCppBackend:
         if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens < 1:
             raise ValueError("Max tokens must be a positive integer.")
 
+        payload = {
+            "messages": [asdict(message) for message in messages],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        if thinking is not None:
+            payload["chat_template_kwargs"] = {"enable_thinking": thinking}
+
         try:
             with httpx.Client(
                 timeout=self._timeout,
                 transport=self._transport,
                 trust_env=False,
             ) as client:
-                response = client.post(
-                    self._url,
-                    json={
-                        "messages": [asdict(message) for message in messages],
-                        "temperature": temperature,
-                        "max_tokens": max_tokens,
-                        "stream": False,
-                    },
-                )
+                response = client.post(self._url, json=payload)
                 response.raise_for_status()
         except httpx.TimeoutException as exc:
             raise LLMError(f"Request to llama.cpp timed out at {self._url}.") from exc

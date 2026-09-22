@@ -174,8 +174,8 @@ def test_ask_uses_shared_application(monkeypatch: pytest.MonkeyPatch):
             calls.append(("start",))
             return self
 
-        async def run_turn(self, prompt, *, temperature, max_tokens, event_sink):
-            calls.append(("run_turn", prompt, temperature, max_tokens))
+        async def run_turn(self, prompt, *, temperature, max_tokens, thinking, event_sink):
+            calls.append(("run_turn", prompt, temperature, max_tokens, thinking))
             event_sink(TurnStarted(prompt))
             event_sink(AssistantFinished("Shared answer"))
             return TurnResult("Shared answer")
@@ -191,7 +191,7 @@ def test_ask_uses_shared_application(monkeypatch: pytest.MonkeyPatch):
     assert calls == [
         ("init", True, cli.LlamaCppBackend),
         ("start",),
-        ("run_turn", "hello", 0.6, 1024),
+        ("run_turn", "hello", 0.6, 1024, None),
         ("close",),
     ]
 
@@ -211,7 +211,18 @@ def test_ask_accepts_options_and_explicit_config(chat_http, tmp_path: Path):
     payload = json.loads(requests[0].content)
     assert payload["temperature"] == 0.0
     assert payload["max_tokens"] == 64
+    assert "chat_template_kwargs" not in payload
     assert "\x1b[" not in result.output
+
+
+@pytest.mark.parametrize(("flag", "enabled"), [("--thinking", True), ("--no-thinking", False)])
+def test_ask_sends_thinking_toggle(chat_http, flag: str, enabled: bool):
+    requests, _ = chat_http
+
+    result = runner.invoke(cli.app, ["ask", "hello", flag])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(requests[0].content)["chat_template_kwargs"] == {"enable_thinking": enabled}
 
 
 @pytest.mark.parametrize(
