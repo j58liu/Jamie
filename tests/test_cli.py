@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from assistant import cli
 from assistant.llm.llamacpp import LlamaCppBackend
+from assistant.runtime import TurnResult
 
 runner = CliRunner()
 
@@ -134,6 +135,37 @@ def test_ask_prints_literal_answer_and_sends_prompt(chat_http):
         "max_tokens": 1024,
         "stream": False,
     }
+
+
+def test_ask_uses_shared_application(monkeypatch: pytest.MonkeyPatch):
+    calls = []
+
+    class FakeApplication:
+        def __init__(self, settings, *, backend_factory):
+            calls.append(("init", settings.color, backend_factory))
+
+        async def __aenter__(self):
+            calls.append(("start",))
+            return self
+
+        async def run_turn(self, prompt, *, temperature, max_tokens):
+            calls.append(("run_turn", prompt, temperature, max_tokens))
+            return TurnResult("Shared answer")
+
+        async def __aexit__(self, exc_type, exc_value, traceback):
+            calls.append(("close",))
+
+    monkeypatch.setattr(cli, "JamieApplication", FakeApplication)
+    result = runner.invoke(cli.app, ["ask", "hello"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "Shared answer\n"
+    assert calls == [
+        ("init", True, cli.LlamaCppBackend),
+        ("start",),
+        ("run_turn", "hello", 0.6, 1024),
+        ("close",),
+    ]
 
 
 def test_ask_accepts_options_and_explicit_config(chat_http, tmp_path: Path):

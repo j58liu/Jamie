@@ -602,6 +602,7 @@ works independently of configuration and reads the installed package version.
 - `pyproject.toml`: package metadata, dependencies, CLI entry point, and check settings.
 - `src/assistant/cli.py`: Jamie commands.
 - `src/assistant/config.py`: local Pydantic configuration loading.
+- `src/assistant/runtime/application.py`: reusable async direct-chat lifecycle.
 - `src/assistant/llm/base.py`: `Message`, `LLMResponse`, `LLMError`, and `LLMBackend`.
 - `src/assistant/llm/llamacpp.py`: llama.cpp HTTP transport.
 - `src/assistant/agent/protocol.py`: validated tool and finish action parsing.

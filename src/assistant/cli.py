@@ -1,5 +1,6 @@
 """Typer commands for Jamie."""
 
+import asyncio
 import json
 import math
 import sys
@@ -14,9 +15,9 @@ from typer.core import TyperGroup
 
 from assistant import __version__
 from assistant.agent import AgentError, run_agent
-from assistant.config import ConfigurationError, load_config
+from assistant.config import ConfigurationError, ProjectConfig, load_config
 from assistant.eval_cli import app as eval_app
-from assistant.llm.base import LLMBackend, LLMError, Message
+from assistant.llm.base import LLMError
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import (
     MemoryStore,
@@ -25,6 +26,7 @@ from assistant.memory import (
     format_memory_context,
 )
 from assistant.research import ResearchError, ResearchWorkflow
+from assistant.runtime import JamieApplication, JamieApplicationError, TurnResult
 from assistant.security import ApprovalRequest
 from assistant.tools import WebClient, create_agent_registry
 
@@ -107,6 +109,21 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
+async def _run_ask(
+    settings: ProjectConfig,
+    prompt: str,
+    *,
+    temperature: float,
+    max_tokens: int,
+) -> TurnResult:
+    async with JamieApplication(settings, backend_factory=LlamaCppBackend) as application:
+        return await application.run_turn(
+            prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+
 @app.callback()
 def main(
     version: Annotated[
@@ -140,29 +157,22 @@ def ask(
     if not math.isfinite(temperature):
         raise typer.BadParameter("Temperature must be finite.", param_hint="--temperature")
 
-    store = None
-    session_id = None
     try:
         settings = load_config(config)
-        store, session_id, memory_context = _start_memory(settings, "ask", prompt)
-        backend: LLMBackend = LlamaCppBackend()
-        messages = []
-        if memory_context is not None:
-            messages.append(Message(role="system", content=memory_context))
-        messages.append(Message(role="user", content=prompt))
-        response = backend.chat(
-            messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
+        result = asyncio.run(
+            _run_ask(
+                settings,
+                prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
         )
-        _complete_memory(store, session_id, prompt, response.content)
-    except (ConfigurationError, LLMError, MemoryStoreError) as exc:
-        _fail_memory(store, session_id)
+    except (ConfigurationError, JamieApplicationError, LLMError, MemoryStoreError) as exc:
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
 
-    Console(no_color=not settings.color).print(response.content, markup=False, highlight=False)
-    if response.finish_reason == "length":
+    Console(no_color=not settings.color).print(result.message, markup=False, highlight=False)
+    if result.finish_reason == "length":
         Console(stderr=True, no_color=not settings.color).print(
             "The response reached the token limit; use --max-tokens to allow a longer answer.",
             markup=False,
