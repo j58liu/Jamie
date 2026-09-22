@@ -1,8 +1,111 @@
-"""Render completed answers for one-shot terminal commands."""
+"""Render completed answers and turn progress for terminal commands."""
+
+import json
+from collections.abc import Callable
+from typing import Any, NamedTuple
+from urllib.parse import urlsplit
 
 from rich.console import Console
+from rich.text import Text
 
-from assistant.agent.events import AgentEvent, AssistantFinished
+from assistant.agent.events import (
+    AgentEvent,
+    AssistantDelta,
+    AssistantFinished,
+    ToolFailed,
+    ToolFinished,
+    ToolStarted,
+    TurnStarted,
+)
+
+MAX_SUBJECT_CHARACTERS = 60
+MAX_ERROR_LINES = 3
+TOKEN_LIMIT_NOTICE = "The response reached the token limit."
+
+
+def _plain(value: str) -> str:
+    return value
+
+
+def _quoted(value: str) -> str:
+    return f'"{value}"'
+
+
+def _host(value: str) -> str:
+    parts = urlsplit(value if "//" in value else f"//{value}")
+    return (parts.netloc or value).removeprefix("www.")
+
+
+class _Label(NamedTuple):
+    """How one tool names its start, its success, and the thing it acts on."""
+
+    icon: str
+    present: str
+    past: str
+    field: str | None = None
+    subject: Callable[[str], str] = _plain
+
+
+_LABELS: dict[str, _Label] = {
+    "read_file": _Label("▸", "Reading", "Read", "path"),
+    "list_directory": _Label("▸", "Listing", "Listed", "path"),
+    "find_files": _Label("◦", "Finding files matching", "Found files matching", "pattern", _quoted),
+    "search_files": _Label("◦", "Searching files for", "Searched files for", "query", _quoted),
+    "write_file": _Label("▸", "Writing", "Wrote", "path"),
+    "edit_file": _Label("▸", "Editing", "Edited", "path"),
+    "move_file": _Label("▸", "Moving", "Moved", "source"),
+    "create_directory": _Label("▸", "Creating", "Created", "path"),
+    "trash_file": _Label("▸", "Trashing", "Trashed", "path"),
+    "web_search": _Label("◦", "Searching web for", "Searched web for", "query", _quoted),
+    "fetch_url": _Label("▸", "Reading", "Read", "url", _host),
+    "extract_page": _Label("▸", "Reading", "Read", "url", _host),
+    "open_application": _Label("▸", "Opening", "Opened", "name"),
+    "reveal_in_finder": _Label("▸", "Revealing", "Revealed", "path"),
+    "clipboard_read": _Label("▸", "Reading the clipboard", "Read the clipboard"),
+    "clipboard_write": _Label("▸", "Writing the clipboard", "Wrote the clipboard"),
+    "run_shortcut": _Label("▸", "Running shortcut", "Ran shortcut", "name"),
+    "run_applescript": _Label("▸", "Running AppleScript", "Ran AppleScript"),
+}
+
+_COUNTED: dict[str, tuple[str, str]] = {
+    "read_file": ("line", "lines"),
+    "list_directory": ("entry", "entries"),
+    "find_files": ("file", "files"),
+    "search_files": ("match", "matches"),
+}
+
+
+def _label(tool: str) -> _Label:
+    return _LABELS.get(tool, _Label("▸", f"Running {tool}", f"Ran {tool}"))
+
+
+def _phrase(label: _Label, verb: str, args: dict[str, Any] | None) -> str:
+    """Name the action without exposing the protocol arguments."""
+    value = (args or {}).get(label.field) if label.field else None
+    if not isinstance(value, str | int | float) or not str(value).strip():
+        return verb
+    subject = label.subject(str(value).strip())
+    if len(subject) > MAX_SUBJECT_CHARACTERS:
+        subject = f"{subject[: MAX_SUBJECT_CHARACTERS - 1]}…"
+    return f"{verb} {subject}"
+
+
+def _counted(count: int, units: tuple[str, str]) -> str:
+    return f"{count} {units[0] if count == 1 else units[1]}"
+
+
+def _detail(tool: str, output: str) -> str | None:
+    """Summarize a successful result without printing the result itself."""
+    if tool == "web_search":
+        try:
+            results = json.loads(output)["results"]
+        except (TypeError, KeyError, ValueError):
+            return None
+        return _counted(len(results), ("result", "results"))
+    units = _COUNTED.get(tool)
+    if units is None or not output:
+        return None
+    return _counted(len(output.splitlines()), units)
 
 
 class OneShotRenderer:
@@ -24,12 +127,64 @@ class OneShotRenderer:
             )
 
 
-class ReplRenderer:
-    """Print each completed interactive answer under the Jamie prefix."""
+class EventRenderer:
+    """Show tool progress and answers; never show protocol JSON or tool output."""
 
-    def __init__(self, console: Console) -> None:
+    def __init__(
+        self,
+        console: Console,
+        errors: Console | None = None,
+        *,
+        answer_prefix: str = "",
+    ) -> None:
         self._console = console
+        self._errors = errors if errors is not None else console
+        self._prefix = answer_prefix
+        self._started: tuple[str, dict[str, Any]] | None = None
+        self._streaming = False
 
     def handle(self, event: AgentEvent) -> None:
-        if isinstance(event, AssistantFinished):
-            self._console.print(f"Jamie › {event.text}", markup=False, highlight=False)
+        match event:
+            case TurnStarted():
+                self._started = None
+                self._streaming = False
+            case ToolStarted(tool=tool, args=args):
+                self._started = (tool, args)
+                label = _label(tool)
+                self._status(label.icon, _phrase(label, label.present, args), "cyan")
+            case ToolFinished(tool=tool, result=result):
+                label = _label(tool)
+                line = _phrase(label, label.past, self._args(tool))
+                detail = _detail(tool, result.output)
+                self._status("✓", f"{line} · {detail}" if detail else line, "green")
+            case ToolFailed(tool=tool, error=error):
+                label = _label(tool)
+                self._status(
+                    "✗", f"{_phrase(label, label.present, self._args(tool))} failed", "red"
+                )
+                for detail in error.strip().splitlines()[:MAX_ERROR_LINES]:
+                    self._console.print(Text(f"    {detail.strip()}", style="red"))
+            case AssistantDelta(text=text):
+                if not self._streaming:
+                    self._console.out(self._prefix, end="", highlight=False)
+                    self._streaming = True
+                self._console.out(text, end="", highlight=False)
+            case AssistantFinished(text=text, finish_reason=finish_reason):
+                if self._streaming:
+                    self._console.out("")
+                    self._streaming = False
+                else:
+                    self._console.print(f"{self._prefix}{text}", markup=False, highlight=False)
+                if finish_reason == "length":
+                    self._errors.print(TOKEN_LIMIT_NOTICE, markup=False, highlight=False)
+
+    def _args(self, tool: str) -> dict[str, Any] | None:
+        if self._started is None or self._started[0] != tool:
+            return None
+        return self._started[1]
+
+    def _status(self, icon: str, message: str, style: str) -> None:
+        line = Text("  ")
+        line.append(f"{icon} ", style=style)
+        line.append(message, style="dim")
+        self._console.print(line)

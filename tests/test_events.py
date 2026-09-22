@@ -215,7 +215,7 @@ def test_one_shot_renderer_prints_literal_final_answer_once():
     assert errors.getvalue().count("--max-tokens") == 1
 
 
-def test_events_import_without_terminal_packages():
+def test_agent_and_runtime_import_without_terminal_packages():
     script = """
 import sys
 from importlib.abc import MetaPathFinder
@@ -227,6 +227,8 @@ class BlockTerminal(MetaPathFinder):
 
 sys.meta_path.insert(0, BlockTerminal())
 from assistant.agent.events import AgentEvent, TurnStarted
+import assistant.agent.loop
+import assistant.runtime
 assert TurnStarted("hello").prompt == "hello"
 """
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)

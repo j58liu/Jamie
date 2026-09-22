@@ -9,7 +9,7 @@ from assistant import __version__
 from assistant.llm.base import LLMError, Message
 from assistant.memory import MemoryStoreError
 from assistant.runtime import JamieApplication, JamieApplicationError
-from assistant.ui.renderer import ReplRenderer
+from assistant.ui.renderer import EventRenderer
 
 EXIT_COMMANDS = frozenset({"/quit", "/exit"})
 
@@ -23,7 +23,7 @@ async def run_repl(
     """Send prompts to the already initialized application until the user exits."""
     console = console or Console()
     session = session or PromptSession()
-    renderer = ReplRenderer(console)
+    renderer = EventRenderer(console, answer_prefix="Jamie › ")
     history: list[Message] = []
 
     console.print(f"Jamie {__version__}", markup=False, highlight=False)

@@ -30,7 +30,7 @@ from assistant.research import ResearchError, ResearchWorkflow
 from assistant.runtime import JamieApplication, JamieApplicationError, TurnResult
 from assistant.security import ApprovalRequest
 from assistant.tools import WebClient, create_agent_registry
-from assistant.ui.renderer import OneShotRenderer
+from assistant.ui.renderer import EventRenderer, OneShotRenderer
 from assistant.ui.repl import run_repl
 
 MINIMUM_PYTHON = (3, 12)
@@ -220,6 +220,7 @@ def agent(
         settings = load_config(config)
         console = Console(no_color=not settings.color)
         store, session_id, memory_context = _start_memory(settings, "agent", prompt)
+        renderer = EventRenderer(console, Console(stderr=True, no_color=not settings.color))
         with WebClient() as web:
             tools = create_agent_registry(
                 workspace,
@@ -233,14 +234,13 @@ def agent(
                 max_steps=max_steps,
                 timeout_seconds=timeout,
                 memory_context=memory_context,
+                event_sink=renderer.handle,
             )
         _complete_memory(store, session_id, prompt, answer)
     except (AgentError, ConfigurationError, LLMError, MemoryStoreError, ValueError) as exc:
         _fail_memory(store, session_id)
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
-
-    console.print(answer, markup=False, highlight=False)
 
 
 @app.command()
