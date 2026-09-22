@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from assistant.agent.events import ApprovalRequested, emit_event
 from assistant.security.policy import PermissionLevel, PolicyAction, PolicyDecision
 
 
@@ -70,6 +71,7 @@ def authorize(
         permission=decision.permission,
         arguments=arguments,
     )
+    emit_event(ApprovalRequested(request.model_copy(deep=True)))
     try:
         approved = provider.request(request)
     except Exception as exc:

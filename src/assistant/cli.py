@@ -15,6 +15,7 @@ from typer.core import TyperGroup
 
 from assistant import __version__
 from assistant.agent import AgentError, run_agent
+from assistant.agent.events import EventSink
 from assistant.config import ConfigurationError, ProjectConfig, load_config
 from assistant.eval_cli import app as eval_app
 from assistant.llm.base import LLMError
@@ -29,6 +30,7 @@ from assistant.research import ResearchError, ResearchWorkflow
 from assistant.runtime import JamieApplication, JamieApplicationError, TurnResult
 from assistant.security import ApprovalRequest
 from assistant.tools import WebClient, create_agent_registry
+from assistant.ui.renderer import OneShotRenderer
 
 MINIMUM_PYTHON = (3, 12)
 
@@ -115,12 +117,14 @@ async def _run_ask(
     *,
     temperature: float,
     max_tokens: int,
+    event_sink: EventSink,
 ) -> TurnResult:
     async with JamieApplication(settings, backend_factory=LlamaCppBackend) as application:
         return await application.run_turn(
             prompt,
             temperature=temperature,
             max_tokens=max_tokens,
+            event_sink=event_sink,
         )
 
 
@@ -159,25 +163,22 @@ def ask(
 
     try:
         settings = load_config(config)
-        result = asyncio.run(
+        renderer = OneShotRenderer(
+            Console(no_color=not settings.color),
+            Console(stderr=True, no_color=not settings.color),
+        )
+        asyncio.run(
             _run_ask(
                 settings,
                 prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                event_sink=renderer.handle,
             )
         )
     except (ConfigurationError, JamieApplicationError, LLMError, MemoryStoreError) as exc:
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
-
-    Console(no_color=not settings.color).print(result.message, markup=False, highlight=False)
-    if result.finish_reason == "length":
-        Console(stderr=True, no_color=not settings.color).print(
-            "The response reached the token limit; use --max-tokens to allow a longer answer.",
-            markup=False,
-            highlight=False,
-        )
 
 
 @app.command()

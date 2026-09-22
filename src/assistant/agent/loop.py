@@ -3,6 +3,7 @@
 import json
 import math
 from collections.abc import Callable
+from copy import deepcopy
 from functools import partial
 from queue import Empty, Queue
 from threading import Thread
@@ -11,6 +12,19 @@ from typing import Any, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict
 
+from assistant.agent.events import (
+    AgentEvent,
+    AssistantFinished,
+    EventSink,
+    ToolFailed,
+    ToolFinished,
+    ToolStarted,
+    TurnFailed,
+    TurnStarted,
+    discard_event,
+    emit_event,
+    event_scope,
+)
 from assistant.agent.protocol import (
     ACTION_PROTOCOL_INSTRUCTIONS,
     FinishAction,
@@ -18,6 +32,7 @@ from assistant.agent.protocol import (
     ToolAction,
     parse_action,
 )
+from assistant.llm.answer import answer_text
 from assistant.llm.base import LLMBackend, Message
 
 MAX_STEPS = 12
@@ -84,27 +99,39 @@ def _validate_limits(max_steps: int, max_parse_retries: int, timeout_seconds: fl
 def _call_before_deadline[Result](
     call: Callable[[], Result],
     deadline: float,
+    event_sink: EventSink = discard_event,
 ) -> Result:
     remaining = deadline - perf_counter()
     if remaining <= 0:
         raise _DeadlineExceeded
 
-    completed: Queue[tuple[bool, object]] = Queue(maxsize=1)
+    completed: Queue[tuple[bool | None, object]] = Queue()
+
+    def progress(event: AgentEvent) -> None:
+        completed.put((None, event))
 
     def invoke() -> None:
         try:
-            completed.put((True, call()))
+            with event_scope(progress):
+                completed.put((True, call()))
         except BaseException as exc:
             completed.put((False, exc))
 
     Thread(target=invoke, name="jamie-agent-call", daemon=True).start()
-    try:
-        succeeded, value = completed.get(timeout=remaining)
-    except Empty as exc:
-        raise _DeadlineExceeded from exc
-    if succeeded:
-        return cast("Result", value)
-    raise cast("BaseException", value)
+    while True:
+        remaining = deadline - perf_counter()
+        if remaining <= 0:
+            raise _DeadlineExceeded
+        try:
+            succeeded, value = completed.get(timeout=remaining)
+        except Empty as exc:
+            raise _DeadlineExceeded from exc
+        if succeeded is None:
+            event_sink(cast("AgentEvent", value))
+        elif succeeded:
+            return cast("Result", value)
+        else:
+            raise cast("BaseException", value)
 
 
 def _request_action(
@@ -211,13 +238,24 @@ def _run_loop(
                 if verification is not None:
                     messages.append(Message(role="user", content=verification))
                     continue
-                return action.message
+                return answer_text(action.message)
 
             # The wrapper stops waiting at the deadline but cannot stop this
             # thread, so check here to avoid side effects after a reported timeout.
             if perf_counter() >= deadline:
                 raise _DeadlineExceeded
-            result = tools.execute(action.tool, dict(action.args))
+            emit_event(ToolStarted(action.tool, deepcopy(action.args)))
+            started = perf_counter()
+            try:
+                result = tools.execute(action.tool, dict(action.args))
+            except Exception as exc:
+                emit_event(ToolFailed(action.tool, str(exc), perf_counter() - started))
+                raise
+            duration = perf_counter() - started
+            if result.success:
+                emit_event(ToolFinished(action.tool, result, duration))
+            else:
+                emit_event(ToolFailed(action.tool, result.output, duration))
             messages.append(tool_observation(action, result))
 
             action_key = _action_key(action)
@@ -251,6 +289,7 @@ def run_agent(
     max_parse_retries: int = MAX_PARSE_RETRIES,
     timeout_seconds: float = TIMEOUT_SECONDS,
     memory_context: str | None = None,
+    event_sink: EventSink = discard_event,
 ) -> str:
     """Run bounded model actions until the model returns a finish action."""
     if not prompt.strip():
@@ -259,26 +298,32 @@ def run_agent(
         raise ValueError("memory_context must be non-blank when provided.")
     _validate_limits(max_steps, max_parse_retries, timeout_seconds)
 
-    command_result = _optional_text(tools, "handle_command", prompt.strip())
-    if command_result is not None:
-        return command_result
-
-    deadline = perf_counter() + timeout_seconds
+    event_sink(TurnStarted(prompt))
     try:
-        return _call_before_deadline(
-            partial(
-                _run_loop,
-                llm,
-                tools,
-                prompt,
-                max_steps=max_steps,
-                max_parse_retries=max_parse_retries,
-                deadline=deadline,
-                memory_context=memory_context,
-            ),
-            deadline,
-        )
-    except _DeadlineExceeded as exc:
-        raise AgentTimeoutError(
-            f"The agent exceeded its {timeout_seconds:g}-second timeout."
-        ) from exc
+        answer = _optional_text(tools, "handle_command", prompt.strip())
+        if answer is None:
+            deadline = perf_counter() + timeout_seconds
+            try:
+                answer = _call_before_deadline(
+                    partial(
+                        _run_loop,
+                        llm,
+                        tools,
+                        prompt,
+                        max_steps=max_steps,
+                        max_parse_retries=max_parse_retries,
+                        deadline=deadline,
+                        memory_context=memory_context,
+                    ),
+                    deadline,
+                    event_sink,
+                )
+            except _DeadlineExceeded as exc:
+                raise AgentTimeoutError(
+                    f"The agent exceeded its {timeout_seconds:g}-second timeout."
+                ) from exc
+    except BaseException as exc:
+        event_sink(TurnFailed(str(exc) or type(exc).__name__))
+        raise
+    event_sink(AssistantFinished(answer))
+    return answer

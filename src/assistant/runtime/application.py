@@ -9,7 +9,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
+from assistant.agent.events import (
+    AssistantFinished,
+    EventSink,
+    TurnFailed,
+    TurnStarted,
+    discard_event,
+)
 from assistant.config import ProjectConfig
+from assistant.llm.answer import answer_text
 from assistant.llm.base import LLMBackend, LLMResponse, Message
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import MemoryStore, MemoryStoreError, format_memory_context
@@ -98,6 +106,7 @@ class JamieApplication:
         *,
         temperature: float = 0.6,
         max_tokens: int = 1024,
+        event_sink: EventSink = discard_event,
     ) -> TurnResult:
         """Run one direct-chat turn with the initialized application services."""
         if self._closed:
@@ -107,8 +116,10 @@ class JamieApplication:
         if not prompt.strip():
             raise ValueError("Prompt must not be empty.")
 
-        session_id = self._memory.start_session("ask")
+        event_sink(TurnStarted(prompt))
+        session_id = None
         try:
+            session_id = self._memory.start_session("ask")
             self._memory.add_message(session_id, "user", prompt)
             memory_context = format_memory_context(self._memory.search_memories(prompt))
             messages = []
@@ -121,13 +132,22 @@ class JamieApplication:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-            self._memory.add_message(session_id, "assistant", response.content)
-            self._memory.remember_exchange(session_id, prompt, response.content)
+            text = answer_text(response.content)
+            self._memory.add_message(session_id, "assistant", text)
+            self._memory.remember_exchange(session_id, prompt, text)
             self._memory.finish_session(session_id, success=True)
-        except BaseException:
-            self._finish_failed_session(session_id)
+        except BaseException as exc:
+            if session_id is not None:
+                self._finish_failed_session(session_id)
+            event_sink(TurnFailed(str(exc) or type(exc).__name__))
             raise
-        return TurnResult.from_response(response)
+        result = TurnResult(text, response.model, response.finish_reason, response.output_tokens)
+        event_sink(
+            AssistantFinished(
+                result.message, result.model, result.finish_reason, result.output_tokens
+            )
+        )
+        return result
 
     async def close(self) -> None:
         """Close owned resources once and reject future work."""

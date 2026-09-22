@@ -151,41 +151,59 @@ recent tool observations, and the latest user request.
 
 ## Event interface
 
-Add immutable event types in `assistant.agent.events` and pass a small event
-sink into the runtime and agent loop. A callable protocol is sufficient for the
-first implementation:
+`assistant.agent.events` defines frozen dataclasses and an `AgentEvent` union.
+Both `JamieApplication.run_turn` and `run_agent` accept an optional synchronous
+callback for each invocation:
 
 ```python
-class EventSink(Protocol):
-    def emit(self, event: AgentEvent) -> None: ...
+type EventSink = Callable[[AgentEvent], None]
+
+result = await application.run_turn("hello", event_sink=renderer.handle)
 ```
 
-The event union should cover:
+The callback receives these event types:
 
 | Event | Required data |
 | --- | --- |
-| `TurnStarted` | turn ID and user prompt |
-| `ToolStarted` | turn ID, tool name, normalized arguments, and permission level |
-| `ToolFinished` | turn ID, tool name, success, bounded output, and duration |
-| `ApprovalRequested` | turn ID and the existing `ApprovalRequest` |
-| `AssistantDelta` | turn ID and text fragment |
-| `AssistantFinished` | turn ID, complete message, model ID, finish reason, and usage when available |
-| `TurnFailed` | turn ID, stable error category, and user-facing message |
+| `TurnStarted` | user prompt |
+| `ToolStarted` | tool name and copied proposed arguments |
+| `ToolFinished` | tool name, successful `ToolResult`, and elapsed seconds |
+| `ToolFailed` | tool name, error text, and elapsed seconds |
+| `ApprovalRequested` | copy of the existing normalized `ApprovalRequest` |
+| `AssistantDelta` | user-visible answer fragment; reserved for future streaming |
+| `AssistantFinished` | complete answer; optional model, finish reason, and completion usage |
+| `TurnFailed` | error message |
 
-The default sink does nothing, preserving library use and existing tests. The
-one-shot renderer prints the final result as it does today. The REPL renderer
-uses progress events for status lines and keeps terminal output out of the agent
-and runtime.
+The default callback does nothing. Return values and raised exceptions remain
+available to library callers. `OneShotRenderer.handle` prints only the final
+answer and its token-limit notice; CLI handlers retain error rendering and exit
+codes. Each callback is scoped to one invocation. Invalid input is rejected
+before `TurnStarted`; an accepted turn ends with `AssistantFinished` or
+`TurnFailed`. Callbacks must be short, synchronous, and must not raise.
+
+The agent worker queues events alongside its result. The calling thread drains
+that queue in order, so rendering callbacks do not run in the worker. Events
+arriving after a timeout are not delivered. The async direct-chat runtime
+delivers its events on the event-loop thread. These are progress notifications,
+not acknowledgements that a UI has rendered before execution proceeds.
+
+Tool starts describe dispatch attempts, including ones later denied or rejected
+by the registry. Successful results emit `ToolFinished`; failed results and
+raised tool exceptions emit `ToolFailed`. A failed tool can be followed by
+another model action; an exception that ends the turn also emits `TurnFailed`.
 
 Approval remains synchronous and controlled by `PermissionPolicy` and
-`ApprovalProvider`. The interactive approval provider emits
-`ApprovalRequested`, prompts the user, and returns a boolean to the existing
-`authorize` function. Events report the request; they do not authorize it.
+`ApprovalProvider`. The existing `authorize` function emits `ApprovalRequested`
+before calling the provider. A context-local sink connects this nested event to
+the active agent turn without replacing the provider. Events report requests;
+only the trusted provider's boolean response determines approval.
 
-The transport does not currently stream, so the first REPL should emit
-`AssistantFinished` after a complete response. `AssistantDelta` can remain
-unused until `LLMBackend` gains an explicit streaming method. The renderer must
-not simulate token streaming by splitting completed text.
+The transport does not stream, so no `AssistantDelta` is emitted yet. Agent
+answer events contain only an accepted finish message, never action JSON,
+parse-retry text, or reasoning blocks. Direct-chat answers remove leading
+`<think>...</think>` blocks and reject incomplete reasoning-only responses.
+The transport already excludes the server's separate `reasoning_content`
+field. The same visible answer is returned and stored in direct-chat memory.
 
 ## Proposed REPL lifecycle
 
@@ -292,8 +310,8 @@ own a reusable HTTPX client so the interactive process also reuses connections.
   cancellation and then allow a delayed side effect. Model requests need a
   closable/cancellable transport, and tool cancellation can only be promised at
   safe boundaries unless each tool supports it.
-- **Event ordering:** agent work runs in a worker thread. Event delivery and
-  Rich rendering need one documented ordering rule and a thread-safe boundary.
+- **Event ordering:** callbacks run in order on the caller thread. Future
+  interactive approvals must coordinate that event delivery with terminal input.
 - **Approvals:** prompt_toolkit input and approval prompts cannot read the
   terminal concurrently. The REPL pauses normal input while the trusted
   approval provider owns the prompt.

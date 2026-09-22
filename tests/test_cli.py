@@ -9,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from assistant import cli
+from assistant.agent.events import AssistantFinished, TurnStarted
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.runtime import TurnResult
 
@@ -148,8 +149,10 @@ def test_ask_uses_shared_application(monkeypatch: pytest.MonkeyPatch):
             calls.append(("start",))
             return self
 
-        async def run_turn(self, prompt, *, temperature, max_tokens):
+        async def run_turn(self, prompt, *, temperature, max_tokens, event_sink):
             calls.append(("run_turn", prompt, temperature, max_tokens))
+            event_sink(TurnStarted(prompt))
+            event_sink(AssistantFinished("Shared answer"))
             return TurnResult("Shared answer")
 
         async def __aexit__(self, exc_type, exc_value, traceback):

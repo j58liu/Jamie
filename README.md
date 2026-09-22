@@ -607,6 +607,8 @@ works independently of configuration and reads the installed package version.
 - `src/assistant/llm/llamacpp.py`: llama.cpp HTTP transport.
 - `src/assistant/agent/protocol.py`: validated tool and finish action parsing.
 - `src/assistant/agent/loop.py`: bounded model actions and tool observations.
+- `src/assistant/agent/events.py`: typed turn, tool, approval, and answer events.
+- `src/assistant/ui/renderer.py`: one-shot answer rendering from runtime events.
 - `src/assistant/tools/`: filesystem, editing, macOS, and web tools plus the registry.
 - `src/assistant/security/`: permission policy, trusted approvals, and audit records.
 - `src/assistant/research.py`: bounded search, retrieval, cross-checking, and cited synthesis.
