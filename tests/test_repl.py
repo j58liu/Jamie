@@ -143,11 +143,40 @@ def test_emacs_editing_keys(tmp_path: Path):
 
 
 def _completions(text: str) -> list[str]:
-    return [c.text for c in COMMANDS.get_completions(Document(text), CompleteEvent())]
+    completer = COMMANDS.completer()
+    return [c.text for c in completer.get_completions(Document(text), CompleteEvent())]
 
 
-def test_tab_completes_slash_commands_only():
-    assert _completions("/thi") == ["/thinking on", "/thinking off"]
+def test_tab_completes_slash_commands_from_the_registry():
+    assert _completions("/thi") == ["/thinking", "/thinking on", "/thinking off"]
     assert _completions("/thinking of") == ["/thinking off"]
-    assert _completions("/") == ["/thinking on", "/thinking off", "/exit", "/quit"]
+    assert {c.name for c in COMMANDS} <= set(_completions("/"))
     assert _completions("hello") == []
+
+
+def test_slash_commands_stay_local_and_new_resets_the_conversation(tmp_path: Path):
+    backend = FakeBackend([LLMResponse("One", "qwen", "stop", 3), LLMResponse("Two")])
+
+    output, backend = _run(
+        tmp_path,
+        "first\n/help\n/model\n/nope\n/new\n/context\nsecond\n/stats\n/exit\n",
+        backend,
+    )
+
+    assert "/cwd [path]" in output
+    assert "Model: qwen" in output
+    assert "Unknown command /nope. Type /help for commands." in output
+    assert "Started a new conversation." in output
+    assert "Messages: 0 (0 exchanges)" in output
+    assert "Turns: 2 completed, 0 failed" in output
+    assert "Output tokens: 3" in output
+    assert backend.requests == [[Message("user", "first")], [Message("user", "second")]]
+    assert backend.close_calls == 1
+
+
+def test_paths_with_a_leading_slash_go_to_the_model(tmp_path: Path):
+    backend = FakeBackend([LLMResponse("It is a file")])
+
+    _, backend = _run(tmp_path, "/Users/me/notes.txt what is this?\n/quit\n", backend)
+
+    assert backend.requests[0][-1].content == "/Users/me/notes.txt what is this?"

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
@@ -14,14 +14,10 @@ from assistant import __version__
 from assistant.llm.base import LLMError, Message
 from assistant.memory import MemoryStoreError, default_memory_path
 from assistant.runtime import JamieApplication, JamieApplicationError
+from assistant.ui.commands import ReplState, create_command_registry
 from assistant.ui.renderer import EventRenderer
 
-EXIT_COMMANDS = frozenset({"/quit", "/exit"})
-THINKING_MODES = {"on": True, "off": False}
-# sentence=True matches the whole line, so "/" is not treated as a word break.
-COMMANDS = WordCompleter(
-    [*(f"/thinking {mode}" for mode in THINKING_MODES), *sorted(EXIT_COMMANDS)], sentence=True
-)
+COMMANDS = create_command_registry()
 
 
 def default_history_path() -> Path:
@@ -46,7 +42,7 @@ def create_prompt_session(history_path: Path | None = None, **options: Any) -> P
     """Emacs line editing with persistent history and slash-command completion."""
     return PromptSession(
         history=PromptHistory(history_path or default_history_path()),
-        completer=COMMANDS,
+        completer=COMMANDS.completer(),
         **options,
     )
 
@@ -58,50 +54,40 @@ async def run_repl(
     session: PromptSession | None = None,
 ) -> None:
     """Send prompts to the already initialized application until the user exits."""
-    console = console or Console()
+    state = ReplState(console or Console())
     session = session or create_prompt_session()
-    renderer = EventRenderer(console, answer_prefix="Jamie › ")
-    history: list[Message] = []
-    thinking: bool | None = None
+    renderer = EventRenderer(state.console, answer_prefix="Jamie › ")
 
-    console.print(f"Jamie {__version__}", markup=False, highlight=False)
-    console.print(
-        "Ctrl+D, /quit, or /exit to leave. /thinking on|off toggles reasoning.",
-        markup=False,
-        highlight=False,
-    )
+    state.say(f"Jamie {__version__}")
+    state.say("Type /help for commands. Ctrl+D or /quit to leave.")
 
-    while True:
+    while state.running:
         try:
             prompt = (await session.prompt_async("You › ")).strip()
         except KeyboardInterrupt:
             continue
         except EOFError:
             break
-        if not prompt:
+        if not prompt or COMMANDS.dispatch(state, prompt):
             continue
-        if prompt in EXIT_COMMANDS:
-            break
-        command, _, argument = prompt.partition(" ")
-        if command == "/thinking":
-            argument = argument.strip().lower()
-            if argument in THINKING_MODES:
-                thinking = THINKING_MODES[argument]
-            elif argument:
-                console.print("Usage: /thinking on|off", markup=False, highlight=False)
-                continue
-            state = "server default" if thinking is None else ("on" if thinking else "off")
-            console.print(f"Thinking: {state}", markup=False, highlight=False)
-            continue
+        started = time.monotonic()
         try:
             result = await application.run_turn(
                 prompt,
-                history=history,
-                thinking=thinking,
+                history=state.history,
+                temperature=state.temperature,
+                max_tokens=state.max_tokens,
+                thinking=state.thinking,
                 event_sink=renderer.handle,
             )
         except (JamieApplicationError, LLMError, MemoryStoreError, ValueError) as exc:
-            console.print(f"Error: {exc}", markup=False, highlight=False)
+            state.failures += 1
+            state.say(f"Error: {exc}")
             continue
+        finally:
+            state.model_seconds += time.monotonic() - started
+        state.turns += 1
+        state.output_tokens += result.output_tokens or 0
+        state.model = result.model or state.model
         # ponytail: transcript grows unbounded; trim when llama.cpp context overflows.
-        history += [Message("user", prompt), Message("assistant", result.message)]
+        state.history += [Message("user", prompt), Message("assistant", result.message)]
