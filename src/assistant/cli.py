@@ -31,6 +31,7 @@ from assistant.runtime import JamieApplication, JamieApplicationError, TurnResul
 from assistant.security import ApprovalRequest
 from assistant.tools import WebClient, create_agent_registry
 from assistant.ui.renderer import OneShotRenderer
+from assistant.ui.repl import run_repl
 
 MINIMUM_PYTHON = (3, 12)
 
@@ -50,7 +51,6 @@ app = typer.Typer(
     name="jamie",
     cls=JamieGroup,
     help="A local-first macOS assistant.",
-    no_args_is_help=True,
     add_completion=False,
 )
 app.add_typer(eval_app, name="eval")
@@ -128,8 +128,14 @@ async def _run_ask(
         )
 
 
-@app.callback()
+async def _run_repl(settings: ProjectConfig) -> None:
+    async with JamieApplication(settings, backend_factory=LlamaCppBackend) as application:
+        await run_repl(application, console=Console(no_color=not settings.color))
+
+
+@app.callback(invoke_without_command=True)
 def main(
+    ctx: typer.Context,
     version: Annotated[
         bool,
         typer.Option(
@@ -140,7 +146,15 @@ def main(
         ),
     ] = False,
 ) -> None:
-    """Run the Jamie CLI."""
+    """Run the Jamie CLI, or start the interactive session without a command."""
+    if ctx.invoked_subcommand is not None:
+        return
+    try:
+        settings = load_config(None)
+        asyncio.run(_run_repl(settings))
+    except (ConfigurationError, JamieApplicationError, LLMError, MemoryStoreError) as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command()

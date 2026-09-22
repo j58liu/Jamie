@@ -104,6 +104,7 @@ class JamieApplication:
         self,
         prompt: str,
         *,
+        history: list[Message] | None = None,
         temperature: float = 0.6,
         max_tokens: int = 1024,
         event_sink: EventSink = discard_event,
@@ -125,6 +126,7 @@ class JamieApplication:
             messages = []
             if memory_context is not None:
                 messages.append(Message(role="system", content=memory_context))
+            messages.extend(history or [])
             messages.append(Message(role="user", content=prompt))
             response = await asyncio.to_thread(
                 self._backend.chat,

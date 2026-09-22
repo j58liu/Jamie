@@ -22,3 +22,14 @@ class OneShotRenderer:
                 markup=False,
                 highlight=False,
             )
+
+
+class ReplRenderer:
+    """Print each completed interactive answer under the Jamie prefix."""
+
+    def __init__(self, console: Console) -> None:
+        self._console = console
+
+    def handle(self, event: AgentEvent) -> None:
+        if isinstance(event, AssistantFinished):
+            self._console.print(f"Jamie › {event.text}", markup=False, highlight=False)

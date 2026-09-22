@@ -43,6 +43,31 @@ def test_help_exposes_agent_ask_research_doctor_and_version():
     assert "--version" in result.output
 
 
+def test_no_arguments_starts_the_interactive_session(monkeypatch: pytest.MonkeyPatch):
+    started: list[str] = []
+
+    async def fake_repl(settings) -> None:
+        started.append("repl")
+
+    monkeypatch.setattr(cli, "_run_repl", fake_repl)
+
+    result = runner.invoke(cli.app, [])
+
+    assert result.exit_code == 0
+    assert started == ["repl"]
+
+
+def test_help_and_commands_do_not_start_the_interactive_session(monkeypatch: pytest.MonkeyPatch):
+    def fail_repl(settings):
+        raise AssertionError("REPL must not start for an explicit command.")
+
+    monkeypatch.setattr(cli, "_run_repl", fail_repl)
+
+    assert runner.invoke(cli.app, ["--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["--version"]).exit_code == 0
+    assert runner.invoke(cli.app, ["doctor"]).exit_code == 0
+
+
 def test_doctor_checks_only_python_and_configuration(tmp_path: Path):
     result = runner.invoke(cli.app, ["doctor"])
 
