@@ -38,6 +38,9 @@ class ReplState:
     started: float = field(default_factory=time.monotonic)
     running: bool = True
 
+    def estimated_tokens(self) -> int:
+        return sum(len(m.content) for m in self.history) // CHARACTERS_PER_TOKEN
+
     def say(self, text: str) -> None:
         self.console.print(text, markup=False, highlight=False)
 
@@ -130,7 +133,7 @@ def _history(state: ReplState, argument: str) -> None:
 def _context(state: ReplState, argument: str) -> None:
     characters = sum(len(m.content) for m in state.history)
     state.say(f"Messages: {len(state.history)} ({len(state.history) // 2} exchanges)")
-    state.say(f"Estimated tokens: ~{characters // CHARACTERS_PER_TOKEN} ({characters} characters)")
+    state.say(f"Estimated tokens: ~{state.estimated_tokens()} ({characters} characters)")
     state.say("Relevant memories are added to each request and are not counted here.")
 
 

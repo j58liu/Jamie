@@ -8,6 +8,7 @@ from typing import Any
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.styles import Style
 from rich.console import Console
 
 from assistant import __version__
@@ -16,8 +17,11 @@ from assistant.memory import MemoryStoreError, default_memory_path
 from assistant.runtime import JamieApplication, JamieApplicationError
 from assistant.ui.commands import ReplState, create_command_registry
 from assistant.ui.renderer import EventRenderer
+from assistant.ui.status import status_line
 
 COMMANDS = create_command_registry()
+# Plain dim text instead of prompt_toolkit's default reverse-video bar.
+TOOLBAR_STYLE = Style.from_dict({"bottom-toolbar": "noreverse #888888"})
 
 
 def default_history_path() -> Path:
@@ -63,7 +67,13 @@ async def run_repl(
 
     while state.running:
         try:
-            prompt = (await session.prompt_async("You › ")).strip()
+            prompt = (
+                await session.prompt_async(
+                    "You › ",
+                    bottom_toolbar=lambda: status_line(state),
+                    style=TOOLBAR_STYLE,
+                )
+            ).strip()
         except KeyboardInterrupt:
             continue
         except EOFError:
