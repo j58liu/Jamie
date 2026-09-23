@@ -1,4 +1,5 @@
 import io
+import shlex
 from pathlib import Path
 
 from rich.console import Console
@@ -118,3 +119,48 @@ def test_policy_decides_and_denial_blocks_execution(tmp_path: Path):
         (AuditPhase.COMPLETED, ApprovalStatus.APPROVED),
         (AuditPhase.COMPLETED, ApprovalStatus.APPROVED),
     ]
+
+
+def test_commands_show_the_exact_command_line_and_classification():
+    provider, console, _ = _provider("n", "n")
+
+    provider.request(_request("run_shortcut", PermissionLevel.SENSITIVE, name="Morning Brief"))
+    provider.request(
+        _request("run_applescript", PermissionLevel.SENSITIVE, script='say "hi"\nbeep')
+    )
+
+    output = console.file.getvalue()
+    assert "Command" in output
+    assert "shortcuts run 'Morning Brief'" in output
+    assert "osascript -e" in output and 'say "hi"' in output and "beep" in output
+    assert "Classification: sensitive" in output
+    assert "Jamie wants to" not in output
+    assert "[y] allow once  [n] deny" in output
+
+
+def test_command_line_matches_what_the_tools_run():
+    from assistant.tools.macos import RunAppleScriptTool, RunShortcutTool
+    from assistant.ui.approvals import COMMANDS
+
+    class Recorder:
+        def run(self, arguments, *, input_text=None, timeout):
+            self.arguments = arguments
+            from assistant.tools.macos import CommandResult
+
+            return CommandResult(stdout="", stderr="")
+
+    for tool_type, value in ((RunShortcutTool, "Morning Brief"), (RunAppleScriptTool, "beep")):
+        recorder = Recorder()
+        tool = tool_type(recorder)
+        field, command_line = COMMANDS[tool.name]
+        tool.execute(tool.Input(**{field: value}))
+        assert command_line(value).split("\n") in (
+            [shlex.join(recorder.arguments)],
+            [" ".join(recorder.arguments[:2]), recorder.arguments[2]],
+        )
+
+
+def test_command_panel_escapes_control_characters():
+    provider, console, _ = _provider("n")
+    provider.request(_request("run_applescript", PermissionLevel.SENSITIVE, script="a\x1b[2Kb"))
+    assert "a\\x1b[2Kb" in console.file.getvalue()

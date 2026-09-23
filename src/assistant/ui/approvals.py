@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import unicodedata
 from collections.abc import Callable
 
@@ -35,10 +36,15 @@ ACTIONS: dict[str, tuple[str, str | None]] = {
     "reveal_in_finder": ("reveal in Finder", "path"),
     "clipboard_write": ("replace the clipboard with", "text"),
     "clipboard_read": ("read the clipboard", None),
-    "run_shortcut": ("run the shortcut", "name"),
-    "run_applescript": ("run AppleScript", "script"),
     "web_search": ("search the web for", "query"),
     "fetch_url": ("fetch", "url"),
+}
+
+# tool: (argument holding the command, the command line the tool runs with it).
+# Keep in step with the argument arrays in assistant.tools.macos.
+COMMANDS: dict[str, tuple[str, Callable[[str], str]]] = {
+    "run_shortcut": ("name", lambda name: shlex.join(["shortcuts", "run", name])),
+    "run_applescript": ("script", lambda script: f"osascript -e\n{script}"),
 }
 
 # Unicode bidi controls can make a displayed path read differently from the real one.
@@ -59,19 +65,22 @@ def visible(value: object) -> str:
 
 def approval_panel(approval: ApprovalRequest) -> Panel:
     """Render every normalized argument; nothing the tool receives is hidden."""
-    verb, field = ACTIONS.get(approval.tool, (f"use {approval.tool}", None))
     arguments = dict(approval.arguments)
-    lines: list[Text] = [Text(f"Jamie wants to {verb}" + (":" if field in arguments else "."))]
-    if field in arguments:
-        lines.append(Text(visible(arguments.pop(field)), style="bold"))
+    command = COMMANDS.get(approval.tool)
+    if command is not None and isinstance(arguments.get(command[0]), str):
+        field, command_line = command
+        lines = [Text("Command"), Text(visible(command_line(arguments.pop(field))), style="bold")]
+        footer = Text(f"Classification: {approval.permission.value.lower()}")
+    else:
+        verb, field = ACTIONS.get(approval.tool, (f"use {approval.tool}", None))
+        lines = [Text(f"Jamie wants to {verb}" + (":" if field in arguments else "."))]
+        if field in arguments:
+            lines.append(Text(visible(arguments.pop(field)), style="bold"))
+        risk = RISKS.get(approval.permission, approval.permission.value.lower())
+        footer = Text(f"Risk: {approval.permission.value} — {risk}")
     for name, value in arguments.items():
         lines.append(Text(f"{name}: ", style="dim").append(visible(value), style=""))
-    risk = RISKS.get(approval.permission, approval.permission.value.lower())
-    lines += [
-        Text(""),
-        Text(f"Tool: {approval.tool}", style="dim"),
-        Text(f"Risk: {approval.permission.value} — {risk}"),
-    ]
+    lines += [Text(""), Text(f"Tool: {approval.tool}", style="dim"), footer]
     return Panel(
         Group(*lines),
         title="Approval required",
