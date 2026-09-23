@@ -12,7 +12,7 @@ from rich.console import Console
 
 from assistant.cancellation import CancellationToken, TurnCancelled
 from assistant.config import ProjectConfig
-from assistant.llm.base import LLMError, LLMResponse, Message
+from assistant.llm.base import ContextUsage, LLMError, LLMResponse, Message
 from assistant.memory import MemoryStore
 from assistant.runtime import JamieApplication
 from assistant.ui.commands import ago
@@ -212,11 +212,13 @@ def test_resume_reports_bad_ids_and_missing_directories(
     monkeypatch.chdir(tmp_path)
     os.rmdir(gone)
 
-    output = _repl(tmp_path, "/resume\n/resume 9\n/resume nope\n/resume 1\n/quit\n", Backend([]))
+    keys = "/resume\n/resume 9\n/resume nope\n/resume abc\n/resume 1\n/quit\n"
+    output = _repl(tmp_path, keys, Backend([]))
 
     assert "Usage: /resume <number|id>" in output
     assert "No conversation matches 9." in output
     assert "No conversation matches nope." in output
+    assert "No conversation matches abc." in output  # too short to be an id prefix
     assert "Resumed: hello (1 exchanges)" in output
     assert f"Saved directory is unavailable; staying in {tmp_path}" in output
 
@@ -237,3 +239,16 @@ def test_relative_times():
     assert at(timedelta(hours=1, minutes=5)) == "1h ago"
     assert at(timedelta(hours=30)) == "yesterday"
     assert at(timedelta(days=5)) == "5d ago"
+
+
+class MeasuringBackend(Backend):
+    def context_usage(self, messages):
+        return ContextUsage(100 * len(messages), 8_192)
+
+
+def test_status_bar_context_is_remeasured_after_each_turn(tmp_path: Path):
+    backend = MeasuringBackend([LLMResponse("one"), LLMResponse("two")])
+    output = _repl(tmp_path, "first\nsecond\n/context\n/quit\n", backend)
+
+    assert "Used:         400 tokens" in output
+    assert "Maximum:    8,192 tokens" in output

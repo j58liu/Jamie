@@ -20,7 +20,7 @@ from assistant.cancellation import CancellationToken, TurnCancelled
 from assistant.llm.base import LLMError, Message
 from assistant.memory import MemoryStoreError, default_memory_path
 from assistant.runtime import JamieApplication, JamieApplicationError
-from assistant.ui.commands import ReplState, create_command_registry
+from assistant.ui.commands import ReplState, create_command_registry, refresh_context
 from assistant.ui.renderer import EventRenderer
 from assistant.ui.status import status_line
 
@@ -133,5 +133,6 @@ async def run_repl(
         state.turns += 1
         state.output_tokens += result.output_tokens or 0
         state.model = result.model or state.model
-        # ponytail: transcript grows unbounded; trim when llama.cpp context overflows.
+        # ponytail: transcript grows unbounded; compaction is a separate task needing evals.
         state.history += [Message("user", prompt), Message("assistant", result.message)]
+        refresh_context(state)  # a failure falls back to the estimate in the status bar

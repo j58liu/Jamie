@@ -10,9 +10,10 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from assistant.cancellation import CancellationToken, TurnCancelled, current_token
-from assistant.llm.base import LLMError, LLMResponse, Message
+from assistant.llm.base import ContextUsage, LLMError, LLMResponse, Message
 
 CANCEL_POLL_SECONDS = 0.1
+CONTEXT_TIMEOUT_SECONDS = 2.0
 
 
 class _ResponseMessage(BaseModel):
@@ -58,6 +59,22 @@ class _Chunk(BaseModel):
     usage: _Usage | None = None
 
 
+class _Settings(BaseModel):
+    n_ctx: int = Field(ge=1)
+
+
+class _Props(BaseModel):
+    default_generation_settings: _Settings
+
+
+class _Template(BaseModel):
+    prompt: str
+
+
+class _Tokens(BaseModel):
+    tokens: list[int]
+
+
 class LlamaCppBackend:
     """Send text chats to a running llama.cpp server's loaded model."""
 
@@ -68,7 +85,8 @@ class LlamaCppBackend:
         timeout: float = 600.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
-        self._url = f"{base_url.rstrip('/')}/v1/chat/completions"
+        self._base_url = base_url.rstrip("/")
+        self._url = f"{self._base_url}/v1/chat/completions"
         self._timeout = httpx.Timeout(timeout, connect=5.0)
         self._transport = transport
 
@@ -133,6 +151,35 @@ class LlamaCppBackend:
                 response=result,
             )
         return result
+
+    def context_usage(self, messages: list[Message]) -> ContextUsage:
+        """Count ``messages`` exactly as the chat template renders them."""
+        options = {**self._client_options(), "timeout": CONTEXT_TIMEOUT_SECONDS}
+        try:
+            with httpx.Client(**options) as client:
+                props = client.get(f"{self._base_url}/props")
+                props.raise_for_status()
+                maximum = _Props.model_validate_json(props.content)
+                used = 0
+                if messages:
+                    template = client.post(
+                        f"{self._base_url}/apply-template",
+                        json={"messages": [asdict(message) for message in messages]},
+                    )
+                    template.raise_for_status()
+                    tokens = client.post(
+                        f"{self._base_url}/tokenize",
+                        json={
+                            "content": _Template.model_validate_json(template.content).prompt,
+                            "add_special": True,
+                            "parse_special": True,
+                        },
+                    )
+                    tokens.raise_for_status()
+                    used = len(_Tokens.model_validate_json(tokens.content).tokens)
+        except (httpx.HTTPError, ValidationError) as exc:
+            raise LLMError("llama.cpp did not report context usage.") from exc
+        return ContextUsage(used, maximum.default_generation_settings.n_ctx)
 
     def _client_options(self) -> dict:
         return {"timeout": self._timeout, "transport": self._transport, "trust_env": False}

@@ -314,10 +314,11 @@ own a reusable HTTPX client so the interactive process also reuses connections.
 - **`ask` compatibility:** direct chat currently accepts temperature and token
   options and prints literal model text. Moving it to the runtime must preserve
   its request payload, errors, exit codes, and token-limit notice.
-- **Conversation growth:** retaining tool transcripts across turns can exceed
-  llama.cpp's configured context. The current API does not report prompt token
-  counts or server context capacity, so the status line cannot claim exact
-  context use until those values are available.
+- **Conversation growth:** retaining transcripts across turns can exceed
+  llama.cpp's configured context. `/context` and the status bar report the
+  history's exact size (llama.cpp `/apply-template` and `/tokenize`) against
+  the server's `n_ctx`, re-measured after each turn. There is no compaction;
+  it needs its own task with evaluation coverage.
 - **Memory duplication:** active-session messages and FTS5 recall can contain
   the same exchange. Retrieval needs an active-session exclusion or a clear
   deduplication rule.

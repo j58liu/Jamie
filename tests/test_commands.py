@@ -70,7 +70,9 @@ def test_context_describes_the_current_conversation():
     output = _run(state, "/context")
 
     assert "Messages: 2 (1 exchanges)" in output
-    assert "Estimated tokens: ~20 (80 characters)" in output
+    assert "Used:      ~20 tokens (estimated)" in output
+    assert "Maximum:    unknown" in output
+    assert "Compaction: none." in output
 
 
 def test_cwd_shows_changes_and_validates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

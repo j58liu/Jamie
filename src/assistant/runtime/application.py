@@ -19,7 +19,7 @@ from assistant.agent.events import (
 from assistant.cancellation import CancellationToken, cancellation_scope
 from assistant.config import ProjectConfig
 from assistant.llm.answer import answer_text
-from assistant.llm.base import LLMBackend, LLMResponse, Message
+from assistant.llm.base import ContextUsage, LLMBackend, LLMResponse, Message
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import (
     ConversationSummary,
@@ -189,6 +189,11 @@ class JamieApplication:
 
     def conversation_messages(self, conversation_id: str) -> list[Message]:
         return self._require_memory().conversation_messages(conversation_id)
+
+    def context_usage(self, history: list[Message]) -> ContextUsage | None:
+        """Measure the history on the server; None when the backend cannot."""
+        measure = getattr(self._backend, "context_usage", None)
+        return measure(history) if measure is not None else None
 
     def _require_memory(self) -> MemoryStore:
         if self._closed:

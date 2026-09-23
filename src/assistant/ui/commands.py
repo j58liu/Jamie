@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
 
-from assistant.llm.base import Message
+from assistant.llm.base import ContextUsage, LLMError, Message
 from assistant.memory import ConversationSummary
 from assistant.security.policy import PermissionLevel, PermissionPolicy, PolicyAction
 from assistant.tools.registry import create_agent_registry
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 # ponytail: rough English average; use llama.cpp /tokenize if exact counts matter.
 CHARACTERS_PER_TOKEN = 4
 THINKING_MODES = {"on": True, "off": False}
+CONTEXT_WARNING_PERCENT = 80
 
 
 @dataclass
@@ -36,6 +37,7 @@ class ReplState:
     conversation_id: str | None = None  # created with the first saved exchange
     listed: list[ConversationSummary] = field(default_factory=list)  # last /history
     history: list[Message] = field(default_factory=list)
+    context: ContextUsage | None = None  # last exact measurement of ``history``
     thinking: bool | None = None
     temperature: float = 0.6
     max_tokens: int = 1024
@@ -55,6 +57,18 @@ class ReplState:
 
 
 CommandHandler = Callable[[ReplState, str], None]
+
+
+def refresh_context(state: ReplState) -> str | None:
+    """Re-measure after the history changes; returns the error text, if any."""
+    state.context = None
+    if state.application is None:
+        return None
+    try:
+        state.context = state.application.context_usage(state.history)
+    except LLMError as exc:
+        return str(exc)
+    return None
 
 
 @dataclass(frozen=True)
@@ -125,6 +139,7 @@ def _quit(state: ReplState, argument: str) -> None:
 def _new(state: ReplState, argument: str) -> None:
     state.history.clear()
     state.conversation_id = None
+    refresh_context(state)
     state.say("Started a new conversation.")
 
 
@@ -168,11 +183,17 @@ def _history(state: ReplState, argument: str) -> None:
     state.say("Resume one with /resume <number> or /resume <id>.")
 
 
+MIN_ID_PREFIX = 4
+
+
 def _resolve(state: ReplState, argument: str) -> ConversationSummary | None:
-    if argument.isdigit() and len(argument) <= 3:
+    """Short numbers are list positions only; ids need a few characters to be unambiguous."""
+    if argument.isdigit() and len(argument) < MIN_ID_PREFIX:
         listed = state.listed or state.application.recent_conversations()
-        if 1 <= int(argument) <= len(listed):
-            return listed[int(argument) - 1]
+        number = int(argument)
+        return listed[number - 1] if 1 <= number <= len(listed) else None
+    if len(argument) < MIN_ID_PREFIX:
+        return None
     return state.application.find_conversation(argument.lower())
 
 
@@ -189,6 +210,7 @@ def _resume(state: ReplState, argument: str) -> None:
         return
     state.history = state.application.conversation_messages(conversation.id)
     state.conversation_id = conversation.id
+    refresh_context(state)
     exchanges = len(state.history) // 2
     state.say(f"Resumed: {_title(conversation.title)} ({exchanges} exchanges)")
     directory = Path(conversation.working_directory)
@@ -200,10 +222,25 @@ def _resume(state: ReplState, argument: str) -> None:
 
 
 def _context(state: ReplState, argument: str) -> None:
-    characters = sum(len(m.content) for m in state.history)
+    error = refresh_context(state)
+    usage = state.context
+    state.say("Context")
+    state.say("")
+    if usage is None:
+        state.say(f"Used:      ~{state.estimated_tokens():,} tokens (estimated)")
+        state.say("Maximum:    unknown" + (f" ({error})" if error else ""))
+    else:
+        width = len(f"{usage.maximum:,}")
+        state.say(f"Used:       {usage.used:>{width},} tokens")
+        state.say(f"Maximum:    {usage.maximum:>{width},} tokens")
+        state.say(f"Available:  {usage.available:>{width},} tokens")
+        state.say(f"Usage:      {f'{usage.percent}%':>{width}}")
+    state.say("")
     state.say(f"Messages: {len(state.history)} ({len(state.history) // 2} exchanges)")
-    state.say(f"Estimated tokens: ~{state.estimated_tokens()} ({characters} characters)")
-    state.say("Relevant memories are added to each request and are not counted here.")
+    state.say("Each request also adds the new prompt and any recalled memories.")
+    state.say("Compaction: none. A conversation that outgrows the context fails; use /new.")
+    if usage is not None and usage.percent >= CONTEXT_WARNING_PERCENT:
+        state.say(f"Warning: {usage.percent}% of the context is used.")
 
 
 def _thinking_label(thinking: bool | None) -> str:

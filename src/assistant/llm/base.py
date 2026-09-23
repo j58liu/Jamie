@@ -22,6 +22,22 @@ class LLMResponse:
     output_tokens: int | None = None
 
 
+@dataclass(frozen=True)
+class ContextUsage:
+    """Tokens the conversation occupies in the server's context window."""
+
+    used: int
+    maximum: int
+
+    @property
+    def available(self) -> int:
+        return max(self.maximum - self.used, 0)
+
+    @property
+    def percent(self) -> int:
+        return round(100 * self.used / self.maximum)
+
+
 class LLMError(RuntimeError):
     """A backend request failed or returned an invalid response."""
 

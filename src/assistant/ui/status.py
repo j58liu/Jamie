@@ -32,7 +32,9 @@ def _short_model(model: str) -> str:
 
 
 def _count(tokens: int) -> str:
-    return str(tokens) if tokens < 1000 else f"{tokens / 1000:.1f}k"
+    if tokens < 1000:
+        return str(tokens)
+    return f"{tokens / 1000:.1f}k" if tokens < 10_000 else f"{tokens // 1000}k"
 
 
 def _home(path: Path) -> str:
@@ -48,7 +50,11 @@ def status_line(state: ReplState) -> str:
     try:
         if state.model:
             fields.append(_short_model(state.model))
-        fields.append(f"ctx ~{_count(state.estimated_tokens())}")
+        usage = state.context
+        if usage is None:
+            fields.append(f"ctx ~{_count(state.estimated_tokens())}")
+        else:
+            fields.append(f"ctx {_count(usage.used)}/{_count(usage.maximum)}")
         if state.thinking is not None:
             fields.append(f"thinking {'on' if state.thinking else 'off'}")
         cwd = Path.cwd()
