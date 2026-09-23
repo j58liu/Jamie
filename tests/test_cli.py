@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from assistant import cli
 from assistant.agent.events import AssistantFinished, TurnStarted
+from assistant.llm.base import LLMResponse, ServerInfo
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.runtime import TurnResult
 
@@ -68,6 +69,43 @@ def test_help_and_commands_do_not_start_the_interactive_session(
     assert runner.invoke(cli.app, ["--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["--version"]).exit_code == 0
     assert runner.invoke(cli.app, ["doctor"]).exit_code == 0
+    answer = {"choices": [{"message": {"role": "assistant", "content": "Hi"}}]}
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=answer))
+    monkeypatch.setattr(cli, "LlamaCppBackend", lambda: LlamaCppBackend(transport=transport))
+    ask = runner.invoke(cli.app, ["ask", "hello"])
+    assert ask.exit_code == 0 and ask.stdout == "Hi\n"
+
+
+def test_interactive_session_builds_one_backend_and_one_runtime(monkeypatch: pytest.MonkeyPatch):
+    backends, sessions = [], []
+
+    class Backend:
+        def __init__(self):
+            backends.append(self)
+            self.requests = 0
+
+        server_url = "http://127.0.0.1:8080"
+
+        def server_info(self):
+            return ServerInfo("qwen", None, 8192)
+
+        def chat(self, messages, *, temperature=0.6, max_tokens=1024, thinking=None):
+            self.requests += 1
+            return LLMResponse(f"answer {self.requests}")
+
+    async def fake_run_repl(application, *, console, model):
+        sessions.append((application, model))
+        for prompt in ("one", "two", "three"):
+            await application.run_turn(prompt)
+
+    monkeypatch.setattr(cli, "LlamaCppBackend", Backend)
+    monkeypatch.setattr(cli, "run_repl", fake_run_repl)
+
+    result = runner.invoke(cli.app, [])
+
+    assert result.exit_code == 0, result.output
+    assert len(backends) == 1 and backends[0].requests == 3
+    assert len(sessions) == 1 and sessions[0][1] == "qwen"
 
 
 PROPS = {

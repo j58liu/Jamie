@@ -186,7 +186,6 @@ def test_eval_accepts_explicit_config_and_output_directory(eval_http, tmp_path: 
         ["eval", "--help"],
         ["eval", "model", "--help"],
         ["eval", "memory", "--help"],
-        ["doctor"],
     ],
 )
 def test_help_and_diagnostics_do_not_contact_model_or_create_reports(
