@@ -63,15 +63,14 @@ def test_new_clears_conversation_but_keeps_settings():
     assert state.thinking is False
 
 
-def test_context_and_history_describe_the_current_conversation():
+def test_context_describes_the_current_conversation():
     state = _state()
     state.history = [Message("user", "a" * 40), Message("assistant", "b" * 40)]
 
-    output = _run(state, "/context") + _run(state, "/history")
+    output = _run(state, "/context")
 
     assert "Messages: 2 (1 exchanges)" in output
     assert "Estimated tokens: ~20 (80 characters)" in output
-    assert f"1. {'a' * 40}" in output
 
 
 def test_cwd_shows_changes_and_validates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

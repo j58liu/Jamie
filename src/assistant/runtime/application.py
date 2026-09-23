@@ -21,7 +21,12 @@ from assistant.config import ProjectConfig
 from assistant.llm.answer import answer_text
 from assistant.llm.base import LLMBackend, LLMResponse, Message
 from assistant.llm.llamacpp import LlamaCppBackend
-from assistant.memory import MemoryStore, MemoryStoreError, format_memory_context
+from assistant.memory import (
+    ConversationSummary,
+    MemoryStore,
+    MemoryStoreError,
+    format_memory_context,
+)
 
 BackendFactory = Callable[[], LLMBackend]
 MemoryStoreFactory = Callable[[Path], MemoryStore]
@@ -110,17 +115,19 @@ class JamieApplication:
         max_tokens: int = 1024,
         thinking: bool | None = None,
         cancel: CancellationToken | None = None,
+        conversation_id: str | None = None,
         event_sink: EventSink = discard_event,
     ) -> TurnResult:
         """Run one direct-chat turn with the initialized application services.
 
         ``thinking`` is forwarded only when set, so backends without it keep working.
         A cancelled turn raises TurnCancelled once the model request has stopped, and
-        its answer is never stored.
+        its answer is never stored. With ``conversation_id`` the exchange is appended
+        to that resumable conversation only after it succeeds; otherwise each turn is
+        its own session, as for ``jamie ask``.
         """
-        if self._closed:
-            raise JamieApplicationError("The Jamie application is closed.")
-        if self._backend is None or self._memory is None:
+        memory = self._require_memory()
+        if self._backend is None:
             raise JamieApplicationError("Start the Jamie application before running a turn.")
         if not prompt.strip():
             raise ValueError("Prompt must not be empty.")
@@ -128,9 +135,12 @@ class JamieApplication:
         event_sink(TurnStarted(prompt))
         session_id = None
         try:
-            session_id = self._memory.start_session("ask")
-            self._memory.add_message(session_id, "user", prompt)
-            memory_context = format_memory_context(self._memory.search_memories(prompt))
+            if conversation_id is None:
+                session_id = memory.start_session("ask")
+                memory.add_message(session_id, "user", prompt)
+            # The conversation's own exchanges are already in the history.
+            recalled = memory.search_memories(prompt, exclude_session=conversation_id)
+            memory_context = format_memory_context(recalled)
             messages = []
             if memory_context is not None:
                 messages.append(Message(role="system", content=memory_context))
@@ -148,9 +158,13 @@ class JamieApplication:
             if cancel is not None:
                 cancel.raise_if_cancelled()
             text = answer_text(response.content)
-            self._memory.add_message(session_id, "assistant", text)
-            self._memory.remember_exchange(session_id, prompt, text)
-            self._memory.finish_session(session_id, success=True)
+            if conversation_id is None:
+                memory.add_message(session_id, "assistant", text)
+                memory.remember_exchange(session_id, prompt, text)
+                memory.finish_session(session_id, success=True)
+            else:
+                memory.save_exchange(conversation_id, prompt, text, str(Path.cwd()))
+                memory.remember_exchange(conversation_id, prompt, text)
         except BaseException as exc:
             if session_id is not None:
                 self._finish_failed_session(session_id)
@@ -163,6 +177,25 @@ class JamieApplication:
             )
         )
         return result
+
+    def start_conversation(self) -> str:
+        return self._require_memory().start_conversation(str(Path.cwd()))
+
+    def recent_conversations(self, limit: int = 10) -> list[ConversationSummary]:
+        return self._require_memory().recent_conversations(limit=limit)
+
+    def find_conversation(self, id_prefix: str) -> ConversationSummary | None:
+        return self._require_memory().find_conversation(id_prefix)
+
+    def conversation_messages(self, conversation_id: str) -> list[Message]:
+        return self._require_memory().conversation_messages(conversation_id)
+
+    def _require_memory(self) -> MemoryStore:
+        if self._closed:
+            raise JamieApplicationError("The Jamie application is closed.")
+        if self._memory is None:
+            raise JamieApplicationError("Start the Jamie application before running a turn.")
+        return self._memory
 
     async def close(self) -> None:
         """Close owned resources once and reject future work."""

@@ -6,15 +6,21 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
 
 from assistant.llm.base import Message
+from assistant.memory import ConversationSummary
 from assistant.security.policy import PermissionLevel, PermissionPolicy, PolicyAction
 from assistant.tools.registry import create_agent_registry
 from assistant.tools.web import WebClient
+
+if TYPE_CHECKING:
+    from assistant.runtime import JamieApplication
 
 # ponytail: rough English average; use llama.cpp /tokenize if exact counts matter.
 CHARACTERS_PER_TOKEN = 4
@@ -26,6 +32,9 @@ class ReplState:
     """Session-scoped interactive state; the application and model stay loaded."""
 
     console: Console
+    application: JamieApplication | None = None
+    conversation_id: str | None = None  # created with the first saved exchange
+    listed: list[ConversationSummary] = field(default_factory=list)  # last /history
     history: list[Message] = field(default_factory=list)
     thinking: bool | None = None
     temperature: float = 0.6
@@ -115,6 +124,7 @@ def _quit(state: ReplState, argument: str) -> None:
 
 def _new(state: ReplState, argument: str) -> None:
     state.history.clear()
+    state.conversation_id = None
     state.say("Started a new conversation.")
 
 
@@ -122,12 +132,71 @@ def _clear(state: ReplState, argument: str) -> None:
     state.console.clear()
 
 
+def ago(timestamp: str, now: datetime | None = None) -> str:
+    seconds = ((now or datetime.now(UTC)) - datetime.fromisoformat(timestamp)).total_seconds()
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m ago"
+    if seconds < 86_400:
+        return f"{int(seconds // 3600)}h ago"
+    if seconds < 2 * 86_400:
+        return "yesterday"
+    return f"{int(seconds // 86_400)}d ago"
+
+
+def _title(text: str, limit: int = 50) -> str:
+    line = " ".join(text.split())
+    return line if len(line) <= limit else f"{line[: limit - 1]}…"
+
+
 def _history(state: ReplState, argument: str) -> None:
-    prompts = [m.content for m in state.history if m.role == "user"]
-    if not prompts:
-        state.say("No prompts in this conversation yet.")
-    for number, prompt in enumerate(prompts, start=1):
-        state.say(f"  {number}. {prompt}")
+    if state.application is None:
+        state.say("Conversation history is not available.")
+        return
+    state.listed = state.application.recent_conversations()
+    if not state.listed:
+        state.say("No saved conversations yet.")
+        return
+    state.say("Recent conversations")
+    for number, conversation in enumerate(state.listed, start=1):
+        marker = "*" if conversation.id == state.conversation_id else " "
+        state.say(
+            f" {marker}{number:>2}  {ago(conversation.updated_at):<10} "
+            f"{_title(conversation.title)}  [{conversation.id[:8]}]"
+        )
+    state.say("Resume one with /resume <number> or /resume <id>.")
+
+
+def _resolve(state: ReplState, argument: str) -> ConversationSummary | None:
+    if argument.isdigit() and len(argument) <= 3:
+        listed = state.listed or state.application.recent_conversations()
+        if 1 <= int(argument) <= len(listed):
+            return listed[int(argument) - 1]
+    return state.application.find_conversation(argument.lower())
+
+
+def _resume(state: ReplState, argument: str) -> None:
+    if state.application is None:
+        state.say("Conversation history is not available.")
+        return
+    if not argument:
+        state.say("Usage: /resume <number|id>. Type /history to list conversations.")
+        return
+    conversation = _resolve(state, argument)
+    if conversation is None:
+        state.say(f"No conversation matches {argument}. Type /history to list conversations.")
+        return
+    state.history = state.application.conversation_messages(conversation.id)
+    state.conversation_id = conversation.id
+    exchanges = len(state.history) // 2
+    state.say(f"Resumed: {_title(conversation.title)} ({exchanges} exchanges)")
+    directory = Path(conversation.working_directory)
+    if directory.is_dir() and os.access(directory, os.R_OK | os.X_OK):
+        os.chdir(directory)
+        state.say(f"Working directory: {directory}")
+    else:
+        state.say(f"Saved directory is unavailable; staying in {Path.cwd()}")
 
 
 def _context(state: ReplState, argument: str) -> None:
@@ -213,7 +282,10 @@ def create_command_registry() -> CommandRegistry:
         SlashCommand("/help", "Show commands.", _help(registry)),
         SlashCommand("/new", "Start a new conversation; the model stays loaded.", _new),
         SlashCommand("/clear", "Clear the screen; the conversation is kept.", _clear),
-        SlashCommand("/history", "List prompts in this conversation.", _history),
+        SlashCommand("/history", "List recent saved conversations.", _history),
+        SlashCommand(
+            "/resume", "Continue a saved conversation; the model stays loaded.", _resume, "<n|id>"
+        ),
         SlashCommand("/context", "Show the size of this conversation.", _context),
         SlashCommand("/model", "Show the model and generation settings.", _model),
         SlashCommand(

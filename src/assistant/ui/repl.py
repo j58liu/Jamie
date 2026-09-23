@@ -83,7 +83,7 @@ async def run_repl(
     session: PromptSession | None = None,
 ) -> None:
     """Send prompts to the already initialized application until the user exits."""
-    state = ReplState(console or Console())
+    state = ReplState(console or Console(), application=application)
     session = session or create_prompt_session()
     renderer = EventRenderer(state.console, answer_prefix="Jamie › ")
 
@@ -108,6 +108,8 @@ async def run_repl(
         started = time.monotonic()
         token = CancellationToken()
         try:
+            if state.conversation_id is None:
+                state.conversation_id = application.start_conversation()
             with interrupt_cancels(token):
                 result = await application.run_turn(
                     prompt,
@@ -116,6 +118,7 @@ async def run_repl(
                     max_tokens=state.max_tokens,
                     thinking=state.thinking,
                     cancel=token,
+                    conversation_id=state.conversation_id,
                     event_sink=renderer.handle,
                 )
         except TurnCancelled:

@@ -13,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 from assistant.agent.loop import ToolResult
+from assistant.llm.base import Message
 from assistant.security.audit import redact_arguments
 
 SCHEMA_VERSION = 1
@@ -80,6 +81,10 @@ CREATE TABLE IF NOT EXISTS messages (
     UNIQUE(session_id, sequence)
 );
 
+CREATE TABLE IF NOT EXISTS conversations (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+    working_directory TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS tool_calls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -197,6 +202,16 @@ def _fts_query(query: str) -> str | None:
     return " OR ".join(f'"{token}"' for token in tokens[:16])
 
 
+@dataclass(frozen=True)
+class ConversationSummary:
+    id: str
+    title: str
+    working_directory: str
+    created_at: str
+    updated_at: str
+    messages: int
+
+
 class MemoryStore:
     """Use short SQLite transactions so the store is safe across agent threads."""
 
@@ -282,6 +297,107 @@ class MemoryStore:
             raise MemoryStoreError("Cannot save conversation message.") from exc
         return int(cursor.lastrowid)
 
+    def start_conversation(self, working_directory: str) -> str:
+        """Start an interactive conversation that can be resumed later."""
+        session_id = uuid4().hex
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    "INSERT INTO sessions(id, kind, status, started_at) "
+                    "VALUES (?, 'chat', 'running', ?)",
+                    (session_id, _now()),
+                )
+                connection.execute(
+                    "INSERT INTO conversations(session_id, working_directory) VALUES (?, ?)",
+                    (session_id, working_directory),
+                )
+        except sqlite3.Error as exc:
+            raise MemoryStoreError("Cannot start conversation.") from exc
+        return session_id
+
+    def save_exchange(
+        self, session_id: str, user: str, assistant: str, working_directory: str
+    ) -> None:
+        """Store one completed exchange atomically, so a resume never sees half of it."""
+        try:
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT COALESCE(MAX(sequence), 0) AS sequence "
+                    "FROM messages WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()
+                now = _now()
+                for offset, (role, content) in enumerate(
+                    (("user", user), ("assistant", assistant)), start=1
+                ):
+                    connection.execute(
+                        "INSERT INTO messages(session_id, sequence, role, content, created_at) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (session_id, int(row["sequence"]) + offset, role, content, now),
+                    )
+                cursor = connection.execute(
+                    "UPDATE conversations SET working_directory = ? WHERE session_id = ?",
+                    (working_directory, session_id),
+                )
+                if cursor.rowcount != 1:
+                    raise MemoryStoreError("Conversation does not exist.")
+        except sqlite3.Error as exc:
+            raise MemoryStoreError("Cannot save conversation exchange.") from exc
+
+    def recent_conversations(self, *, limit: int = 10) -> list[ConversationSummary]:
+        """Conversations with at least one exchange, most recently active first."""
+        return self._conversations("", (), limit)
+
+    def find_conversation(self, id_prefix: str) -> ConversationSummary | None:
+        """Match a full or unique partial id; None when missing or ambiguous."""
+        if not re.fullmatch(r"[0-9a-f]{1,32}", id_prefix):
+            return None
+        matches = self._conversations("AND s.id LIKE ?", (f"{id_prefix}%",), 2)
+        return matches[0] if len(matches) == 1 else None
+
+    def _conversations(
+        self, condition: str, parameters: tuple, limit: int
+    ) -> list[ConversationSummary]:
+        try:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    "SELECT s.id, s.started_at, c.working_directory, "
+                    "MAX(m.created_at) AS updated_at, COUNT(m.id) AS messages, "
+                    "(SELECT content FROM messages WHERE session_id = s.id AND role = 'user' "
+                    "ORDER BY sequence LIMIT 1) AS title "
+                    "FROM sessions AS s "
+                    "JOIN conversations AS c ON c.session_id = s.id "
+                    "JOIN messages AS m ON m.session_id = s.id "
+                    f"WHERE s.kind = 'chat' {condition} "
+                    "GROUP BY s.id ORDER BY updated_at DESC, s.started_at DESC LIMIT ?",
+                    (*parameters, limit),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise MemoryStoreError("Cannot list conversations.") from exc
+        return [
+            ConversationSummary(
+                id=str(row["id"]),
+                title=str(row["title"] or ""),
+                working_directory=str(row["working_directory"]),
+                created_at=str(row["started_at"]),
+                updated_at=str(row["updated_at"]),
+                messages=int(row["messages"]),
+            )
+            for row in rows
+        ]
+
+    def conversation_messages(self, session_id: str) -> list[Message]:
+        try:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    "SELECT role, content FROM messages "
+                    "WHERE session_id = ? AND role IN ('user', 'assistant') ORDER BY sequence",
+                    (session_id,),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise MemoryStoreError("Cannot load conversation.") from exc
+        return [Message(str(row["role"]), str(row["content"])) for row in rows]
+
     def add_tool_call(
         self,
         session_id: str,
@@ -343,7 +459,11 @@ class MemoryStore:
         )
 
     def search_memories(
-        self, query: str, *, limit: int = DEFAULT_MEMORY_LIMIT
+        self,
+        query: str,
+        *,
+        limit: int = DEFAULT_MEMORY_LIMIT,
+        exclude_session: str | None = None,
     ) -> list[MemoryRecord]:
         if isinstance(limit, bool) or not 1 <= limit <= 20:
             raise ValueError("Memory search limit must be between 1 and 20.")
@@ -356,9 +476,9 @@ class MemoryStore:
                     "SELECT m.id, m.session_id, m.kind, m.content, m.tags, m.created_at, "
                     "bm25(memories_fts) AS score "
                     "FROM memories_fts JOIN memories AS m ON m.id = memories_fts.rowid "
-                    "WHERE memories_fts MATCH ? "
+                    "WHERE memories_fts MATCH ? AND (? IS NULL OR m.session_id IS NOT ?) "
                     "ORDER BY score, m.created_at DESC LIMIT ?",
-                    (match, limit),
+                    (match, exclude_session, exclude_session, limit),
                 ).fetchall()
         except sqlite3.Error as exc:
             raise MemoryStoreError("Cannot search memories.") from exc

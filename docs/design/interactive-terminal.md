@@ -44,6 +44,11 @@ Conversation state has two forms today:
 - SQLite stores completed high-level user and assistant messages. A later
   command searches FTS5 and places matching excerpts in the next request. It
   does not restore the complete model transcript.
+- An interactive conversation is one SQLite session of kind `chat`, with its
+  working directory in `conversations`. Each exchange is saved atomically after
+  the turn succeeds, holding only the prompt and visible answer. `/history` and
+  `/resume` reload these messages into the running application; recall skips
+  memories from the active conversation because they are already in the history.
 
 There is no streaming interface. `LLMBackend.chat` returns one `LLMResponse`,
 and only completion token usage is available. Requests without a cancellation
