@@ -57,7 +57,9 @@ def test_no_arguments_starts_the_interactive_session(monkeypatch: pytest.MonkeyP
     assert started == ["repl"]
 
 
-def test_help_and_commands_do_not_start_the_interactive_session(monkeypatch: pytest.MonkeyPatch):
+def test_help_and_commands_do_not_start_the_interactive_session(
+    monkeypatch: pytest.MonkeyPatch, doctor_server
+):
     def fail_repl(settings):
         raise AssertionError("REPL must not start for an explicit command.")
 
@@ -68,46 +70,135 @@ def test_help_and_commands_do_not_start_the_interactive_session(monkeypatch: pyt
     assert runner.invoke(cli.app, ["doctor"]).exit_code == 0
 
 
-def test_doctor_checks_only_python_and_configuration(tmp_path: Path):
+PROPS = {
+    "default_generation_settings": {"n_ctx": 8192},
+    "model_alias": "empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+    "model_path": None,
+}
+
+
+@pytest.fixture
+def doctor_server(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """A llama.cpp stand-in; tests change ``state`` to simulate server problems."""
+    model = tmp_path / "models" / "Qwen3.8-9B-Q4_K_M.gguf"
+    model.parent.mkdir()
+    model.write_bytes(b"\0" * 1024)
+    state = {"props": {**PROPS, "model_path": str(model)}, "status": 200, "requests": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["requests"].append(request.url.path)
+        if state["status"] is None:
+            raise httpx.ConnectError("Connection refused", request=request)
+        return httpx.Response(state["status"], json=state["props"])
+
+    monkeypatch.setattr(
+        cli, "LlamaCppBackend", lambda: LlamaCppBackend(transport=httpx.MockTransport(handler))
+    )
+    return state
+
+
+def test_doctor_reports_every_prerequisite_and_ready(
+    doctor_server, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("JAMIE_MEMORY_PATH", str(tmp_path / "data" / "memory.sqlite3"))
+    before = sorted(tmp_path.rglob("*"))
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    for name in (
+        "✓ Python",
+        "✓ Jamie configuration",
+        "✓ Model files",
+        "✓ Inference backend",
+        "✓ Application data directory",
+        "– Browser runtime",
+    ):
+        assert any(line.startswith(name) for line in lines), name
+    assert "Qwen3.8-9B-Q4_K_M.gguf (0.0 GB)" in result.output
+    assert "Qwen3.8-9B-Distill · 8,192-token context" in result.output
+    assert "(created on first use)" in result.output
+    assert lines[-1] == "Jamie is ready."
+    assert doctor_server["requests"] == ["/props"]  # never asks the model to generate
+    assert sorted(tmp_path.rglob("*")) == before  # doctor changes nothing
+
+
+def test_doctor_fails_when_the_inference_backend_is_down(doctor_server):
+    doctor_server["status"] = None
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 1
+    assert "✗ Inference backend" in result.output
+    assert "Cannot reach llama.cpp at http://127.0.0.1:8080" in result.output
+    assert "– Model files" in result.output and "needs a running inference backend" in result.output
+    assert "Jamie is not ready: fix Inference backend." in result.output
+
+
+def test_doctor_explains_a_model_that_is_still_loading(doctor_server):
+    doctor_server["status"] = 503
+
+    result = runner.invoke(cli.app, ["doctor"])
+
+    assert result.exit_code == 1
+    assert "llama.cpp is still loading the model." in result.output
+
+
+def test_doctor_warns_when_model_file_is_not_visible(doctor_server):
+    doctor_server["props"] = {**PROPS, "model_path": "/elsewhere/model.gguf"}
+
     result = runner.invoke(cli.app, ["doctor"])
 
     assert result.exit_code == 0
-    assert "Python version" in result.output
-    assert "Project configuration" in result.output
-    assert result.output.count("PASS") == 2
-    assert "FAIL" not in result.output
-    assert list(tmp_path.iterdir()) == []
+    assert "! Model files" in result.output
+    assert "/elsewhere/model.gguf is not visible here" in result.output
 
 
-def test_doctor_accepts_explicit_config(tmp_path: Path):
+def test_doctor_fails_for_an_unwritable_data_directory(
+    doctor_server, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    locked = tmp_path / "locked"
+    locked.mkdir(mode=0o500)
+    monkeypatch.setenv("JAMIE_MEMORY_PATH", str(locked / "jamie" / "memory.sqlite3"))
+    try:
+        result = runner.invoke(cli.app, ["doctor"])
+    finally:
+        locked.chmod(0o700)
+
+    assert result.exit_code == 1
+    assert "✗ Application data directory" in result.output
+    assert "is not writable" in result.output
+
+
+def test_doctor_accepts_explicit_config(doctor_server, tmp_path: Path):
     path = tmp_path / "custom.toml"
     path.write_text("color = false\n", encoding="utf-8")
 
     result = runner.invoke(cli.app, ["doctor", "--config", str(path)])
 
     assert result.exit_code == 0
-    assert result.output.count("PASS") == 2
+    assert f"{path} is valid" in result.output
     assert "\x1b[" not in result.output
 
 
 @pytest.mark.parametrize("content", ["color = [", 'color = "false"', "unknown = true"])
-def test_doctor_reports_invalid_default_config(tmp_path: Path, content: str):
+def test_doctor_reports_invalid_default_config(doctor_server, tmp_path: Path, content: str):
     (tmp_path / "assistant.toml").write_text(content, encoding="utf-8")
 
     result = runner.invoke(cli.app, ["doctor"])
 
     assert result.exit_code == 1
-    assert "Project configuration" in result.output
-    assert "FAIL" in result.output
+    assert "✗ Jamie configuration" in result.output
+    assert "– Application data directory" in result.output
     assert "Traceback" not in result.output
 
 
-def test_doctor_reports_missing_explicit_config():
+def test_doctor_reports_missing_explicit_config(doctor_server):
     result = runner.invoke(cli.app, ["doctor", "--config", "missing.toml"])
 
     assert result.exit_code == 1
     assert "not found" in result.output
-    assert "FAIL" in result.output
+    assert "✗ Jamie configuration" in result.output
 
 
 @pytest.mark.parametrize(
@@ -115,16 +206,40 @@ def test_doctor_reports_missing_explicit_config():
     [((3, 11, 9), 1), ((3, 12, 0), 0), ((3, 13, 2), 0)],
 )
 def test_doctor_checks_python_version(
-    monkeypatch: pytest.MonkeyPatch, python_version: tuple[int, int, int], expected_exit: int
+    doctor_server,
+    monkeypatch: pytest.MonkeyPatch,
+    python_version: tuple[int, int, int],
+    expected_exit: int,
 ):
-    monkeypatch.setattr(cli, "sys", SimpleNamespace(version_info=python_version))
+    monkeypatch.setattr(
+        "assistant.doctor.sys", SimpleNamespace(version_info=python_version, platform="darwin")
+    )
 
     result = runner.invoke(cli.app, ["doctor"])
 
     assert result.exit_code == expected_exit
     assert ".".join(map(str, python_version)) in result.output
     assert "requires 3.12+" in result.output
-    assert ("FAIL" in result.output) == (expected_exit == 1)
+
+
+def test_startup_explains_an_unreachable_model_and_points_to_doctor(doctor_server):
+    doctor_server["status"] = None
+
+    result = runner.invoke(cli.app, [])
+
+    assert result.exit_code == 1
+    assert result.stderr.splitlines() == [
+        "Jamie could not start the local model.",
+        "",
+        "Server:",
+        "llama.cpp at http://127.0.0.1:8080",
+        "",
+        "Reason:",
+        "Cannot reach llama.cpp at http://127.0.0.1:8080. Check that the server is running.",
+        "",
+        "Run:",
+        "jamie doctor",
+    ]
 
 
 @pytest.fixture
@@ -259,7 +374,7 @@ def test_ask_rejects_invalid_config_without_http(chat_http, tmp_path: Path):
     assert requests == []
 
 
-@pytest.mark.parametrize("command", [["--help"], ["--version"], ["doctor"], ["ask", "--help"]])
+@pytest.mark.parametrize("command", [["--help"], ["--version"], ["ask", "--help"]])
 def test_local_commands_do_not_contact_model(chat_http, command: list[str]):
     requests, _ = chat_http
 

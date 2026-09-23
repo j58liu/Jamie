@@ -23,6 +23,15 @@ class LLMResponse:
 
 
 @dataclass(frozen=True)
+class ServerInfo:
+    """What the running inference server reports about its loaded model."""
+
+    model: str
+    model_path: str | None
+    context: int
+
+
+@dataclass(frozen=True)
 class ContextUsage:
     """Tokens the conversation occupies in the server's context window."""
 

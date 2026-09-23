@@ -81,9 +81,10 @@ async def run_repl(
     *,
     console: Console | None = None,
     session: PromptSession | None = None,
+    model: str | None = None,
 ) -> None:
     """Send prompts to the already initialized application until the user exits."""
-    state = ReplState(console or Console(), application=application)
+    state = ReplState(console or Console(), application=application, model=model)
     session = session or create_prompt_session()
     renderer = EventRenderer(state.console, answer_prefix="Jamie › ")
 

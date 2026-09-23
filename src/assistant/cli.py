@@ -2,13 +2,11 @@
 
 import asyncio
 import math
-import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from rich.console import Console
-from rich.table import Table
 from rich.text import Text
 from typer.core import TyperGroup
 
@@ -16,6 +14,7 @@ from assistant import __version__
 from assistant.agent import AgentError, run_agent
 from assistant.agent.events import EventSink
 from assistant.config import ConfigurationError, ProjectConfig, load_config
+from assistant.doctor import Status, run_checks
 from assistant.eval_cli import app as eval_app
 from assistant.llm.base import LLMError
 from assistant.llm.llamacpp import LlamaCppBackend
@@ -31,8 +30,6 @@ from assistant.tools import WebClient, create_agent_registry
 from assistant.ui.approvals import TerminalApprovalProvider
 from assistant.ui.renderer import EventRenderer, OneShotRenderer
 from assistant.ui.repl import run_repl
-
-MINIMUM_PYTHON = (3, 12)
 
 
 class JamieGroup(TyperGroup):
@@ -107,9 +104,34 @@ async def _run_ask(
         )
 
 
+class StartupError(RuntimeError):
+    """The interactive session cannot start; the message says why."""
+
+    def __init__(self, server: str, reason: str) -> None:
+        super().__init__(reason)
+        self.server = server
+
+
+def _startup_failure(error: StartupError) -> None:
+    Console(stderr=True).print(
+        "Jamie could not start the local model.\n\n"
+        f"Server:\nllama.cpp at {error.server}\n\n"
+        f"Reason:\n{error}\n\n"
+        "Run:\njamie doctor",
+        markup=False,
+        highlight=False,
+        soft_wrap=True,
+    )
+
+
 async def _run_repl(settings: ProjectConfig) -> None:
-    async with JamieApplication(settings, backend_factory=LlamaCppBackend) as application:
-        await run_repl(application, console=Console(no_color=not settings.color))
+    backend = LlamaCppBackend()
+    try:
+        info = backend.server_info()
+    except LLMError as exc:
+        raise StartupError(backend.server_url, str(exc)) from exc
+    async with JamieApplication(settings, backend_factory=lambda: backend) as application:
+        await run_repl(application, console=Console(no_color=not settings.color), model=info.model)
 
 
 @app.callback(invoke_without_command=True)
@@ -131,6 +153,9 @@ def main(
     try:
         settings = load_config(None)
         asyncio.run(_run_repl(settings))
+    except StartupError as exc:
+        _startup_failure(exc)
+        raise typer.Exit(code=1) from exc
     except (ConfigurationError, JamieApplicationError, LLMError, MemoryStoreError) as exc:
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
@@ -270,6 +295,14 @@ def research(
     Console(no_color=not settings.color).print(result.answer, markup=False, highlight=False)
 
 
+SYMBOLS = {
+    Status.PASS: ("✓", "green"),
+    Status.WARN: ("!", "yellow"),
+    Status.SKIP: ("–", "dim"),
+    Status.FAIL: ("✗", "red"),
+}
+
+
 @app.command()
 def doctor(
     config: Annotated[
@@ -277,30 +310,21 @@ def doctor(
         typer.Option("--config", help="Validate a specific TOML configuration file."),
     ] = None,
 ) -> None:
-    """Check only the Python version and local project configuration."""
-    python_ok = sys.version_info[:2] >= MINIMUM_PYTHON
-    python_version = ".".join(str(part) for part in sys.version_info[:3])
-    table = Table(title="Jamie doctor")
-    table.add_column("Check")
-    table.add_column("Status")
-    table.add_column("Details")
-    table.add_row(
-        "Python version",
-        Text("PASS" if python_ok else "FAIL", style="green" if python_ok else "red"),
-        f"{python_version} (requires 3.12+)",
-    )
-
+    """Check Jamie's prerequisites without changing anything."""
+    checks = run_checks(config, LlamaCppBackend())
     console = Console()
-    config_ok = True
-    try:
-        settings = load_config(config)
-    except ConfigurationError as exc:
-        config_ok = False
-        table.add_row("Project configuration", Text("FAIL", style="red"), Text(str(exc)))
-    else:
-        console = Console(no_color=not settings.color)
-        table.add_row("Project configuration", Text("PASS", style="green"), "Valid")
-
-    console.print(table)
-    if not (python_ok and config_ok):
+    width = max(len(check.name) for check in checks)
+    for check in checks:
+        symbol, style = SYMBOLS[check.status]
+        line = Text(f"{symbol} ", style=style)
+        line.append(f"{check.name:<{width}}  ")
+        line.append(check.detail, style="dim" if check.status is Status.PASS else style)
+        console.print(line, soft_wrap=True)
+    failed = [check.name for check in checks if check.status is Status.FAIL]
+    console.print()
+    if failed:
+        console.print(
+            f"Jamie is not ready: fix {', '.join(failed)}.", markup=False, highlight=False
+        )
         raise typer.Exit(code=1)
+    console.print("Jamie is ready.", markup=False, highlight=False)

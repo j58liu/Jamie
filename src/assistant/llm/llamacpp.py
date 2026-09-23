@@ -4,13 +4,14 @@ import asyncio
 import math
 from contextlib import suppress
 from dataclasses import asdict
+from pathlib import Path
 from typing import Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from assistant.cancellation import CancellationToken, TurnCancelled, current_token
-from assistant.llm.base import ContextUsage, LLMError, LLMResponse, Message
+from assistant.llm.base import ContextUsage, LLMError, LLMResponse, Message, ServerInfo
 
 CANCEL_POLL_SECONDS = 0.1
 CONTEXT_TIMEOUT_SECONDS = 2.0
@@ -65,6 +66,8 @@ class _Settings(BaseModel):
 
 class _Props(BaseModel):
     default_generation_settings: _Settings
+    model_alias: str | None = None
+    model_path: str | None = None
 
 
 class _Template(BaseModel):
@@ -151,6 +154,33 @@ class LlamaCppBackend:
                 response=result,
             )
         return result
+
+    def server_info(self) -> ServerInfo:
+        """Confirm the server is up with a loaded model; raise LLMError with the reason."""
+        url = f"{self._base_url}/props"
+        options = {**self._client_options(), "timeout": CONTEXT_TIMEOUT_SECONDS}
+        try:
+            with httpx.Client(**options) as client:
+                response = client.get(url)
+                response.raise_for_status()
+            props = _Props.model_validate_json(response.content)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 503:
+                raise LLMError("llama.cpp is still loading the model. Try again shortly.") from exc
+            raise LLMError(f"llama.cpp returned HTTP {exc.response.status_code} at {url}.") from exc
+        except httpx.RequestError as exc:
+            raise LLMError(
+                f"Cannot reach llama.cpp at {self._base_url}. Check that the server is running."
+            ) from exc
+        except ValidationError as exc:
+            raise LLMError(f"{url} did not describe a loaded model.") from exc
+        path = props.model_path or None
+        model = props.model_alias or (Path(path).name if path else "unknown model")
+        return ServerInfo(model, path, props.default_generation_settings.n_ctx)
+
+    @property
+    def server_url(self) -> str:
+        return self._base_url
 
     def context_usage(self, messages: list[Message]) -> ContextUsage:
         """Count ``messages`` exactly as the chat template renders them."""

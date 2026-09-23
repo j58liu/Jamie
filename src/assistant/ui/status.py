@@ -27,7 +27,7 @@ def git_branch(start: Path) -> str | None:
     return None
 
 
-def _short_model(model: str) -> str:
+def short_model(model: str) -> str:
     return model.rsplit("/", 1)[-1].split(":", 1)[0].removesuffix("-GGUF")
 
 
@@ -49,7 +49,7 @@ def status_line(state: ReplState) -> str:
     fields = []
     try:
         if state.model:
-            fields.append(_short_model(state.model))
+            fields.append(short_model(state.model))
         usage = state.context
         if usage is None:
             fields.append(f"ctx ~{_count(state.estimated_tokens())}")
