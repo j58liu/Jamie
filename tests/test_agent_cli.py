@@ -55,9 +55,11 @@ def test_agent_cli_asks_user_before_opening_application(agent_cli):
     result = runner.invoke(cli.app, ["agent", "open Safari"], input="y\n")
     assert result.exit_code == 0, result.output
     assert "Approval required" in result.output
+    assert "Jamie wants to open:" in result.output
+    assert "Safari" in result.output
     assert "Tool: open_application" in result.output
-    assert "Permission: SAFE_WRITE" in result.output
-    assert '"name": "Safari"' in result.output
+    assert "Risk: SAFE_WRITE" in result.output
+    assert "[y] allow once  [a] allow session  [n] deny" in result.output
     assert "Safari was opened." in result.output
     assert command_runner.calls == [(["open", "-a", "Safari"], None, 30)]
     assert backend.calls == 2

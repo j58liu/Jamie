@@ -1,7 +1,6 @@
 """Typer commands for Jamie."""
 
 import asyncio
-import json
 import math
 import sys
 from pathlib import Path
@@ -28,8 +27,8 @@ from assistant.memory import (
 )
 from assistant.research import ResearchError, ResearchWorkflow
 from assistant.runtime import JamieApplication, JamieApplicationError, TurnResult
-from assistant.security import ApprovalRequest
 from assistant.tools import WebClient, create_agent_registry
+from assistant.ui.approvals import TerminalApprovalProvider
 from assistant.ui.renderer import EventRenderer, OneShotRenderer
 from assistant.ui.repl import run_repl
 
@@ -54,28 +53,6 @@ app = typer.Typer(
     add_completion=False,
 )
 app.add_typer(eval_app, name="eval")
-
-
-class TerminalApprovalProvider:
-    """Show the exact requested action and ask the terminal user to approve it."""
-
-    def __init__(self, console: Console) -> None:
-        self._console = console
-
-    def request(self, approval: ApprovalRequest) -> bool:
-        arguments = json.dumps(
-            approval.arguments,
-            ensure_ascii=False,
-            sort_keys=True,
-            indent=2,
-        )
-        self._console.print("Approval required", markup=False, highlight=False)
-        self._console.print(f"Tool: {approval.tool}", markup=False, highlight=False)
-        self._console.print(
-            f"Permission: {approval.permission.value}", markup=False, highlight=False
-        )
-        self._console.print(f"Arguments:\n{arguments}", markup=False, highlight=False)
-        return typer.confirm("Allow this action?", default=False)
 
 
 def _start_memory(settings, kind: str, prompt: str) -> tuple[MemoryStore, str, str | None]:
