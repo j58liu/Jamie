@@ -16,6 +16,7 @@ from assistant.agent.events import (
     TurnStarted,
     discard_event,
 )
+from assistant.cancellation import CancellationToken, cancellation_scope
 from assistant.config import ProjectConfig
 from assistant.llm.answer import answer_text
 from assistant.llm.base import LLMBackend, LLMResponse, Message
@@ -108,11 +109,14 @@ class JamieApplication:
         temperature: float = 0.6,
         max_tokens: int = 1024,
         thinking: bool | None = None,
+        cancel: CancellationToken | None = None,
         event_sink: EventSink = discard_event,
     ) -> TurnResult:
         """Run one direct-chat turn with the initialized application services.
 
         ``thinking`` is forwarded only when set, so backends without it keep working.
+        A cancelled turn raises TurnCancelled once the model request has stopped, and
+        its answer is never stored.
         """
         if self._closed:
             raise JamieApplicationError("The Jamie application is closed.")
@@ -133,13 +137,16 @@ class JamieApplication:
             messages.extend(history or [])
             messages.append(Message(role="user", content=prompt))
             options = {} if thinking is None else {"thinking": thinking}
-            response = await asyncio.to_thread(
-                self._backend.chat,
-                messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **options,
-            )
+            with cancellation_scope(cancel):
+                response = await asyncio.to_thread(
+                    self._backend.chat,
+                    messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **options,
+                )
+            if cancel is not None:
+                cancel.raise_if_cancelled()
             text = answer_text(response.content)
             self._memory.add_message(session_id, "assistant", text)
             self._memory.remember_exchange(session_id, prompt, text)

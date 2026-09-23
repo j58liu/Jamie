@@ -32,6 +32,7 @@ from assistant.agent.protocol import (
     ToolAction,
     parse_action,
 )
+from assistant.cancellation import CancellationToken, cancellation_scope, check_cancelled
 from assistant.llm.answer import answer_text
 from assistant.llm.base import LLMBackend, Message
 
@@ -100,6 +101,7 @@ def _call_before_deadline[Result](
     call: Callable[[], Result],
     deadline: float,
     event_sink: EventSink = discard_event,
+    cancel: CancellationToken | None = None,
 ) -> Result:
     remaining = deadline - perf_counter()
     if remaining <= 0:
@@ -112,7 +114,7 @@ def _call_before_deadline[Result](
 
     def invoke() -> None:
         try:
-            with event_scope(progress):
+            with event_scope(progress), cancellation_scope(cancel):
                 completed.put((True, call()))
         except BaseException as exc:
             completed.put((False, exc))
@@ -141,6 +143,7 @@ def _request_action(
 ) -> ToolAction | FinishAction:
     last_error: ProtocolError | None = None
     for attempt in range(max_parse_retries + 1):
+        check_cancelled()
         response = llm.chat(messages)
         messages.append(Message(role="assistant", content=response.content))
         try:
@@ -244,6 +247,7 @@ def _run_loop(
             # thread, so check here to avoid side effects after a reported timeout.
             if perf_counter() >= deadline:
                 raise _DeadlineExceeded
+            check_cancelled()
             emit_event(ToolStarted(action.tool, deepcopy(action.args)))
             started = perf_counter()
             try:
@@ -290,8 +294,13 @@ def run_agent(
     timeout_seconds: float = TIMEOUT_SECONDS,
     memory_context: str | None = None,
     event_sink: EventSink = discard_event,
+    cancel: CancellationToken | None = None,
 ) -> str:
-    """Run bounded model actions until the model returns a finish action."""
+    """Run bounded model actions until the model returns a finish action.
+
+    Cancellation is checked before each model request and tool call, and is passed to
+    the model and tools so they can stop early; it raises TurnCancelled.
+    """
     if not prompt.strip():
         raise ValueError("prompt must be a non-blank string.")
     if memory_context is not None and not memory_context.strip():
@@ -317,6 +326,7 @@ def run_agent(
                     ),
                     deadline,
                     event_sink,
+                    cancel,
                 )
             except _DeadlineExceeded as exc:
                 raise AgentTimeoutError(

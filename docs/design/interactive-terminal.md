@@ -45,10 +45,21 @@ Conversation state has two forms today:
   command searches FTS5 and places matching excerpts in the next request. It
   does not restore the complete model transcript.
 
-There is no streaming interface. The request payload sets `stream` to `false`,
-`LLMBackend.chat` returns one `LLMResponse`, and only completion token usage is
-available. The current agent timeout stops waiting on a worker thread; it cannot
-cancel an HTTP request or a tool function already in progress.
+There is no streaming interface. `LLMBackend.chat` returns one `LLMResponse`,
+and only completion token usage is available. Requests without a cancellation
+token set `stream` to `false`. The agent timeout stops waiting on a worker
+thread; it cannot stop an HTTP request or tool already in progress.
+
+A `CancellationToken` (`assistant.cancellation`) cancels a turn cooperatively.
+The REPL creates one per turn and maps Ctrl+C to it only while the turn runs.
+`run_turn` and `run_agent` take it explicitly and expose it to model and tool
+code through a context variable. With a token, the llama.cpp backend streams
+internally and closes the connection on cancellation, because llama.cpp ignores
+a disconnected non-streaming client until generation ends. The agent checks the
+token before each model request and tool call, and subprocess tools terminate
+their process, then kill it after a grace period. Other tools finish their
+current call before cancellation takes effect. A cancelled turn raises
+`TurnCancelled` only after the work has stopped, and its answer is never stored.
 
 ## Current `jamie ask` execution flow
 
@@ -305,11 +316,9 @@ own a reusable HTTPX client so the interactive process also reuses connections.
 - **Memory duplication:** active-session messages and FTS5 recall can contain
   the same exchange. Retrieval needs an active-session exclusion or a clear
   deduplication rule.
-- **Cancellation:** the current daemon-thread timeout abandons waiting while the
-  synchronous HTTP call or tool may continue. Ctrl+C must not report
-  cancellation and then allow a delayed side effect. Model requests need a
-  closable/cancellable transport, and tool cancellation can only be promised at
-  safe boundaries unless each tool supports it.
+- **Cancellation:** Ctrl+C cancellation is cooperative (see above). The
+  agent timeout still abandons waiting while a synchronous call may continue.
+  File and web tools stop only at the next safe boundary.
 - **Event ordering:** callbacks run in order on the caller thread. Future
   interactive approvals must coordinate that event delivery with terminal input.
 - **Approvals:** prompt_toolkit input and approval prompts cannot read the

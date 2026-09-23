@@ -1,4 +1,6 @@
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -123,26 +125,43 @@ def test_empty_clipboard_has_explicit_result():
     assert result == "Clipboard is empty."
 
 
+def _python(code: str) -> list[str]:
+    return [sys.executable, "-c", code]
+
+
 def test_subprocess_runner_never_uses_shell(monkeypatch: pytest.MonkeyPatch):
     calls = []
+    real_popen = subprocess.Popen
 
-    def fake_run(arguments, **kwargs):
+    def recording_popen(arguments, **kwargs):
         calls.append((arguments, kwargs))
-        return subprocess.CompletedProcess(arguments, 0, stdout="ok", stderr="")
+        return real_popen(arguments, **kwargs)
 
     monkeypatch.setattr("assistant.tools.macos.sys.platform", "darwin")
-    monkeypatch.setattr("assistant.tools.macos.subprocess.run", fake_run)
-    result = SubprocessCommandRunner().run(["open", "-a", "Safari"], timeout=30)
-    assert result.stdout == "ok"
-    assert calls[0][0] == ["open", "-a", "Safari"]
+    monkeypatch.setattr("assistant.tools.macos.subprocess.Popen", recording_popen)
+    result = SubprocessCommandRunner().run(_python("print('ok')"), timeout=30)
+    assert result.stdout == "ok\n"
+    assert calls[0][0] == _python("print('ok')")
     assert "shell" not in calls[0][1]
 
 
-def test_subprocess_failure_is_safe_tool_error(monkeypatch: pytest.MonkeyPatch):
-    def fake_run(arguments, **kwargs):
-        return subprocess.CompletedProcess(arguments, 1, stdout="", stderr="not found")
-
+def test_subprocess_runner_passes_input(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("assistant.tools.macos.sys.platform", "darwin")
-    monkeypatch.setattr("assistant.tools.macos.subprocess.run", fake_run)
-    with pytest.raises(ValueError, match="macOS command failed"):
-        SubprocessCommandRunner().run(["open", "-a", "Missing"], timeout=30)
+    code = "import sys, time; time.sleep(0.3); print(sys.stdin.read().upper())"
+    result = SubprocessCommandRunner().run(_python(code), input_text="hello", timeout=30)
+    assert result.stdout == "HELLO\n"
+
+
+def test_subprocess_failure_is_safe_tool_error(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("assistant.tools.macos.sys.platform", "darwin")
+    code = "import sys; sys.stderr.write('not found'); sys.exit(1)"
+    with pytest.raises(ValueError, match="macOS command failed \\(1\\): not found"):
+        SubprocessCommandRunner().run(_python(code), timeout=30)
+
+
+def test_subprocess_timeout_stops_the_process(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("assistant.tools.macos.sys.platform", "darwin")
+    started = time.monotonic()
+    with pytest.raises(ValueError, match="timed out"):
+        SubprocessCommandRunner().run(_python("import time; time.sleep(30)"), timeout=0.3)
+    assert time.monotonic() - started < 5

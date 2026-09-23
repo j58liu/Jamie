@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from assistant.cancellation import TurnCancelled, current_token
 from assistant.security.policy import PermissionLevel
 from assistant.tools.base import ToolError
 from assistant.tools.filesystem import _resolve, _workspace_root
@@ -17,6 +19,8 @@ from assistant.tools.filesystem import _resolve, _workspace_root
 MAX_NAME_CHARACTERS = 200
 MAX_TEXT_CHARACTERS = 2_000_000
 MAX_COMMAND_OUTPUT = 200_000
+CANCEL_POLL_SECONDS = 0.1
+TERMINATE_GRACE_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -48,20 +52,36 @@ class SubprocessCommandRunner:
         if sys.platform != "darwin":
             raise ToolError("This tool is available only on macOS.")
         try:
-            completed = subprocess.run(
+            process = subprocess.Popen(
                 arguments,
-                input=input_text,
-                capture_output=True,
+                stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout,
-                check=False,
             )
         except FileNotFoundError as exc:
             raise ToolError(f"macOS command is unavailable: {arguments[0]}") from exc
-        except subprocess.TimeoutExpired as exc:
-            raise ToolError(f"macOS command timed out: {arguments[0]}") from exc
         except OSError as exc:
             raise ToolError(f"Cannot run macOS command: {arguments[0]}") from exc
+
+        token = current_token()
+        deadline = time.monotonic() + timeout
+        pending_input = input_text
+        while True:
+            try:
+                stdout, stderr = process.communicate(
+                    pending_input, timeout=min(CANCEL_POLL_SECONDS, timeout)
+                )
+                break
+            except subprocess.TimeoutExpired:
+                pending_input = None  # already written; later calls only collect output
+                if token is not None and token.cancelled:
+                    _stop(process)
+                    raise TurnCancelled from None
+                if time.monotonic() >= deadline:
+                    _stop(process)
+                    raise ToolError(f"macOS command timed out: {arguments[0]}") from None
+        completed = subprocess.CompletedProcess(arguments, process.returncode, stdout, stderr)
         if completed.returncode != 0:
             detail = completed.stderr.strip()[:500]
             suffix = f": {detail}" if detail else ""
@@ -70,6 +90,16 @@ class SubprocessCommandRunner:
         if len(stdout) > MAX_COMMAND_OUTPUT:
             stdout = f"{stdout[:MAX_COMMAND_OUTPUT]}\n[truncated]"
         return CommandResult(stdout=stdout, stderr=completed.stderr)
+
+
+def _stop(process: subprocess.Popen) -> None:
+    """Ask the process to exit, then kill it if it ignores SIGTERM."""
+    process.terminate()
+    try:
+        process.communicate(timeout=TERMINATE_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
 
 
 class _Input(BaseModel):

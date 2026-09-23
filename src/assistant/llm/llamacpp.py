@@ -1,13 +1,18 @@
 """Synchronous llama.cpp chat requests using plain HTTP."""
 
+import asyncio
 import math
+from contextlib import suppress
 from dataclasses import asdict
 from typing import Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from assistant.cancellation import CancellationToken, TurnCancelled, current_token
 from assistant.llm.base import LLMError, LLMResponse, Message
+
+CANCEL_POLL_SECONDS = 0.1
 
 
 class _ResponseMessage(BaseModel):
@@ -34,6 +39,21 @@ class _ChatCompletion(BaseModel):
     model_config = ConfigDict(strict=True)
 
     choices: list[_Choice] = Field(min_length=1)
+    model: str | None = None
+    usage: _Usage | None = None
+
+
+class _Delta(BaseModel):
+    content: str | None = None
+
+
+class _StreamChoice(BaseModel):
+    delta: _Delta = Field(default_factory=_Delta)
+    finish_reason: str | None = None
+
+
+class _Chunk(BaseModel):
+    choices: list[_StreamChoice] = Field(default_factory=list)
     model: str | None = None
     usage: _Usage | None = None
 
@@ -65,9 +85,11 @@ class LlamaCppBackend:
         max_tokens: int = 1024,
         thinking: bool | None = None,
     ) -> LLMResponse:
-        """POST one non-streaming request; raise LLMError on transport failures.
+        """POST one request; raise LLMError on transport failures.
 
         ``thinking`` toggles the chat template's reasoning; None keeps the server default.
+        Inside a cancellation scope the request streams, because llama.cpp only stops
+        generating for a closed connection when it next writes a token.
         """
         if not messages:
             raise ValueError("At least one message is required.")
@@ -85,14 +107,12 @@ class LlamaCppBackend:
         if thinking is not None:
             payload["chat_template_kwargs"] = {"enable_thinking": thinking}
 
+        token = current_token()
         try:
-            with httpx.Client(
-                timeout=self._timeout,
-                transport=self._transport,
-                trust_env=False,
-            ) as client:
-                response = client.post(self._url, json=payload)
-                response.raise_for_status()
+            if token is None:
+                result = self._complete(payload)
+            else:
+                result = asyncio.run(self._stream_until_cancelled(payload, token))
         except httpx.TimeoutException as exc:
             raise LLMError(f"Request to llama.cpp timed out at {self._url}.") from exc
         except httpx.HTTPStatusError as exc:
@@ -103,23 +123,65 @@ class LlamaCppBackend:
             raise LLMError(
                 f"Cannot reach llama.cpp at {self._url}. Check that the server is running."
             ) from exc
-
-        try:
-            completion = _ChatCompletion.model_validate_json(response.content)
         except ValidationError as exc:
             raise LLMError("llama.cpp returned an invalid chat response.") from exc
 
-        choice = completion.choices[0]
-        result = LLMResponse(
-            content=choice.message.content,
-            model=completion.model,
-            finish_reason=choice.finish_reason,
-            output_tokens=completion.usage.completion_tokens if completion.usage else None,
-        )
-        if not choice.message.content.strip():
+        if not result.content.strip():
             raise LLMError(
                 "llama.cpp returned no answer text. Try increasing --max-tokens "
                 "if the model used its token budget for reasoning.",
                 response=result,
             )
         return result
+
+    def _client_options(self) -> dict:
+        return {"timeout": self._timeout, "transport": self._transport, "trust_env": False}
+
+    def _complete(self, payload: dict) -> LLMResponse:
+        with httpx.Client(**self._client_options()) as client:
+            response = client.post(self._url, json=payload)
+            response.raise_for_status()
+        completion = _ChatCompletion.model_validate_json(response.content)
+        choice = completion.choices[0]
+        return LLMResponse(
+            content=choice.message.content,
+            model=completion.model,
+            finish_reason=choice.finish_reason,
+            output_tokens=completion.usage.completion_tokens if completion.usage else None,
+        )
+
+    async def _stream_until_cancelled(self, payload: dict, token: CancellationToken) -> LLMResponse:
+        """Cancelling the task closes the socket, even while the prompt is processed."""
+        token.raise_if_cancelled()
+        async with httpx.AsyncClient(**self._client_options()) as client:
+            request = asyncio.ensure_future(self._stream(client, payload))
+            while not request.done():
+                await asyncio.wait({request}, timeout=CANCEL_POLL_SECONDS)
+                if token.cancelled and not request.done():
+                    request.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await request
+                    raise TurnCancelled
+            return request.result()
+
+    async def _stream(self, client: httpx.AsyncClient, payload: dict) -> LLMResponse:
+        streamed = {**payload, "stream": True, "stream_options": {"include_usage": True}}
+        parts: list[str] = []
+        model = finish_reason = None
+        output_tokens = None
+        async with client.stream("POST", self._url, json=streamed) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                data = line.removeprefix("data:").strip()
+                if not line.startswith("data:") or not data:
+                    continue
+                if data == "[DONE]":
+                    break
+                chunk = _Chunk.model_validate_json(data)
+                model = chunk.model or model
+                if chunk.usage is not None:
+                    output_tokens = chunk.usage.completion_tokens
+                for choice in chunk.choices:
+                    parts.append(choice.delta.content or "")
+                    finish_reason = choice.finish_reason or finish_reason
+        return LLMResponse("".join(parts), model, finish_reason, output_tokens)
