@@ -37,10 +37,9 @@ running server.
 ## Ask the local model
 
 The selected model is
-[empero-ai/Qwen3.8-9B-Distill](https://huggingface.co/empero-ai/Qwen3.8-9B-Distill).
-For llama.cpp, use the publisher's
-[GGUF release](https://huggingface.co/empero-ai/Qwen3.8-9B-Distill-GGUF),
-specifically `Qwen3.8-9B-Q4_K_M.gguf` (about 5.78 GB). The linked source model
+[Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B). For llama.cpp, use
+[Unsloth's GGUF release](https://huggingface.co/unsloth/Qwen3.5-2B-GGUF),
+specifically `Qwen3.5-2B-Q4_K_M.gguf` (about 1.28 GB). The linked source model
 contains Transformers weights; the GGUF release is the format llama.cpp loads.
 
 Install llama.cpp on macOS with Homebrew:
@@ -54,18 +53,21 @@ GGUF into llama.cpp's model cache:
 
 ```sh
 llama-server \
-  -hf empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M --no-mmproj \
+  -hf unsloth/Qwen3.5-2B-GGUF:Q4_K_M --no-mmproj \
   --host 127.0.0.1 --port 8080 \
   --ctx-size 8192 --parallel 1 \
   --jinja --reasoning-format deepseek \
+  --chat-template-kwargs '{"enable_thinking":false}' \
   --temp 0.6 --top-p 0.95 --top-k 20
 ```
 
-Use a recent llama.cpp build with support for this model's Qwen3.5 architecture.
+Use a recent llama.cpp build with support for the Qwen3.5 architecture.
 The 8,192-token context and single request slot provide a starting configuration
 for a 16 GB Mac; memory use also depends on other running applications.
-`--reasoning-format deepseek` separates reasoning from the final answer in the
-HTTP response, so Jamie prints the answer text.
+The chat template setting disables thinking by default so short requests return
+an answer without spending the token budget on reasoning. When thinking is
+enabled, `--reasoning-format deepseek` separates reasoning from the final answer
+in the HTTP response, so Jamie prints the answer text.
 
 Keep the server running. Then, in the activated project environment:
 
