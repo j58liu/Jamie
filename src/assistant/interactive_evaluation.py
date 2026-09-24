@@ -1,0 +1,469 @@
+"""Multi-turn evaluations of the runtime interactive mode uses, without the terminal UI.
+
+Each case drives JamieApplication and the agent loop the way the REPL does: history carries
+between turns, /new resets it, Ctrl+C cancels through a token, and approvals go through the
+real permission policy. Events are recorded but never rendered, so display code cannot
+influence what the model sees.
+"""
+
+import asyncio
+import hashlib
+import json
+import math
+import statistics
+import tempfile
+from collections.abc import Callable
+from datetime import UTC, datetime
+from pathlib import Path, PurePath
+from time import perf_counter
+from typing import Literal, Self
+from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+
+from assistant import __version__
+from assistant.agent.events import AgentEvent, AssistantFinished, TurnFailed, TurnStarted
+from assistant.agent.loop import AgentError, run_agent
+from assistant.agent_evaluation import ToolCall, _RecordingBackend, _RecordingTools
+from assistant.cancellation import CancellationToken, TurnCancelled
+from assistant.config import ProjectConfig
+from assistant.evaluation import EvaluationError, parse_json, save_report
+from assistant.llm.base import LLMBackend, LLMError, LLMResponse, Message
+from assistant.runtime import JamieApplication
+from assistant.security.approvals import CallbackApprovalProvider
+from assistant.tools.registry import create_workspace_registry
+
+CANCEL_AFTER_SECONDS = 1.0
+MALFORMED_ACTION = "Sure, I will read the file now."
+
+
+class InteractiveStep(BaseModel):
+    """One user turn, with the interactive action around it and what must hold after it."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    prompt: str = Field(min_length=1)
+    tools: bool = False  # run through the agent loop with workspace tools
+    new_conversation: bool = False  # /new before this turn
+    cancel: bool = False  # Ctrl+C shortly after the turn starts
+    approve: bool = False  # the user's answer if the policy asks for approval
+    malformed_first_action: bool = False  # replace the model's first action with prose
+    answer_contains: list[str] = Field(default_factory=list)
+    tool_called: str | None = None
+    tool_failed: bool = False  # a tool call must fail first (recovery scenarios)
+    approval_requested: bool | None = None
+    files_after: dict[str, str] = Field(default_factory=dict)  # path -> required content
+    files_absent: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_step(self) -> Self:
+        if not self.prompt.strip():
+            raise ValueError("Prompt must not be blank.")
+        tool_only = (
+            self.approve
+            or self.malformed_first_action
+            or self.tool_called
+            or self.tool_failed
+            or self.approval_requested is not None
+        )
+        if tool_only and not self.tools:
+            raise ValueError("Tool, approval, and malformed-action checks need tools: true.")
+        if self.cancel and (self.tools or self.answer_contains):
+            raise ValueError("Cancelled steps are chat turns without answer checks.")
+        return self
+
+
+class InteractiveEvalCase(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    id: str = Field(min_length=1, pattern=r"^[a-zA-Z0-9_-]+$")
+    files: dict[str, str] = Field(default_factory=dict)
+    steps: list[InteractiveStep] = Field(min_length=1)
+    context_grows: bool = False  # the measured context must grow on every turn
+
+    @model_validator(mode="after")
+    def validate_case(self) -> Self:
+        for name in self.files:
+            path = PurePath(name)
+            if not name.strip() or path.is_absolute() or ".." in path.parts:
+                raise ValueError("Fixture paths must stay within the workspace.")
+        return self
+
+
+class StepResult(BaseModel):
+    prompt: str
+    answer: str | None
+    cancelled: bool
+    error: str | None
+    tool_calls: list[ToolCall]
+    approvals_requested: int
+    events: list[str]
+    context_tokens: int | None
+    passed: bool
+    failure_reason: str | None
+
+
+class InteractiveRunResult(BaseModel):
+    case_id: str
+    run: int
+    success: bool
+    failed_step: int | None
+    failure_reason: str | None
+    model: str | None
+    output_tokens: int | None
+    latency_seconds: float
+    steps: list[StepResult]
+
+
+class InteractiveEvalReport(BaseModel):
+    schema_version: int = 1
+    package_version: str = __version__
+    started_at: str
+    finished_at: str | None = None
+    status: Literal["running", "completed", "interrupted"] = "running"
+    cases: list[InteractiveEvalCase]
+    cases_sha256: str
+    runs_per_case: int
+    timeout_seconds: float
+    total_duration_seconds: float = 0.0
+    results: list[InteractiveRunResult] = Field(default_factory=list)
+
+    def summary(self) -> dict[str, JsonValue]:
+        planned = len(self.cases) * self.runs_per_case
+        completed = len(self.results)
+        passes = sum(result.success for result in self.results)
+        tokens = [r.output_tokens for r in self.results if r.output_tokens is not None]
+        return {
+            "models": sorted({r.model for r in self.results if r.model is not None}),
+            "cases": len(self.cases),
+            "runs_per_case": self.runs_per_case,
+            "planned_runs": planned,
+            "completed_runs": completed,
+            "passes": passes,
+            "failures": completed - passes,
+            "failed_cases": sorted({r.case_id for r in self.results if not r.success}),
+            "median_latency_seconds": (
+                statistics.median(r.latency_seconds for r in self.results) if self.results else None
+            ),
+            "output_tokens": sum(tokens) if tokens else None,
+            "total_duration_seconds": self.total_duration_seconds,
+            "success": self.status == "completed" and passes == planned,
+        }
+
+
+class _MalformedFirstAction:
+    """Replace the model's first reply with prose, as a model sometimes does."""
+
+    def __init__(self, backend: LLMBackend) -> None:
+        self.backend = backend
+        self.replaced = False
+
+    def chat(self, messages: list[Message], **options) -> LLMResponse:
+        response = self.backend.chat(messages, **options)
+        if self.replaced:
+            return response
+        self.replaced = True
+        return LLMResponse(MALFORMED_ACTION, response.model, response.finish_reason, 0)
+
+
+def default_interactive_cases_path() -> Path:
+    checkout = Path(__file__).resolve().parents[2] / "evals" / "interactive_cases"
+    return checkout if checkout.is_dir() else Path(__file__).with_name("interactive_eval_cases")
+
+
+def load_interactive_cases(path: Path | None = None) -> list[InteractiveEvalCase]:
+    source = path if path is not None else default_interactive_cases_path()
+    try:
+        files = sorted(source.glob("*.json")) if source.is_dir() else [source]
+        cases: list[InteractiveEvalCase] = []
+        for file in files:
+            data = parse_json(file.read_text(encoding="utf-8"))
+            if not isinstance(data, list) or not data:
+                raise ValueError(f"{file} must contain a non-empty array of cases.")
+            cases.extend(InteractiveEvalCase.model_validate(item) for item in data)
+        if not cases:
+            raise ValueError("No interactive evaluation cases found.")
+        ids = [case.id for case in cases]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Interactive evaluation case IDs must be unique.")
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise EvaluationError(
+            f"Cannot load interactive evaluation cases from {source}: {exc}"
+        ) from exc
+    return sorted(cases, key=lambda case: case.id)
+
+
+def _events_well_formed(events: list[AgentEvent]) -> bool:
+    return (
+        bool(events)
+        and isinstance(events[0], TurnStarted)
+        and isinstance(events[-1], AssistantFinished | TurnFailed)
+    )
+
+
+def _step_failure(
+    step: InteractiveStep,
+    result: StepResult,
+    events: list[AgentEvent],
+    workspace: Path,
+) -> str | None:
+    """Return the first unmet expectation, or None when the step passed."""
+    if not _events_well_formed(events):
+        return "events_out_of_order"
+    if step.cancel:
+        return None if result.cancelled else "finished_before_cancel"
+    if result.cancelled:
+        return "unexpected_cancel"
+    if result.error is not None:
+        return "turn_error"
+    if step.tool_called and not any(c.tool == step.tool_called for c in result.tool_calls):
+        return "expected_tool_not_called"
+    if step.tool_failed and not any(not call.success for call in result.tool_calls):
+        return "no_tool_failure_to_recover_from"
+    if step.approval_requested is not None and (
+        (result.approvals_requested > 0) != step.approval_requested
+    ):
+        return "approval_expectation_mismatch"
+    for name, content in step.files_after.items():
+        target = workspace / name
+        if not target.is_file() or content not in target.read_text(encoding="utf-8"):
+            return "expected_file_missing"
+    if any((workspace / name).exists() for name in step.files_absent):
+        return "denied_change_was_made"
+    answer = result.answer or ""
+    if not all(text.lower() in answer.lower() for text in step.answer_contains):
+        return "answer_mismatch"
+    return None
+
+
+async def _run_steps(
+    application: JamieApplication,
+    backend: _RecordingBackend,
+    case: InteractiveEvalCase,
+    workspace: Path,
+    timeout_seconds: float,
+) -> list[StepResult]:
+    history: list[Message] = []
+    conversation_id: str | None = None
+    cancelled_prompts: list[str] = []
+    results: list[StepResult] = []
+    previous_context = -1
+    for step in case.steps:
+        if step.new_conversation:
+            history, conversation_id = [], None
+        earlier_cancelled = list(cancelled_prompts)
+        timed_out: list[bool] = []
+        events: list[AgentEvent] = []
+        approvals: list[object] = []
+        tool_calls: list[ToolCall] = []
+        answer = error = None
+        cancelled = False
+        requests_before = len(backend.requests)
+        try:
+            if step.tools:
+                model = _MalformedFirstAction(backend) if step.malformed_first_action else backend
+                provider = CallbackApprovalProvider(
+                    lambda request, asked=approvals, answer=step.approve: (
+                        asked.append(request) or answer
+                    )
+                )
+                tools = _RecordingTools(create_workspace_registry(workspace, approvals=provider))
+                try:
+                    answer = await asyncio.to_thread(
+                        run_agent,
+                        model,
+                        tools,
+                        step.prompt,
+                        timeout_seconds=timeout_seconds,
+                        event_sink=events.append,
+                    )
+                finally:
+                    tool_calls = tools.calls
+            else:
+                conversation_id = conversation_id or application.start_conversation()
+                token = CancellationToken()
+                loop = asyncio.get_running_loop()
+                if step.cancel:
+                    loop.call_later(CANCEL_AFTER_SECONDS, token.cancel)
+
+                # A timeout cancels like Ctrl+C, so llama.cpp stops instead of
+                # generating into the next case.
+                def expire(token: CancellationToken = token, flag: list = timed_out) -> None:
+                    flag.append(True)
+                    token.cancel()
+
+                timer = loop.call_later(timeout_seconds, expire)
+                try:
+                    turn = await application.run_turn(
+                        step.prompt,
+                        history=history,
+                        cancel=token,
+                        conversation_id=conversation_id,
+                        event_sink=events.append,
+                    )
+                finally:
+                    timer.cancel()
+                answer = turn.message
+        except TurnCancelled:
+            if timed_out:
+                error = f"The turn exceeded its {timeout_seconds:g}-second timeout."
+            else:
+                cancelled = True
+                cancelled_prompts.append(step.prompt)
+        except (AgentError, LLMError) as exc:
+            error = str(exc) or type(exc).__name__
+        if answer is not None:
+            history = [*history, Message("user", step.prompt), Message("assistant", answer)]
+
+        context_tokens = None
+        measure = getattr(application, "context_usage", None)
+        if case.context_grows and measure is not None:
+            try:
+                usage = measure(history)
+                context_tokens = usage.used if usage is not None else None
+            except LLMError:
+                context_tokens = None
+
+        result = StepResult(
+            prompt=step.prompt,
+            answer=answer,
+            cancelled=cancelled,
+            error=error,
+            tool_calls=tool_calls,
+            approvals_requested=len(approvals),
+            events=[type(event).__name__ for event in events],
+            context_tokens=context_tokens,
+            passed=False,
+            failure_reason=None,
+        )
+        reason = _step_failure(step, result, events, workspace)
+        sent = backend.requests[requests_before:]
+        if reason is None and any(
+            prompt in message.content
+            for prompt in earlier_cancelled
+            for request in sent
+            for message in request
+        ):
+            reason = "cancelled_prompt_reached_the_model_again"
+        if reason is None and case.context_grows and not step.cancel:
+            if context_tokens is None:
+                reason = "context_not_reported"
+            elif context_tokens <= previous_context:
+                reason = "context_did_not_grow"
+            else:
+                previous_context = context_tokens
+        results.append(
+            result.model_copy(update={"passed": reason is None, "failure_reason": reason})
+        )
+        if reason is not None:
+            break
+    return results
+
+
+class _RequestRecorder(_RecordingBackend):
+    """Also keep every request, so checks can see exactly what the model was sent."""
+
+    def __init__(self, backend: LLMBackend) -> None:
+        super().__init__(backend)
+        self.requests: list[list[Message]] = []
+
+    def chat(self, messages: list[Message], **options) -> LLMResponse:
+        self.requests.append(list(messages))
+        return super().chat(messages, **options)
+
+    def context_usage(self, messages: list[Message]):
+        measure = getattr(self.backend, "context_usage", None)
+        return measure(messages) if measure is not None else None
+
+
+def _run_case(
+    backend: LLMBackend, case: InteractiveEvalCase, run: int, timeout_seconds: float
+) -> InteractiveRunResult:
+    started = perf_counter()
+    recorder = _RequestRecorder(backend)
+    with tempfile.TemporaryDirectory(prefix="jamie-interactive-eval-") as directory:
+        root = Path(directory)
+        workspace = root / "workspace"
+        workspace.mkdir()
+        for name, content in case.files.items():
+            target = workspace / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        config = ProjectConfig(memory_path=str(root / "memory.sqlite3"))
+        application = JamieApplication(config, backend_factory=lambda: recorder)
+
+        async def drive() -> list[StepResult]:
+            async with application:
+                return await _run_steps(application, recorder, case, workspace, timeout_seconds)
+
+        steps = asyncio.run(drive())
+
+    failed = next((index for index, step in enumerate(steps) if not step.passed), None)
+    tokens = [r.output_tokens for r in recorder.responses if r.output_tokens is not None]
+    return InteractiveRunResult(
+        case_id=case.id,
+        run=run,
+        success=failed is None and len(steps) == len(case.steps),
+        failed_step=None if failed is None else failed + 1,
+        failure_reason=None if failed is None else steps[failed].failure_reason,
+        model=next((r.model for r in recorder.responses if r.model), None),
+        output_tokens=sum(tokens) if tokens else None,
+        latency_seconds=perf_counter() - started,
+        steps=steps,
+    )
+
+
+def run_interactive_evaluation(
+    backend: LLMBackend,
+    cases: list[InteractiveEvalCase],
+    *,
+    runs: int,
+    timeout_seconds: float,
+    output_dir: Path,
+    on_result: Callable[[InteractiveRunResult, int], None] | None = None,
+) -> tuple[InteractiveEvalReport, Path]:
+    if not cases:
+        raise EvaluationError("At least one interactive evaluation case is required.")
+    if isinstance(runs, bool) or not isinstance(runs, int) or runs < 1:
+        raise EvaluationError("Runs must be a positive integer.")
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise EvaluationError("Timeout must be finite and positive.")
+    started = datetime.now(UTC)
+    case_data = json.dumps(
+        [case.model_dump(mode="json") for case in cases],
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    report = InteractiveEvalReport(
+        started_at=started.isoformat(),
+        cases=cases,
+        cases_sha256=hashlib.sha256(case_data.encode()).hexdigest(),
+        runs_per_case=runs,
+        timeout_seconds=timeout_seconds,
+    )
+    stamp = started.strftime("%Y%m%dT%H%M%S%fZ")
+    path = output_dir / f"interactive-{stamp}-{uuid4().hex[:8]}.json"
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise EvaluationError(f"Cannot create results directory {output_dir}: {exc}") from exc
+    began = perf_counter()
+    save_report(path, report)
+    try:
+        for run in range(1, runs + 1):
+            for case in cases:
+                result = _run_case(backend, case, run, timeout_seconds)
+                report.results.append(result)
+                report.total_duration_seconds = perf_counter() - began
+                save_report(path, report)
+                if on_result is not None:
+                    on_result(result, len(report.results))
+    except KeyboardInterrupt:
+        report.status = "interrupted"
+    else:
+        report.status = "completed"
+    report.finished_at = datetime.now(UTC).isoformat()
+    report.total_duration_seconds = perf_counter() - began
+    save_report(path, report)
+    return report, path

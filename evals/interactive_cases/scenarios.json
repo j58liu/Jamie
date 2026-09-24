@@ -1,0 +1,106 @@
+[
+  {
+    "id": "interactive-multi-turn-context",
+    "steps": [
+      {"prompt": "My project codename is Heron. Acknowledge it in one short sentence."},
+      {"prompt": "What is my project codename? Reply with the codename only.", "answer_contains": ["Heron"]}
+    ]
+  },
+  {
+    "id": "interactive-tool-then-conversation",
+    "files": {"notes.md": "Deadline: October 3\nOwner: Priya\n"},
+    "steps": [
+      {
+        "prompt": "Read notes.md and tell me the deadline.",
+        "tools": true,
+        "tool_called": "read_file",
+        "answer_contains": ["October 3"]
+      },
+      {"prompt": "What deadline did you just tell me? Reply with the date only.", "answer_contains": ["October 3"]}
+    ]
+  },
+  {
+    "id": "interactive-cancel-then-continue",
+    "steps": [
+      {"prompt": "My favourite colour is teal. Acknowledge it in one short sentence."},
+      {"prompt": "Write a detailed 2000-word history of the Roman Empire.", "cancel": true},
+      {"prompt": "What is my favourite colour? Reply with one word.", "answer_contains": ["teal"]}
+    ]
+  },
+  {
+    "id": "interactive-new-conversation-then-continue",
+    "steps": [
+      {"prompt": "My dog is called Biscuit. Acknowledge it in one short sentence."},
+      {"prompt": "What is 12 plus 30? Reply with the number only.", "new_conversation": true, "answer_contains": ["42"]},
+      {"prompt": "Now add 8 to that number. Reply with the number only.", "answer_contains": ["50"]}
+    ]
+  },
+  {
+    "id": "interactive-failed-tool-recovery",
+    "files": {"docs/plan.md": "Launch day: Friday\n"},
+    "steps": [
+      {
+        "prompt": "Read the file plan.md and tell me the launch day. If it is not where you expect, find it.",
+        "tools": true,
+        "tool_failed": true,
+        "answer_contains": ["Friday"]
+      },
+      {"prompt": "Which day did you find? Reply with the day only.", "answer_contains": ["Friday"]}
+    ]
+  },
+  {
+    "id": "interactive-approval-denied",
+    "steps": [
+      {
+        "prompt": "Create a file named hello.txt containing the text hi.",
+        "tools": true,
+        "approve": false,
+        "approval_requested": true,
+        "files_absent": ["hello.txt"]
+      },
+      {"prompt": "Reply with the word ready.", "answer_contains": ["ready"]}
+    ]
+  },
+  {
+    "id": "interactive-approval-accepted",
+    "steps": [
+      {
+        "prompt": "Create a file named hello.txt containing the text hi.",
+        "tools": true,
+        "approve": true,
+        "approval_requested": true,
+        "tool_called": "write_file",
+        "files_after": {"hello.txt": "hi"}
+      }
+    ]
+  },
+  {
+    "id": "interactive-malformed-action-recovery",
+    "files": {"README.md": "hello world\n"},
+    "steps": [
+      {
+        "prompt": "What does README.md contain? Read the file before answering.",
+        "tools": true,
+        "malformed_first_action": true,
+        "tool_called": "read_file",
+        "answer_contains": ["hello world"]
+      }
+    ]
+  },
+  {
+    "id": "interactive-context-growth",
+    "context_grows": true,
+    "steps": [
+      {"prompt": "Remember this code: ZEBRA-42. Acknowledge it in one short sentence."},
+      {"prompt": "Give me one short fact about the number 1."},
+      {"prompt": "Give me one short fact about the number 2."},
+      {"prompt": "Give me one short fact about the number 3."},
+      {"prompt": "Give me one short fact about the number 4."},
+      {"prompt": "Give me one short fact about the number 5."},
+      {"prompt": "Give me one short fact about the number 6."},
+      {"prompt": "Give me one short fact about the number 7."},
+      {"prompt": "Give me one short fact about the number 8."},
+      {"prompt": "What code did I ask you to remember? Reply with the code only.", "answer_contains": ["ZEBRA-42"]}
+    ]
+  }
+]

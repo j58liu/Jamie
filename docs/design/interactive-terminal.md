@@ -28,7 +28,7 @@ an interactive terminal. It does not change production behavior.
 | Terminal approval | `assistant.cli.TerminalApprovalProvider` prints the normalized request with Rich and asks with Typer. This is the main terminal-specific behavior currently mixed into the CLI module. |
 | Memory | `assistant.memory.MemoryStore` persists sessions, messages, tool calls, sources, preferences, evaluation runs, and FTS5 memories. The application owns direct-chat persistence; CLI helpers still serve agent and research commands. |
 | Research | `assistant.research.ResearchWorkflow` has its own bounded model workflow. The `research` command creates its backend and web client directly. |
-| Evaluations | `assistant.eval_cli` and the evaluation modules construct their own isolated backends and fixtures. They should remain independent of interactive session state. |
+| Evaluations | `assistant.eval_cli` and the evaluation modules construct their own isolated backends and fixtures. They should remain independent of interactive session state. `jamie eval interactive` drives the runtime and agent loop through multi-turn scenarios (history, `/new`, cancellation, approvals, recovery, context growth) with recorded, unrendered events. |
 
 The local model is loaded by the separately running llama.cpp server. Jamie does
 not load model weights. One `JamieApplication` constructs one backend and
