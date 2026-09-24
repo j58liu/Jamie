@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.text import Text
 from typer.core import TyperGroup
 
-from assistant import __version__
+from assistant import STARTED, __version__
 from assistant.agent import AgentError, run_agent
 from assistant.agent.events import EventSink
 from assistant.config import ConfigurationError, ProjectConfig, load_config
@@ -131,7 +131,12 @@ async def _run_repl(settings: ProjectConfig) -> None:
     except LLMError as exc:
         raise StartupError(backend.server_url, str(exc)) from exc
     async with JamieApplication(settings, backend_factory=lambda: backend) as application:
-        await run_repl(application, console=Console(no_color=not settings.color), model=info.model)
+        await run_repl(
+            application,
+            console=Console(no_color=not settings.color),
+            model=info.model,
+            started=STARTED,
+        )
 
 
 @app.callback(invoke_without_command=True)

@@ -79,7 +79,8 @@ def test_streamed_answer_is_assembled_with_model_and_usage():
     with cancellation_scope(CancellationToken()):
         result = backend.chat([Message("user", "Hi")])
 
-    assert result == LLMResponse("Hello", "qwen", "stop", 7)
+    assert result == LLMResponse("Hello", "qwen", "stop", 7, result.first_token_seconds)
+    assert result.first_token_seconds is not None and result.first_token_seconds >= 0
     assert requests[0]["stream"] is True
 
 

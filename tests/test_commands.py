@@ -1,5 +1,7 @@
 import io
 import os
+import re
+import time
 from pathlib import Path
 
 import pytest
@@ -122,11 +124,44 @@ def test_thinking_and_model_report_settings():
     assert "Thinking: off" in output
 
 
-def test_stats_reports_speed():
-    state = _state()
-    state.turns, state.output_tokens, state.model_seconds = 2, 100, 20.0
+def test_stats_layout_matches_the_session_statistics_example(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class Application:
+        model_calls = 14
 
+    state = _state()
+    state.application = Application()
+    state.turns, state.output_tokens, state.turn_seconds = 7, 2_481, 60.9
+    state.tool_calls, state.tool_seconds = 9, 2.7
+    state.first_token_seconds = [1.2, 1.6]
+    state.startup_seconds = 0.8
+    monkeypatch.setattr(time, "monotonic", lambda: state.started + 18 * 60)
+
+    lines = _run(state, "/stats").splitlines()
+
+    assert lines == [
+        "Session statistics",
+        "",
+        "Turns                     7",
+        "Model calls              14",
+        "Tool calls                9",
+        "Generated tokens      2,481",
+        "Average first token   1.4 s",
+        "Average turn          8.7 s",
+        "Average tool          0.3 s",
+        "Tokens per second      40.7",
+        "Startup               0.8 s",
+        "Session age          18 min",
+    ]
+
+
+def test_failed_and_cancelled_rows_appear_only_when_nonzero():
+    assert "Failed turns" not in _run(_state(), "/stats")
+
+    state = _state()
+    state.failures, state.cancelled = 1, 2
     output = _run(state, "/stats")
 
-    assert "Turns: 2 completed, 0 failed" in output
-    assert "Speed: 5.0 tokens/s" in output
+    assert re.search(r"Failed turns\s+1\n", output)
+    assert re.search(r"Cancelled turns\s+2\n", output)

@@ -2,6 +2,7 @@
 
 import asyncio
 import math
+import time
 from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
@@ -47,6 +48,7 @@ class _ChatCompletion(BaseModel):
 
 class _Delta(BaseModel):
     content: str | None = None
+    reasoning_content: str | None = None
 
 
 class _StreamChoice(BaseModel):
@@ -246,6 +248,8 @@ class LlamaCppBackend:
         parts: list[str] = []
         model = finish_reason = None
         output_tokens = None
+        first_token = None
+        started = time.perf_counter()
         async with client.stream("POST", self._url, json=streamed) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
@@ -259,6 +263,10 @@ class LlamaCppBackend:
                 if chunk.usage is not None:
                     output_tokens = chunk.usage.completion_tokens
                 for choice in chunk.choices:
+                    if first_token is None and (
+                        choice.delta.content or choice.delta.reasoning_content
+                    ):
+                        first_token = time.perf_counter() - started  # reasoning counts
                     parts.append(choice.delta.content or "")
                     finish_reason = choice.finish_reason or finish_reason
-        return LLMResponse("".join(parts), model, finish_reason, output_tokens)
+        return LLMResponse("".join(parts), model, finish_reason, output_tokens, first_token)

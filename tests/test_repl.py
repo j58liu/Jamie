@@ -2,7 +2,9 @@ import asyncio
 import inspect
 import io
 import os
+import re
 import signal
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -183,8 +185,8 @@ def test_slash_commands_stay_local_and_new_resets_the_conversation(tmp_path: Pat
     assert "Unknown command /nope. Type /help for commands." in output
     assert "Started a new conversation." in output
     assert "Messages: 0 (0 exchanges)" in output
-    assert "Turns: 2 completed, 0 failed" in output
-    assert "Output tokens: 3" in output
+    assert re.search(r"Turns\s+2\n", output)
+    assert re.search(r"Generated tokens\s+3\n", output)
     assert backend.requests == [[Message("user", "first")], [Message("user", "second")]]
     assert backend.close_calls == 1
 
@@ -206,6 +208,7 @@ class Turn:
 
     answer: str = "fake answer"
     events: list[AgentEvent] = field(default_factory=list)
+    first_token_seconds: float | None = None
     error: Exception | None = None
     wait_for_cancel: bool = False
 
@@ -226,6 +229,7 @@ class FakeJamieApplication:
         self.starts = 0
         self.closes = 0
         self.conversations = 0
+        self.model_calls = 0
 
     async def __aenter__(self):
         self.starts += 1
@@ -247,6 +251,7 @@ class FakeJamieApplication:
         event_sink=lambda event: None,
     ) -> TurnResult:
         self.calls.append(Call(prompt, list(history or []), conversation_id))
+        self.model_calls += 1
         turn = self.turns.pop(0) if self.turns else Turn()
         event_sink(TurnStarted(prompt))
         for event in turn.events:
@@ -263,7 +268,9 @@ class FakeJamieApplication:
             event_sink(TurnFailed(str(exc)))
             raise
         event_sink(AssistantFinished(turn.answer))
-        return TurnResult(turn.answer)
+        return TurnResult(
+            turn.answer, output_tokens=10, first_token_seconds=turn.first_token_seconds
+        )
 
     def start_conversation(self) -> str:
         self.conversations += 1
@@ -396,6 +403,43 @@ def test_a_failed_model_request_does_not_kill_the_repl():
 
     assert "Error: Cannot reach llama.cpp" in output
     assert "Jamie › recovered" in output
-    assert "Turns: 1 completed, 1 failed" in output
+    assert re.search(r"Turns\s+1\n", output)
+    assert re.search(r"Failed turns\s+1\n", output)
     assert application.calls[1].history == []  # the failed exchange was not kept
     assert application.closes == 1
+
+
+def test_stats_count_turns_model_calls_tools_first_tokens_and_startup():
+    tool = [
+        ToolStarted("read_file", {"path": "a.md"}),
+        ToolFinished("read_file", ToolResult(success=True, output="x"), 0.5),
+    ]
+    application = FakeJamieApplication(
+        Turn("one", events=tool, first_token_seconds=1.0),
+        Turn(error=LLMError("offline")),
+        Turn("two", first_token_seconds=2.0),
+    )
+    console = Console(file=io.StringIO(), width=200, no_color=True)
+
+    async def main() -> None:
+        with create_pipe_input() as pipe:
+            pipe.send_text("a\nb\nc\n/stats\n/quit\n")
+            session = PromptSession(input=pipe, output=DummyOutput())
+            async with application:
+                started = time.monotonic() - 2.5
+                await run_repl(application, console=console, session=session, started=started)
+
+    asyncio.run(main())
+    output = console.file.getvalue()
+
+    for row in (
+        r"Turns\s+2\n",
+        r"Failed turns\s+1\n",
+        r"Model calls\s+3\n",
+        r"Tool calls\s+1\n",
+        r"Generated tokens\s+20\n",
+        r"Average first token\s+1\.5 s\n",
+        r"Average tool\s+0\.5 s\n",
+        r"Startup\s+2\.5 s\n",
+    ):
+        assert re.search(row, output), row

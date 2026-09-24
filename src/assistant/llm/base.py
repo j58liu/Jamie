@@ -20,6 +20,7 @@ class LLMResponse:
     model: str | None = None
     finish_reason: str | None = None
     output_tokens: int | None = None
+    first_token_seconds: float | None = None  # known only for streamed requests
 
 
 @dataclass(frozen=True)

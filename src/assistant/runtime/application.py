@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Self
 
@@ -44,6 +44,7 @@ class TurnResult:
     model: str | None = None
     finish_reason: str | None = None
     output_tokens: int | None = None
+    first_token_seconds: float | None = None
 
     @classmethod
     def from_response(cls, response: LLMResponse) -> TurnResult:
@@ -52,6 +53,7 @@ class TurnResult:
             model=response.model,
             finish_reason=response.finish_reason,
             output_tokens=response.output_tokens,
+            first_token_seconds=response.first_token_seconds,
         )
 
 
@@ -82,6 +84,7 @@ class JamieApplication:
         self._backend: LLMBackend | None = None
         self._memory: MemoryStore | None = None
         self._closed = False
+        self.model_calls = 0  # requests sent to the model, including failed ones
 
     async def __aenter__(self) -> Self:
         await self.start()
@@ -147,6 +150,7 @@ class JamieApplication:
             messages.extend(history or [])
             messages.append(Message(role="user", content=prompt))
             options = {} if thinking is None else {"thinking": thinking}
+            self.model_calls += 1
             with cancellation_scope(cancel):
                 response = await asyncio.to_thread(
                     self._backend.chat,
@@ -170,7 +174,7 @@ class JamieApplication:
                 self._finish_failed_session(session_id)
             event_sink(TurnFailed(str(exc) or type(exc).__name__))
             raise
-        result = TurnResult(text, response.model, response.finish_reason, response.output_tokens)
+        result = replace(TurnResult.from_response(response), message=text)
         event_sink(
             AssistantFinished(
                 result.message, result.model, result.finish_reason, result.output_tokens

@@ -16,6 +16,7 @@ from prompt_toolkit.styles import Style
 from rich.console import Console
 
 from assistant import __version__
+from assistant.agent.events import AgentEvent, ToolFailed, ToolFinished
 from assistant.cancellation import CancellationToken, TurnCancelled
 from assistant.llm.base import LLMError, Message
 from assistant.memory import MemoryStoreError, default_memory_path
@@ -82,15 +83,27 @@ async def run_repl(
     console: Console | None = None,
     session: PromptSession | None = None,
     model: str | None = None,
+    started: float | None = None,
 ) -> None:
-    """Send prompts to the already initialized application until the user exits."""
+    """Send prompts to the already initialized application until the user exits.
+
+    ``started`` is the time.monotonic() value when Jamie began starting up.
+    """
     state = ReplState(console or Console(), application=application, model=model)
     session = session or create_prompt_session()
     renderer = EventRenderer(state.console, answer_prefix="Jamie › ")
 
+    def show_and_count(event: AgentEvent) -> None:
+        if isinstance(event, ToolFinished | ToolFailed):
+            state.tool_calls += 1
+            state.tool_seconds += event.duration
+        renderer.handle(event)
+
     state.say(f"Jamie {__version__}")
     state.say("Type /help for commands. Ctrl+D or /quit to leave.")
 
+    if started is not None:
+        state.startup_seconds = time.monotonic() - started
     while state.running:
         try:
             prompt = (
@@ -106,7 +119,7 @@ async def run_repl(
             break
         if not prompt or COMMANDS.dispatch(state, prompt):
             continue
-        started = time.monotonic()
+        turn_started = time.monotonic()
         token = CancellationToken()
         try:
             if state.conversation_id is None:
@@ -120,19 +133,21 @@ async def run_repl(
                     thinking=state.thinking,
                     cancel=token,
                     conversation_id=state.conversation_id,
-                    event_sink=renderer.handle,
+                    event_sink=show_and_count,
                 )
         except TurnCancelled:
+            state.cancelled += 1
             state.say("Cancelled.")
             continue
         except (JamieApplicationError, LLMError, MemoryStoreError, ValueError) as exc:
             state.failures += 1
             state.say(f"Error: {exc}")
             continue
-        finally:
-            state.model_seconds += time.monotonic() - started
         state.turns += 1
+        state.turn_seconds += time.monotonic() - turn_started
         state.output_tokens += result.output_tokens or 0
+        if result.first_token_seconds is not None:
+            state.first_token_seconds.append(result.first_token_seconds)
         state.model = result.model or state.model
         # ponytail: transcript grows unbounded; compaction is a separate task needing evals.
         state.history += [Message("user", prompt), Message("assistant", result.message)]

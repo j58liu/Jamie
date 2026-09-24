@@ -42,10 +42,16 @@ class ReplState:
     temperature: float = 0.6
     max_tokens: int = 1024
     model: str | None = None
+    # Session statistics; kept in memory only and never written or sent anywhere.
     turns: int = 0
     failures: int = 0
+    cancelled: int = 0
     output_tokens: int = 0
-    model_seconds: float = 0.0
+    turn_seconds: float = 0.0  # completed turns only
+    first_token_seconds: list[float] = field(default_factory=list)
+    tool_calls: int = 0
+    tool_seconds: float = 0.0
+    startup_seconds: float | None = None
     started: float = field(default_factory=time.monotonic)
     running: bool = True
 
@@ -304,13 +310,47 @@ def _cwd(state: ReplState, argument: str) -> None:
     state.say(str(Path.cwd()))
 
 
+def duration(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f} s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)} min"
+    return f"{int(seconds // 3600)} h {int(seconds % 3600 // 60)} min"
+
+
 def _stats(state: ReplState, argument: str) -> None:
-    state.say(f"Turns: {state.turns} completed, {state.failures} failed")
-    state.say(f"Output tokens: {state.output_tokens}")
-    state.say(f"Model time: {state.model_seconds:.1f}s")
-    if state.model_seconds and state.output_tokens:
-        state.say(f"Speed: {state.output_tokens / state.model_seconds:.1f} tokens/s")
-    state.say(f"Session time: {time.monotonic() - state.started:.0f}s")
+    rows = [("Turns", f"{state.turns:,}")]
+    if state.failures:
+        rows.append(("Failed turns", f"{state.failures:,}"))
+    if state.cancelled:
+        rows.append(("Cancelled turns", f"{state.cancelled:,}"))
+    model_calls = getattr(state.application, "model_calls", None)
+    if model_calls is not None:
+        rows.append(("Model calls", f"{model_calls:,}"))
+    rows += [
+        ("Tool calls", f"{state.tool_calls:,}"),
+        ("Generated tokens", f"{state.output_tokens:,}"),
+    ]
+    if state.first_token_seconds:
+        average = sum(state.first_token_seconds) / len(state.first_token_seconds)
+        rows.append(("Average first token", duration(average)))
+    if state.turns:
+        rows.append(("Average turn", duration(state.turn_seconds / state.turns)))
+    if state.tool_calls:
+        rows.append(("Average tool", duration(state.tool_seconds / state.tool_calls)))
+    if state.turn_seconds and state.output_tokens:
+        rows.append(("Tokens per second", f"{state.output_tokens / state.turn_seconds:.1f}"))
+    if state.context is not None:
+        rows.append(("Context", f"{state.context.used:,} / {state.context.maximum:,}"))
+    if state.startup_seconds is not None:
+        rows.append(("Startup", duration(state.startup_seconds)))
+    rows.append(("Session age", duration(time.monotonic() - state.started)))
+    label_width = max(len(label) for label, _ in rows) + 2
+    value_width = max(len(value) for _, value in rows)
+    state.say("Session statistics")
+    state.say("")
+    for label, value in rows:
+        state.say(f"{label:<{label_width}}{value:>{value_width}}")
 
 
 def create_command_registry() -> CommandRegistry:
