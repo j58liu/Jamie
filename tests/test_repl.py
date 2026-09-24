@@ -76,6 +76,7 @@ def test_repl_keeps_transcript_between_turns_and_exits_on_quit(tmp_path: Path):
 
     assert "Jamie › Hello there" in output
     assert "Jamie › You asked hello" in output
+    assert "local assistant" in output and "Esc+Enter adds a line" in output
     assert backend.requests[1] == [
         Message("user", "hello"),
         Message("assistant", "Hello there"),
@@ -157,6 +158,14 @@ def test_emacs_editing_keys(tmp_path: Path):
     _run_with_history(tmp_path, keys, backend)
 
     assert [request[-1].content for request in backend.requests] == ["abcd", "new"]
+
+
+def test_multiline_prompt_reaches_the_model_as_one_turn(tmp_path: Path):
+    backend = FakeBackend([LLMResponse("Understood")])
+
+    _run_with_history(tmp_path, "first line\x1b\r    second line\r\x04", backend)
+
+    assert backend.requests == [[Message("user", "first line\n    second line")]]
 
 
 def _completions(text: str) -> list[str]:
@@ -392,6 +401,40 @@ def test_tool_events_render_as_progress_lines():
     assert "network unavailable" in output
     assert "Jamie › Summarized." in output
     assert '"path"' not in output  # never the protocol arguments
+
+
+def test_activity_stops_before_answers_and_after_failures(monkeypatch: pytest.MonkeyPatch):
+    activity: list[str] = []
+    console = Console(file=io.StringIO(), force_terminal=True, width=200)
+
+    class Status:
+        def start(self):
+            activity.append("start")
+
+        def update(self, message):
+            activity.append(message)
+
+        def stop(self):
+            activity.append("stop")
+
+    monkeypatch.setattr(console, "status", lambda *args, **kwargs: Status())
+    application = FakeJamieApplication(
+        Turn("done", events=[ToolStarted("read_file", {"path": "notes.md"})]),
+        Turn(error=LLMError("offline")),
+    )
+
+    async def main() -> None:
+        with create_pipe_input() as pipe:
+            pipe.send_text("first\nsecond\n/quit\n")
+            session = PromptSession(input=pipe, output=DummyOutput())
+            async with application:
+                await run_repl(application, console=console, session=session)
+
+    asyncio.run(main())
+
+    assert activity == ["start", "Jamie is using a tool…", "stop", "start", "stop"]
+    assert "Jamie › done" in console.file.getvalue()
+    assert "Error: offline" in console.file.getvalue()
 
 
 def test_a_failed_model_request_does_not_kill_the_repl():

@@ -103,6 +103,18 @@ curl --noproxy '*' http://127.0.0.1:8080/health
 jamie ask "Reply with one short greeting."
 ```
 
+## Interactive terminal
+
+With the local server running, start a conversation with `jamie`. The terminal
+shows a short welcome, activity while a turn runs, Markdown answers, tool
+durations, and a status line with model, context, thinking mode, directory, and
+Git branch when available. It keeps normal terminal scrollback.
+
+Enter sends a prompt. Press Escape then Enter to insert a line break. Tab
+completes slash commands and paths (including directories after `/cwd`); a dim
+preview describes a matching slash command as you type. Use `/help` to list
+commands, Ctrl+C to cancel a running turn, and Ctrl+D or `/quit` to leave.
+
 ## Action protocol
 
 Model responses intended for action handling have exactly two forms. A tool

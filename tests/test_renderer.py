@@ -13,7 +13,7 @@ from assistant.agent.events import (
     TurnStarted,
 )
 from assistant.agent.loop import ToolResult
-from assistant.ui.renderer import EventRenderer
+from assistant.ui.renderer import EventRenderer, render_error
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ def test_tool_progress_reads_as_prose_without_protocol_json(rendered):
         ToolFinished("read_file", ToolResult(success=True, output="x\n" * 318), 0.1),
     )
 
-    assert text == "  ▸ Reading foo.py\n  ✓ Read foo.py · 318 lines\n"
+    assert text == "  ▸ Reading foo.py\n  ✓ Read foo.py · 318 lines · 0.1 s\n"
     assert "path" not in text
     assert "{" not in text
 
@@ -68,7 +68,7 @@ def test_search_results_are_counted_not_printed(rendered):
         ToolFinished("web_search", ToolResult(success=True, output=output), 0.2),
     )
 
-    assert text.endswith('  ✓ Searched web for "python" · 1 result\n')
+    assert text.endswith('  ✓ Searched web for "python" · 1 result · 0.2 s\n')
     assert "example.com" not in text
 
 
@@ -80,7 +80,7 @@ def test_failed_tool_shows_the_action_and_the_reason(rendered):
 
     assert text == (
         "  ▸ Reading example.com\n"
-        "  ✗ Reading example.com failed\n"
+        "  ✗ Reading example.com failed · 0.3 s\n"
         "    Browser navigation failed\n"
         "    connection timed out\n"
     )
@@ -102,3 +102,25 @@ def test_streamed_answer_arrives_incrementally_and_is_not_repeated(rendered):
 
     text = rendered(AssistantFinished("Python free-threading became..."))
     assert text == "Jamie › Python free-threading became...\n"
+
+
+def test_interactive_markdown_renders_structure_without_exposing_rich_markup():
+    output = StringIO()
+    renderer = EventRenderer(
+        Console(file=output, width=80, no_color=True), answer_prefix="Jamie › ", markdown=True
+    )
+
+    renderer.handle(AssistantFinished("**Bold** and `code`\n\n- one\n- two"))
+
+    text = output.getvalue()
+    assert "Jamie › Bold and code" in text
+    assert "• one" in text and "• two" in text
+    assert "**Bold**" not in text
+
+
+def test_repl_error_is_bounded_and_keeps_the_first_reason():
+    output = StringIO()
+
+    render_error(Console(file=output, no_color=True), "offline\nretrying\nmore\nfinal")
+
+    assert output.getvalue() == "  ✗ Error: offline\n    retrying\n    …\n"

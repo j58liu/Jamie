@@ -11,23 +11,38 @@ from pathlib import Path
 from typing import Any
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.application import get_app
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.styles import Style
 from rich.console import Console
+from rich.status import Status
+from rich.text import Text
 
 from assistant import __version__
-from assistant.agent.events import AgentEvent, ToolFailed, ToolFinished
+from assistant.agent.events import (
+    AgentEvent,
+    AssistantDelta,
+    AssistantFinished,
+    ToolFailed,
+    ToolFinished,
+    ToolStarted,
+    TurnFailed,
+)
 from assistant.cancellation import CancellationToken, TurnCancelled
 from assistant.llm.base import LLMError, Message
 from assistant.memory import MemoryStoreError, default_memory_path
 from assistant.runtime import JamieApplication, JamieApplicationError
 from assistant.ui.commands import ReplState, create_command_registry, refresh_context
-from assistant.ui.renderer import EventRenderer
+from assistant.ui.prompt import JamieCompleter, command_preview, continuation, input_bindings
+from assistant.ui.renderer import EventRenderer, render_error
 from assistant.ui.status import status_line
 
 COMMANDS = create_command_registry()
 # Plain dim text instead of prompt_toolkit's default reverse-video bar.
-TOOLBAR_STYLE = Style.from_dict({"bottom-toolbar": "noreverse #888888"})
+TOOLBAR_STYLE = Style.from_dict(
+    {"bottom-toolbar": "noreverse #888888", "command-preview": "#888888 italic"}
+)
 
 
 def default_history_path() -> Path:
@@ -49,12 +64,31 @@ class PromptHistory(FileHistory):
 
 
 def create_prompt_session(history_path: Path | None = None, **options: Any) -> PromptSession:
-    """Emacs line editing with persistent history and slash-command completion."""
+    """Emacs editing, multiline prompts, history, and context-aware completion."""
     return PromptSession(
         history=PromptHistory(history_path or default_history_path()),
-        completer=COMMANDS.completer(),
+        completer=JamieCompleter(COMMANDS),
+        complete_while_typing=False,
+        complete_style=CompleteStyle.READLINE_LIKE,
+        multiline=True,
+        key_bindings=input_bindings(),
+        prompt_continuation=continuation,
         **options,
     )
+
+
+def _preview() -> str | list[tuple[str, str]]:
+    description = command_preview(COMMANDS, get_app().current_buffer.text)
+    return [("class:command-preview", description)] if description else ""
+
+
+def _welcome(console: Console) -> None:
+    banner = Text("Jamie ", style="bold cyan")
+    banner.append(__version__, style="bold")
+    banner.append("  ·  local assistant", style="dim")
+    console.print(banner)
+    console.print(Text("Enter sends · Esc+Enter adds a line · /help lists commands", style="dim"))
+    console.print(Text("Ctrl+D or /quit to leave", style="dim"))
 
 
 @contextmanager
@@ -91,37 +125,55 @@ async def run_repl(
     """
     state = ReplState(console or Console(), application=application, model=model)
     session = session or create_prompt_session()
-    renderer = EventRenderer(state.console, answer_prefix="Jamie › ")
-
-    def show_and_count(event: AgentEvent) -> None:
-        if isinstance(event, ToolFinished | ToolFailed):
-            state.tool_calls += 1
-            state.tool_seconds += event.duration
-        renderer.handle(event)
-
-    state.say(f"Jamie {__version__}")
-    state.say("Type /help for commands. Ctrl+D or /quit to leave.")
+    renderer = EventRenderer(state.console, answer_prefix="Jamie › ", markdown=True)
+    _welcome(state.console)
 
     if started is not None:
         state.startup_seconds = time.monotonic() - started
     while state.running:
         try:
-            prompt = (
-                await session.prompt_async(
-                    "You › ",
-                    bottom_toolbar=lambda: status_line(state),
-                    style=TOOLBAR_STYLE,
-                )
-            ).strip()
+            prompt = await session.prompt_async(
+                "You › ",
+                bottom_toolbar=lambda: status_line(state),
+                rprompt=_preview,
+                style=TOOLBAR_STYLE,
+            )
         except KeyboardInterrupt:
             continue
         except EOFError:
             break
-        if not prompt or COMMANDS.dispatch(state, prompt):
+        if not prompt.strip():
+            continue
+        if "\n" not in prompt:
+            prompt = prompt.strip()
+        if "\n" not in prompt and COMMANDS.dispatch(state, prompt):
             continue
         turn_started = time.monotonic()
         token = CancellationToken()
+        activity: Status | None = (
+            state.console.status("Jamie is thinking…", spinner="dots")
+            if state.console.is_terminal
+            else None
+        )
+
+        def show_and_count(event: AgentEvent) -> None:
+            nonlocal activity
+            if isinstance(event, AssistantDelta | AssistantFinished | TurnFailed):
+                if activity is not None:
+                    activity.stop()
+                    activity = None
+            elif activity is not None and isinstance(event, ToolStarted):
+                activity.update("Jamie is using a tool…")
+            elif activity is not None and isinstance(event, ToolFinished | ToolFailed):
+                activity.update("Jamie is thinking…")
+            if isinstance(event, ToolFinished | ToolFailed):
+                state.tool_calls += 1
+                state.tool_seconds += event.duration
+            renderer.handle(event)
+
         try:
+            if activity is not None:
+                activity.start()
             if state.conversation_id is None:
                 state.conversation_id = application.start_conversation()
             with interrupt_cancels(token):
@@ -141,8 +193,11 @@ async def run_repl(
             continue
         except (JamieApplicationError, LLMError, MemoryStoreError, ValueError) as exc:
             state.failures += 1
-            state.say(f"Error: {exc}")
+            render_error(state.console, str(exc))
             continue
+        finally:
+            if activity is not None:
+                activity.stop()
         state.turns += 1
         state.turn_seconds += time.monotonic() - turn_started
         state.output_tokens += result.output_tokens or 0

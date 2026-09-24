@@ -6,6 +6,7 @@ from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.text import Text
 
 from assistant.agent.events import (
@@ -108,6 +109,31 @@ def _detail(tool: str, output: str) -> str | None:
     return _counted(len(output.splitlines()), units)
 
 
+def _elapsed(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f} s"
+    return f"{int(seconds // 60)} min {int(seconds % 60)} s"
+
+
+def _error_lines(message: str) -> list[str]:
+    lines = [line.strip() for line in message.replace("\r", " ").splitlines() if line.strip()]
+    if not lines:
+        return ["Unknown error"]
+    if len(lines) > MAX_ERROR_LINES:
+        return [*lines[: MAX_ERROR_LINES - 1], "…"]
+    return lines
+
+
+def render_error(console: Console, message: str) -> None:
+    """Show a bounded error and keep the next terminal prompt readable."""
+    first, *rest = _error_lines(message)
+    line = Text("  ✗ Error: ", style="red")
+    line.append(first)
+    console.print(line)
+    for detail in rest:
+        console.print(Text(f"    {detail}", style="red"))
+
+
 class OneShotRenderer:
     """Print the final answer once; command handlers retain error exit handling."""
 
@@ -136,10 +162,12 @@ class EventRenderer:
         errors: Console | None = None,
         *,
         answer_prefix: str = "",
+        markdown: bool = False,
     ) -> None:
         self._console = console
         self._errors = errors if errors is not None else console
         self._prefix = answer_prefix
+        self._markdown = markdown
         self._started: tuple[str, dict[str, Any]] | None = None
         self._streaming = False
 
@@ -152,18 +180,22 @@ class EventRenderer:
                 self._started = (tool, args)
                 label = _label(tool)
                 self._status(label.icon, _phrase(label, label.present, args), "cyan")
-            case ToolFinished(tool=tool, result=result):
+            case ToolFinished(tool=tool, result=result, duration=duration):
                 label = _label(tool)
                 line = _phrase(label, label.past, self._args(tool))
                 detail = _detail(tool, result.output)
-                self._status("✓", f"{line} · {detail}" if detail else line, "green")
-            case ToolFailed(tool=tool, error=error):
+                parts = [line, *([detail] if detail else []), _elapsed(duration)]
+                self._status("✓", " · ".join(parts), "green")
+            case ToolFailed(tool=tool, error=error, duration=duration):
                 label = _label(tool)
+                failed = _phrase(label, label.present, self._args(tool))
                 self._status(
-                    "✗", f"{_phrase(label, label.present, self._args(tool))} failed", "red"
+                    "✗",
+                    f"{failed} failed · {_elapsed(duration)}",
+                    "red",
                 )
-                for detail in error.strip().splitlines()[:MAX_ERROR_LINES]:
-                    self._console.print(Text(f"    {detail.strip()}", style="red"))
+                for detail in _error_lines(error):
+                    self._console.print(Text(f"    {detail}", style="red"))
             case AssistantDelta(text=text):
                 if not self._streaming:
                     self._console.out(self._prefix, end="", highlight=False)
@@ -173,6 +205,9 @@ class EventRenderer:
                 if self._streaming:
                     self._console.out("")
                     self._streaming = False
+                elif self._markdown:
+                    self._console.print(Text(self._prefix, style="cyan"), end="")
+                    self._console.print(Markdown(text), soft_wrap=True)
                 else:
                     self._console.print(f"{self._prefix}{text}", markup=False, highlight=False)
                 if finish_reason == "length":
