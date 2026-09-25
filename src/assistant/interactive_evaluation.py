@@ -1,9 +1,10 @@
 """Multi-turn evaluations of the runtime interactive mode uses, without the terminal UI.
 
 Each case drives JamieApplication and the agent loop the way the REPL does: history carries
-between turns, /new resets it, Ctrl+C cancels through a token, and approvals go through the
-real permission policy. Events are recorded but never rendered, so display code cannot
-influence what the model sees.
+between turns, /new resets it, /compact summarizes it, Ctrl+C cancels through a token, and
+approvals go through the real permission policy. A case's web fixture stands in for the
+network, so web and research tools run offline. Events are recorded but never rendered, so
+display code cannot influence what the model sees.
 """
 
 import asyncio
@@ -23,15 +24,17 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from assistant import __version__
 from assistant.agent.events import AgentEvent, AssistantFinished, TurnFailed, TurnStarted
-from assistant.agent.loop import AgentError, run_agent
+from assistant.agent.loop import AgentError
 from assistant.agent_evaluation import ToolCall, _RecordingBackend, _RecordingTools
 from assistant.cancellation import CancellationToken, TurnCancelled
 from assistant.config import ProjectConfig
 from assistant.evaluation import EvaluationError, parse_json, save_report
 from assistant.llm.base import LLMBackend, LLMError, LLMResponse, Message
+from assistant.research_evaluation import _FixtureWeb
 from assistant.runtime import JamieApplication
 from assistant.security.approvals import CallbackApprovalProvider
-from assistant.tools.registry import create_workspace_registry
+from assistant.tools.registry import create_workspace_registry, register_web_tools
+from assistant.tools.web import SearchResult
 
 CANCEL_AFTER_SECONDS = 1.0
 MALFORMED_ACTION = "Sure, I will read the file now."
@@ -45,6 +48,7 @@ class InteractiveStep(BaseModel):
     prompt: str = Field(min_length=1)
     tools: bool = False  # run through the agent loop with workspace tools
     new_conversation: bool = False  # /new before this turn
+    compact: bool = False  # /compact before this turn
     cancel: bool = False  # Ctrl+C shortly after the turn starts
     approve: bool = False  # the user's answer if the policy asks for approval
     malformed_first_action: bool = False  # replace the model's first action with prose
@@ -73,11 +77,21 @@ class InteractiveStep(BaseModel):
         return self
 
 
+class WebFixture(BaseModel):
+    """Search results and pages (URL to HTML) served instead of the network."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    search_results: list[SearchResult] = Field(default_factory=list)
+    pages: dict[str, str] = Field(default_factory=dict)
+
+
 class InteractiveEvalCase(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
     id: str = Field(min_length=1, pattern=r"^[a-zA-Z0-9_-]+$")
     files: dict[str, str] = Field(default_factory=dict)
+    web: WebFixture | None = None  # adds web_search, fetch_url, and research to tool steps
     steps: list[InteractiveStep] = Field(min_length=1)
     context_grows: bool = False  # the measured context must grow on every turn
 
@@ -151,21 +165,6 @@ class InteractiveEvalReport(BaseModel):
         }
 
 
-class _MalformedFirstAction:
-    """Replace the model's first reply with prose, as a model sometimes does."""
-
-    def __init__(self, backend: LLMBackend) -> None:
-        self.backend = backend
-        self.replaced = False
-
-    def chat(self, messages: list[Message], **options) -> LLMResponse:
-        response = self.backend.chat(messages, **options)
-        if self.replaced:
-            return response
-        self.replaced = True
-        return LLMResponse(MALFORMED_ACTION, response.model, response.finish_reason, 0)
-
-
 def default_interactive_cases_path() -> Path:
     checkout = Path(__file__).resolve().parents[2] / "evals" / "interactive_cases"
     return checkout if checkout.is_dir() else Path(__file__).with_name("interactive_eval_cases")
@@ -236,9 +235,26 @@ def _step_failure(
     return None
 
 
+def _step_tools(
+    step: InteractiveStep,
+    case: InteractiveEvalCase,
+    workspace: Path,
+    backend: "_RequestRecorder",
+    approvals: list[object],
+) -> _RecordingTools:
+    """The REPL's tools for one step: workspace tools, plus fixture-backed web tools."""
+    backend.malform_next = step.malformed_first_action
+    provider = CallbackApprovalProvider(lambda request: approvals.append(request) or step.approve)
+    registry = create_workspace_registry(workspace, approvals=provider)
+    if case.web is not None:
+        web = _FixtureWeb(case.web.search_results, case.web.pages)
+        register_web_tools(registry, web, backend)
+    return _RecordingTools(registry)
+
+
 async def _run_steps(
     application: JamieApplication,
-    backend: _RecordingBackend,
+    backend: "_RequestRecorder",
     case: InteractiveEvalCase,
     workspace: Path,
     timeout_seconds: float,
@@ -259,50 +275,38 @@ async def _run_steps(
         answer = error = None
         cancelled = False
         requests_before = len(backend.requests)
+        conversation_id = conversation_id or application.start_conversation()
+        token = CancellationToken()
+        loop = asyncio.get_running_loop()
+        if step.cancel:
+            loop.call_later(CANCEL_AFTER_SECONDS, token.cancel)
+
+        # A timeout cancels like Ctrl+C, so llama.cpp stops instead of
+        # generating into the next case.
+        def expire(token: CancellationToken = token, flag: list = timed_out) -> None:
+            flag.append(True)
+            token.cancel()
+
+        timer = loop.call_later(timeout_seconds, expire)
+        tools = _step_tools(step, case, workspace, backend, approvals) if step.tools else None
+        compact_failed = False
         try:
-            if step.tools:
-                model = _MalformedFirstAction(backend) if step.malformed_first_action else backend
-                provider = CallbackApprovalProvider(
-                    lambda request, asked=approvals, answer=step.approve: (
-                        asked.append(request) or answer
-                    )
+            if step.compact:
+                try:
+                    history = await application.compact(history, cancel=token)
+                except (LLMError, ValueError) as exc:
+                    compact_failed = True
+                    error = f"Compaction failed: {exc}"
+            if not compact_failed:
+                # Tool steps take the same run_turn path as the REPL, history included.
+                turn = await application.run_turn(
+                    step.prompt,
+                    history=history,
+                    cancel=token,
+                    conversation_id=conversation_id,
+                    event_sink=events.append,
+                    tools=tools,
                 )
-                tools = _RecordingTools(create_workspace_registry(workspace, approvals=provider))
-                try:
-                    answer = await asyncio.to_thread(
-                        run_agent,
-                        model,
-                        tools,
-                        step.prompt,
-                        timeout_seconds=timeout_seconds,
-                        event_sink=events.append,
-                    )
-                finally:
-                    tool_calls = tools.calls
-            else:
-                conversation_id = conversation_id or application.start_conversation()
-                token = CancellationToken()
-                loop = asyncio.get_running_loop()
-                if step.cancel:
-                    loop.call_later(CANCEL_AFTER_SECONDS, token.cancel)
-
-                # A timeout cancels like Ctrl+C, so llama.cpp stops instead of
-                # generating into the next case.
-                def expire(token: CancellationToken = token, flag: list = timed_out) -> None:
-                    flag.append(True)
-                    token.cancel()
-
-                timer = loop.call_later(timeout_seconds, expire)
-                try:
-                    turn = await application.run_turn(
-                        step.prompt,
-                        history=history,
-                        cancel=token,
-                        conversation_id=conversation_id,
-                        event_sink=events.append,
-                    )
-                finally:
-                    timer.cancel()
                 answer = turn.message
         except TurnCancelled:
             if timed_out:
@@ -312,6 +316,9 @@ async def _run_steps(
                 cancelled_prompts.append(step.prompt)
         except (AgentError, LLMError) as exc:
             error = str(exc) or type(exc).__name__
+        finally:
+            timer.cancel()
+            tool_calls = tools.calls if tools is not None else []
         if answer is not None:
             history = [*history, Message("user", step.prompt), Message("assistant", answer)]
 
@@ -336,7 +343,9 @@ async def _run_steps(
             passed=False,
             failure_reason=None,
         )
-        reason = _step_failure(step, result, events, workspace)
+        reason = (
+            "compact_failed" if compact_failed else _step_failure(step, result, events, workspace)
+        )
         sent = backend.requests[requests_before:]
         if reason is None and any(
             prompt in message.content
@@ -366,10 +375,15 @@ class _RequestRecorder(_RecordingBackend):
     def __init__(self, backend: LLMBackend) -> None:
         super().__init__(backend)
         self.requests: list[list[Message]] = []
+        self.malform_next = False  # replace the next reply with prose, as models sometimes do
 
     def chat(self, messages: list[Message], **options) -> LLMResponse:
         self.requests.append(list(messages))
-        return super().chat(messages, **options)
+        response = super().chat(messages, **options)
+        if not self.malform_next:
+            return response
+        self.malform_next = False
+        return LLMResponse(MALFORMED_ACTION, response.model, response.finish_reason, 0)
 
     def context_usage(self, messages: list[Message]):
         measure = getattr(self.backend, "context_usage", None)

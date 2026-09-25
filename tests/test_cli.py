@@ -93,8 +93,9 @@ def test_interactive_session_builds_one_backend_and_one_runtime(monkeypatch: pyt
             self.requests += 1
             return LLMResponse(f"answer {self.requests}")
 
-    async def fake_run_repl(application, *, console, model, started):
+    async def fake_run_repl(application, *, console, model, started, agent_tools_factory):
         sessions.append((application, model))
+        assert callable(agent_tools_factory)
         for prompt in ("one", "two", "three"):
             await application.run_turn(prompt)
 

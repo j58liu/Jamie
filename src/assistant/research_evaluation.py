@@ -138,16 +138,19 @@ class ResearchEvalReport(BaseModel):
 
 
 class _FixtureWeb:
-    def __init__(self, case: ResearchEvalCase) -> None:
-        self.case = case
+    """Serve fixed search results and pages instead of the network."""
+
+    def __init__(self, search_results: list[SearchResult], pages: dict[str, str]) -> None:
+        self.search_results = search_results
+        self.pages = pages
         self.fetched: dict[str, FetchedPage] = {}
 
     def search(self, query: str, *, limit: int = 5) -> list[SearchResult]:
-        return self.case.search_results[:limit]
+        return self.search_results[:limit]
 
     def fetch(self, url: str) -> FetchedPage:
         try:
-            content = self.case.pages[url]
+            content = self.pages[url]
         except KeyError as exc:
             raise WebError("Page fixture not found.") from exc
         page = FetchedPage(
@@ -227,7 +230,7 @@ def _run_case(
     result = None
     error = None
     try:
-        result = ResearchWorkflow(backend, _FixtureWeb(case)).run(
+        result = ResearchWorkflow(backend, _FixtureWeb(case.search_results, case.pages)).run(
             case.question,
             max_sources=len(case.search_results),
             min_sources=case.min_sources,

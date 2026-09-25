@@ -201,7 +201,10 @@ The agent worker queues events alongside its result. The calling thread drains
 that queue in order, so rendering callbacks do not run in the worker. Events
 arriving after a timeout are not delivered. The async direct-chat runtime
 delivers its events on the event-loop thread. These are progress notifications,
-not acknowledgements that a UI has rendered before execution proceeds.
+not acknowledgements that a UI has rendered before execution proceeds, with one
+exception: the worker waits until `ApprovalRequested` has been delivered before
+calling the approval provider, so the prompt never interleaves with earlier
+progress output. A denied approval ends the agent turn with a plain answer.
 
 Tool starts describe dispatch attempts, including ones later denied or rejected
 by the registry. Successful results emit `ToolFinished`; failed results and
@@ -317,8 +320,12 @@ own a reusable HTTPX client so the interactive process also reuses connections.
 - **Conversation growth:** retaining transcripts across turns can exceed
   llama.cpp's configured context. `/context` and the status bar report the
   history's exact size (llama.cpp `/apply-template` and `/tokenize`) against
-  the server's `n_ctx`, re-measured after each turn. There is no compaction;
-  it needs its own task with evaluation coverage.
+  the server's `n_ctx`, re-measured after each turn. `/compact` replaces the
+  in-memory history with one model-written summary exchange
+  (`JamieApplication.compact`); the saved conversation is unchanged, so
+  `/resume` reloads every exchange. Compaction is manual; there is no automatic
+  compaction near the limit. The `interactive-compact-keeps-facts` evaluation
+  checks that facts survive a summary.
 - **Memory duplication:** active-session messages and FTS5 recall can contain
   the same exchange. Retrieval needs an active-session exclusion or a clear
   deduplication rule.

@@ -43,7 +43,7 @@ def agent_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     command_runner = FakeRunner()
     monkeypatch.setattr(cli, "LlamaCppBackend", lambda: backend)
 
-    def registry(root, *, approvals, web):
+    def registry(root, *, approvals, web, backend):
         return create_macos_registry(root, approvals=approvals, runner=command_runner)
 
     monkeypatch.setattr(cli, "create_agent_registry", registry)
@@ -82,9 +82,9 @@ def test_agent_cli_denial_prevents_application_launch(agent_cli):
     backend, command_runner = agent_cli
     result = runner.invoke(cli.app, ["agent", "open Safari"], input="n\n")
     assert result.exit_code == 0, result.output
-    assert "Safari was not opened." in result.output
+    assert "Stopped: open_application was not approved." in result.output
     assert command_runner.calls == []
-    assert backend.calls == 2
+    assert backend.calls == 1  # a denial ends the turn instead of asking the model again
 
 
 @pytest.mark.parametrize(

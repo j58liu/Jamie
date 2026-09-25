@@ -60,6 +60,7 @@ _LABELS: dict[str, _Label] = {
     "web_search": _Label("◦", "Searching web for", "Searched web for", "query", _quoted),
     "fetch_url": _Label("▸", "Reading", "Read", "url", _host),
     "extract_page": _Label("▸", "Reading", "Read", "url", _host),
+    "research": _Label("◦", "Researching", "Researched", "question", _quoted),
     "open_application": _Label("▸", "Opening", "Opened", "name"),
     "reveal_in_finder": _Label("▸", "Revealing", "Revealed", "path"),
     "clipboard_read": _Label("▸", "Reading the clipboard", "Read the clipboard"),

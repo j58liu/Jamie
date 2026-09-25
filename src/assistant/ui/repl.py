@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
-import signal
+import inspect
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +20,7 @@ from rich.text import Text
 from assistant import __version__
 from assistant.agent.events import (
     AgentEvent,
+    ApprovalRequested,
     AssistantDelta,
     AssistantFinished,
     ToolFailed,
@@ -29,7 +28,8 @@ from assistant.agent.events import (
     ToolStarted,
     TurnFailed,
 )
-from assistant.cancellation import CancellationToken, TurnCancelled
+from assistant.agent.loop import AgentError, ToolExecutor
+from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
 from assistant.llm.base import LLMError, Message
 from assistant.memory import MemoryStoreError, default_memory_path
 from assistant.runtime import JamieApplication, JamieApplicationError
@@ -91,26 +91,6 @@ def _welcome(console: Console) -> None:
     console.print(Text("Ctrl+D or /quit to leave", style="dim"))
 
 
-@contextmanager
-def interrupt_cancels(token: CancellationToken) -> Iterator[None]:
-    """While a turn runs, Ctrl+C cancels it instead of stopping Jamie.
-
-    At the prompt, prompt_toolkit reads Ctrl+C as a key, so no signal is involved.
-    """
-    loop = asyncio.get_running_loop()
-    previous = signal.getsignal(signal.SIGINT)
-    try:
-        loop.add_signal_handler(signal.SIGINT, token.cancel)
-    except (NotImplementedError, RuntimeError, ValueError):  # not the main thread
-        yield
-        return
-    try:
-        yield
-    finally:
-        loop.remove_signal_handler(signal.SIGINT)
-        signal.signal(signal.SIGINT, previous)
-
-
 async def run_repl(
     application: JamieApplication,
     *,
@@ -118,6 +98,7 @@ async def run_repl(
     session: PromptSession | None = None,
     model: str | None = None,
     started: float | None = None,
+    agent_tools_factory: Callable[[], ToolExecutor] | None = None,
 ) -> None:
     """Send prompts to the already initialized application until the user exits.
 
@@ -146,7 +127,10 @@ async def run_repl(
             continue
         if "\n" not in prompt:
             prompt = prompt.strip()
-        if "\n" not in prompt and COMMANDS.dispatch(state, prompt):
+        handled = "\n" not in prompt and COMMANDS.dispatch(state, prompt)
+        if inspect.isawaitable(handled):
+            await handled  # a command that calls the model, such as /compact
+        if handled:
             continue
         turn_started = time.monotonic()
         token = CancellationToken()
@@ -158,7 +142,9 @@ async def run_repl(
 
         def show_and_count(event: AgentEvent) -> None:
             nonlocal activity
-            if isinstance(event, AssistantDelta | AssistantFinished | TurnFailed):
+            if isinstance(
+                event, AssistantDelta | AssistantFinished | ApprovalRequested | TurnFailed
+            ):
                 if activity is not None:
                     activity.stop()
                     activity = None
@@ -177,6 +163,9 @@ async def run_repl(
             if state.conversation_id is None:
                 state.conversation_id = application.start_conversation()
             with interrupt_cancels(token):
+                agent_options = (
+                    {"tools": agent_tools_factory()} if agent_tools_factory is not None else {}
+                )
                 result = await application.run_turn(
                     prompt,
                     history=state.history,
@@ -186,12 +175,13 @@ async def run_repl(
                     cancel=token,
                     conversation_id=state.conversation_id,
                     event_sink=show_and_count,
+                    **agent_options,
                 )
         except TurnCancelled:
             state.cancelled += 1
             state.say("Cancelled.")
             continue
-        except (JamieApplicationError, LLMError, MemoryStoreError, ValueError) as exc:
+        except (AgentError, JamieApplicationError, LLMError, MemoryStoreError, ValueError) as exc:
             state.failures += 1
             render_error(state.console, str(exc))
             continue

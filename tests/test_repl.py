@@ -15,6 +15,7 @@ from prompt_toolkit.document import Document
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from rich.console import Console
+from rich.text import Text
 
 from assistant.agent.events import (
     AgentEvent,
@@ -29,6 +30,10 @@ from assistant.agent.loop import ToolResult
 from assistant.config import ProjectConfig
 from assistant.llm.base import LLMError, LLMResponse, Message
 from assistant.runtime import JamieApplication, TurnResult
+from assistant.runtime.application import COMPACT_REQUEST
+from assistant.security import CallbackApprovalProvider
+from assistant.tools import CommandResult, create_macos_registry
+from assistant.ui.approvals import TerminalApprovalProvider
 from assistant.ui.repl import COMMANDS, create_prompt_session, run_repl
 
 
@@ -168,6 +173,119 @@ def test_multiline_prompt_reaches_the_model_as_one_turn(tmp_path: Path):
     assert backend.requests == [[Message("user", "first line\n    second line")]]
 
 
+@pytest.mark.parametrize("approved", [True, False])
+def test_interactive_agent_uses_approval_before_opening_safari(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, approved: bool
+):
+    opened = [LLMResponse('{"action":"finish","message":"Safari opened."}')] if approved else []
+    backend = FakeBackend(
+        [
+            LLMResponse('{"action":"tool","tool":"open_application","args":{"name":"Safari"}}'),
+            *opened,
+            LLMResponse('{"action":"finish","message":"We discussed Safari."}'),
+        ]
+    )
+    requests = []
+    launches = []
+    terminal: list[str] = []  # spinner changes and approval prompts, in order
+
+    class Runner:
+        def run(self, arguments, *, input_text=None, timeout):
+            launches.append(arguments)
+            return CommandResult(stdout="", stderr="")
+
+    class Status:
+        def start(self):
+            terminal.append("start")
+
+        def update(self, message):
+            time.sleep(0.05)  # a slow terminal must still finish before the prompt
+
+        def stop(self):
+            terminal.append("stop")
+
+    application = JamieApplication(
+        ProjectConfig(memory_path=str(tmp_path / "memory.sqlite3")),
+        backend_factory=lambda: backend,
+    )
+    console = Console(file=io.StringIO(), force_terminal=True, width=200, no_color=True)
+    monkeypatch.setattr(console, "status", lambda *args, **kwargs: Status())
+    terminal_approvals = TerminalApprovalProvider(
+        console, ask=lambda prompt: terminal.append("ask") or ("y" if approved else "n")
+    )
+    provider = CallbackApprovalProvider(
+        lambda request: requests.append(request) or terminal_approvals.request(request)
+    )
+
+    async def main() -> None:
+        with create_pipe_input() as pipe:
+            pipe.send_text("open Safari\rwhat happened?\r/quit\r")
+            session = create_prompt_session(tmp_path / "history", input=pipe, output=DummyOutput())
+            async with application:
+                await run_repl(
+                    application,
+                    console=console,
+                    session=session,
+                    agent_tools_factory=lambda: create_macos_registry(
+                        tmp_path, approvals=provider, runner=Runner()
+                    ),
+                )
+
+    asyncio.run(main())
+
+    assert [request.tool for request in requests] == ["open_application"]
+    assert terminal[:3] == ["start", "stop", "ask"]  # the prompt never shares the spinner line
+    assert launches == ([["open", "-a", "Safari"]] if approved else [])
+    # A denial ends the turn; the model is not asked to try again.
+    assert len(backend.requests) == (3 if approved else 2)
+    assert backend.requests[-1][1:4] == [
+        Message("user", "open Safari"),
+        Message(
+            "assistant",
+            "Safari opened." if approved else "Stopped: open_application was not approved.",
+        ),
+        Message("user", "what happened?"),
+    ]
+    output = Text.from_ansi(console.file.getvalue()).plain
+    assert output.index("Opening Safari") < output.index("Approval required")
+    assert ("✓ Opened Safari" if approved else "✗ Opening Safari failed") in output
+
+
+def test_compact_replaces_the_history_sent_with_later_turns(tmp_path: Path):
+    backend = FakeBackend(
+        [
+            LLMResponse("Noted."),
+            LLMResponse("The user's favorite color is teal."),
+            LLMResponse("Teal."),
+        ]
+    )
+
+    output, backend = _run(
+        tmp_path, "/compact\nMy favorite color is teal.\n/compact\nWhat is it?\n/quit\n", backend
+    )
+
+    assert "Nothing to compact yet." in output
+    assert "Compacted 2 messages into a summary" in output
+    assert backend.requests[-1] == [
+        Message("user", COMPACT_REQUEST),
+        Message("assistant", "The user's favorite color is teal."),
+        Message("user", "What is it?"),
+    ]
+
+
+def test_failed_compaction_keeps_the_full_history(tmp_path: Path):
+    backend = FakeBackend([LLMResponse("Noted."), LLMError("model offline"), LLMResponse("Teal.")])
+
+    output, backend = _run(tmp_path, "teal\n/compact\nWhat is it?\n/quit\n", backend)
+
+    assert "Error: Compaction failed: model offline" in output
+    assert backend.requests[-1] == [
+        Message("user", "teal"),
+        Message("assistant", "Noted."),
+        Message("user", "What is it?"),
+    ]
+
+
 def _completions(text: str) -> list[str]:
     completer = COMMANDS.completer()
     return [c.text for c in completer.get_completions(Document(text), CompleteEvent())]
@@ -258,6 +376,7 @@ class FakeJamieApplication:
         cancel=None,
         conversation_id=None,
         event_sink=lambda event: None,
+        tools=None,
     ) -> TurnResult:
         self.calls.append(Call(prompt, list(history or []), conversation_id))
         self.model_calls += 1

@@ -3,6 +3,7 @@ import json
 import httpx
 import pytest
 
+from assistant.cancellation import CancellationToken, cancellation_scope
 from assistant.llm.base import LLMBackend, LLMError, LLMResponse, Message
 from assistant.llm.llamacpp import LlamaCppBackend
 
@@ -104,6 +105,40 @@ def test_http_errors_are_reported_without_retrying(status: int):
     with pytest.raises(LLMError, match=f"HTTP {status}"):
         backend.chat([Message("user", "Hi")])
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize("streamed", [False, True])
+def test_a_request_longer_than_the_context_says_so(streamed: bool):
+    error = {
+        "code": 400,
+        "message": "request (9012 tokens) exceeds the available context size (8192 tokens)",
+        "type": "exceed_context_size_error",
+        "n_prompt_tokens": 9012,
+        "n_ctx": 8192,
+    }
+    backend = LlamaCppBackend(
+        transport=httpx.MockTransport(lambda request: httpx.Response(400, json={"error": error}))
+    )
+
+    # A cancellation token makes the backend stream, which reads errors differently.
+    with cancellation_scope(CancellationToken() if streamed else None):
+        with pytest.raises(LLMError) as raised:
+            backend.chat([Message("user", "Hi")])
+
+    assert str(raised.value) == (
+        "The request needs 9,012 tokens, more than the model's 8,192-token context. "
+        "Shorten the conversation or the request."
+    )
+
+
+def test_other_server_errors_keep_llamacpp_reason():
+    body = {"error": {"code": 500, "message": "slot unavailable", "type": "server_error"}}
+    backend = LlamaCppBackend(
+        transport=httpx.MockTransport(lambda request: httpx.Response(500, json=body))
+    )
+
+    with pytest.raises(LLMError, match="HTTP 500: slot unavailable"):
+        backend.chat([Message("user", "Hi")])
 
 
 @pytest.mark.parametrize(

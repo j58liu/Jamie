@@ -110,6 +110,18 @@ shows a short welcome, activity while a turn runs, Markdown answers, tool
 durations, and a status line with model, context, thinking mode, directory, and
 Git branch when available. It keeps normal terminal scrollback.
 
+Requests in the interactive terminal use Jamie's agent tools. For example,
+`open Safari` can request the `open_application` tool. Jamie shows the action
+and asks for approval when the Python permission policy requires it. Declining
+ends the turn; Jamie does not retry or look for another way. Asking Jamie to
+research a topic runs the `research` tool described under
+[Web research](#web-research); its cited report is the answer.
+
+`/compact` asks the model to summarize the conversation and continues from that
+summary, which frees context for long sessions. It runs like a turn: Ctrl+C
+cancels it and leaves the conversation unchanged. The saved conversation keeps
+every exchange, so `/resume` restores the full history rather than the summary.
+
 Enter sends a prompt. Press Escape then Enter to insert a line break. Tab
 completes slash commands and paths (including directories after `/cwd`); a dim
 preview describes a matching slash command as you type. Use `/help` to list
@@ -321,17 +333,25 @@ screen-capture tool is included.
 
 ## Web research
 
-Jamie provides three low-level web tools without browser automation:
+Jamie provides these web tools without browser automation:
 
 - `web_search` queries DuckDuckGo's HTML search endpoint and returns bounded
   titles, URLs, and snippets.
-- `fetch_url` retrieves one public HTTP or HTTPS text page into an in-memory
-  session cache.
-- `extract_page` turns a cached HTML or plain-text page into bounded readable
-  text.
+- `fetch_url` retrieves one public HTTP or HTTPS text page, keeps it in an
+  in-memory session cache, and returns it as Markdown: headings, lists, links
+  (made absolute), code blocks, and table rows. Scripts, styles, and the page
+  title markup are dropped, and a page's `<main>` or `<article>` is preferred
+  when it has enough text. The model receives at most 6,000 characters, sized
+  for an 8k-token context, with `truncated` set when a page is longer.
+- `extract_page` returns the same Markdown for a page already in the cache.
+- `research` runs the complete research sequence below as one action and
+  returns its cited report, which ends the turn. It is available where Jamie
+  has a model backend: the interactive terminal and `jamie agent`.
 
-Search and retrieval are `EXTERNAL` operations, so model-directed calls require
-approval. Extraction reads only the session cache and is classified as `READ`.
+Search, retrieval, and research are `EXTERNAL` operations, so model-directed
+calls require approval; approving `research` covers the searches and page
+reads inside it. Extraction reads only the session cache and is classified as
+`READ`.
 Retrieval does not use environment proxies or automatic redirects. It validates
 every redirect, rejects credentials and private, loopback, link-local, or
 otherwise non-public addresses, restricts content types, and limits downloaded

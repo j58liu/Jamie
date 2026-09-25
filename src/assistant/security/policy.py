@@ -57,6 +57,7 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
         "send_email": PermissionLevel.EXTERNAL,
         "web_search": PermissionLevel.EXTERNAL,
         "fetch_url": PermissionLevel.EXTERNAL,
+        "research": PermissionLevel.EXTERNAL,
         "delete_file": PermissionLevel.DESTRUCTIVE,
         "trash_file": PermissionLevel.SAFE_WRITE,
     }

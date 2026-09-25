@@ -63,6 +63,7 @@ def test_default_policy_classifies_named_tools():
         "send_email": PermissionLevel.EXTERNAL,
         "web_search": PermissionLevel.EXTERNAL,
         "fetch_url": PermissionLevel.EXTERNAL,
+        "research": PermissionLevel.EXTERNAL,
         "delete_file": PermissionLevel.DESTRUCTIVE,
         "trash_file": PermissionLevel.SAFE_WRITE,
     }
@@ -180,19 +181,18 @@ def test_agent_action_cannot_bypass_permission_engine():
 
         def chat(self, messages, *, temperature=0.6, max_tokens=1024):
             self.calls += 1
-            if self.calls == 1:
-                return LLMResponse('{"action":"tool","tool":"shell","args":{}}')
-            assert '"success":false' in messages[-1].content
-            return LLMResponse('{"action":"finish","message":"The action was not approved."}')
+            return LLMResponse('{"action":"tool","tool":"shell","args":{}}')
 
+    model = Model()
     tool = RecordingTool("shell", PermissionLevel.SENSITIVE)
     registry = ToolRegistry()
     registry.register(tool)
 
-    answer = run_agent(Model(), registry, "Run a command.")
+    answer = run_agent(model, registry, "Run a command.")
 
-    assert answer == "The action was not approved."
+    assert answer == "Stopped: shell was not approved."
     assert tool.executions == 0
+    assert model.calls == 1
 
 
 def test_invalid_approval_response_fails_closed():

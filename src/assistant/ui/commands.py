@@ -1,10 +1,11 @@
-"""Local slash commands for the interactive terminal; they never reach the model."""
+"""Local slash commands for the interactive terminal; only /compact calls the model."""
 
 from __future__ import annotations
 
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,11 +14,15 @@ from typing import TYPE_CHECKING
 from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
 
+from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
 from assistant.llm.base import ContextUsage, LLMError, Message
+from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import ConversationSummary
+from assistant.runtime.application import JamieApplicationError
 from assistant.security.policy import PermissionLevel, PermissionPolicy, PolicyAction
 from assistant.tools.registry import create_agent_registry
 from assistant.tools.web import WebClient
+from assistant.ui.renderer import render_error
 
 if TYPE_CHECKING:
     from assistant.runtime import JamieApplication
@@ -62,7 +67,8 @@ class ReplState:
         self.console.print(text, markup=False, highlight=False)
 
 
-CommandHandler = Callable[[ReplState, str], None]
+# A handler that needs the model returns an awaitable, which the REPL runs.
+CommandHandler = Callable[[ReplState, str], Awaitable[None] | None]
 
 
 def refresh_context(state: ReplState) -> str | None:
@@ -113,8 +119,11 @@ class CommandRegistry:
         # sentence=True matches the whole line, so "/" is not treated as a word break.
         return WordCompleter(words, sentence=True)
 
-    def dispatch(self, state: ReplState, line: str) -> bool:
-        """Run a slash command; return False when the line is a prompt for the model."""
+    def dispatch(self, state: ReplState, line: str) -> bool | Awaitable[None]:
+        """Run a slash command; return False when the line is a prompt for the model.
+
+        A command that calls the model returns its awaitable, which is also truthy.
+        """
         name, _, argument = line.partition(" ")
         # A second slash means a path such as /Users/me/notes.txt, not a command.
         if not name.startswith("/") or name.count("/") > 1:
@@ -122,9 +131,8 @@ class CommandRegistry:
         command = self._lookup.get(name.lower())
         if command is None:
             state.say(f"Unknown command {name}. Type /help for commands.")
-        else:
-            command.handler(state, argument.strip())
-        return True
+            return True
+        return command.handler(state, argument.strip()) or True
 
 
 def _help(registry: CommandRegistry) -> CommandHandler:
@@ -244,9 +252,46 @@ def _context(state: ReplState, argument: str) -> None:
     state.say("")
     state.say(f"Messages: {len(state.history)} ({len(state.history) // 2} exchanges)")
     state.say("Each request also adds the new prompt and any recalled memories.")
-    state.say("Compaction: none. A conversation that outgrows the context fails; use /new.")
+    state.say("Use /compact to summarize the conversation, or /new to start over.")
     if usage is not None and usage.percent >= CONTEXT_WARNING_PERCENT:
-        state.say(f"Warning: {usage.percent}% of the context is used.")
+        state.say(f"Warning: {usage.percent}% of the context is used. Run /compact to free it.")
+
+
+def _used_tokens(state: ReplState) -> str:
+    if state.context is not None:
+        return f"{state.context.used:,}"
+    return f"~{state.estimated_tokens():,}"
+
+
+async def _compact(state: ReplState, argument: str) -> None:
+    if state.application is None:
+        state.say("Compaction is not available.")
+        return
+    if not state.history:
+        state.say("Nothing to compact yet.")
+        return
+    before = _used_tokens(state)
+    token = CancellationToken()
+    activity = (
+        state.console.status("Compacting the conversation…", spinner="dots")
+        if state.console.is_terminal
+        else nullcontext()
+    )
+    try:
+        with activity, interrupt_cancels(token):
+            compacted = await state.application.compact(state.history, cancel=token)
+    except TurnCancelled:
+        state.say("Cancelled. The conversation was not compacted.")
+        return
+    except (JamieApplicationError, LLMError, ValueError) as exc:
+        render_error(state.console, f"Compaction failed: {exc}")
+        return
+    messages = len(state.history)
+    state.history = compacted
+    refresh_context(state)
+    state.say(
+        f"Compacted {messages} messages into a summary ({before} → {_used_tokens(state)} tokens)."
+    )
 
 
 def _thinking_label(thinking: bool | None) -> str:
@@ -271,12 +316,13 @@ def _model(state: ReplState, argument: str) -> None:
 
 
 def _tool_definitions() -> list[dict[str, object]]:
+    # The backend is only named here, never called; creating it sends no request.
     with WebClient() as web:
-        return create_agent_registry(Path.cwd(), web=web).definitions()
+        return create_agent_registry(Path.cwd(), web=web, backend=LlamaCppBackend()).definitions()
 
 
 def _tools(state: ReplState, argument: str) -> None:
-    state.say("Tools available to jamie agent (interactive chat does not call tools yet):")
+    state.say("Tools Jamie can use:")
     definitions = _tool_definitions()
     width = max(len(str(d["name"])) for d in definitions)
     for definition in definitions:
@@ -364,6 +410,7 @@ def create_command_registry() -> CommandRegistry:
             "/resume", "Continue a saved conversation; the model stays loaded.", _resume, "<n|id>"
         ),
         SlashCommand("/context", "Show the size of this conversation.", _context),
+        SlashCommand("/compact", "Summarize the conversation to free context.", _compact),
         SlashCommand("/model", "Show the model and generation settings.", _model),
         SlashCommand(
             "/thinking",

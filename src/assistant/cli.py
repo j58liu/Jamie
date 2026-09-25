@@ -130,13 +130,19 @@ async def _run_repl(settings: ProjectConfig) -> None:
         info = backend.server_info()
     except LLMError as exc:
         raise StartupError(backend.server_url, str(exc)) from exc
+    console = Console(no_color=not settings.color)
+    approvals = TerminalApprovalProvider(console)  # one per session, so "allow session" lasts
     async with JamieApplication(settings, backend_factory=lambda: backend) as application:
-        await run_repl(
-            application,
-            console=Console(no_color=not settings.color),
-            model=info.model,
-            started=STARTED,
-        )
+        with WebClient() as web:
+            await run_repl(
+                application,
+                console=console,
+                model=info.model,
+                started=STARTED,
+                agent_tools_factory=lambda: create_agent_registry(
+                    Path.cwd(), approvals=approvals, web=web, backend=backend
+                ),
+            )
 
 
 @app.callback(invoke_without_command=True)
@@ -239,14 +245,16 @@ def agent(
         console = Console(no_color=not settings.color)
         store, session_id, memory_context = _start_memory(settings, "agent", prompt)
         renderer = EventRenderer(console, Console(stderr=True, no_color=not settings.color))
+        backend = LlamaCppBackend()
         with WebClient() as web:
             tools = create_agent_registry(
                 workspace,
                 approvals=TerminalApprovalProvider(console),
                 web=web,
+                backend=backend,
             )
             answer = run_agent(
-                LlamaCppBackend(),
+                backend,
                 RememberingTools(tools, store, session_id),
                 prompt,
                 max_steps=max_steps,

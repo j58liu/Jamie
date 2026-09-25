@@ -23,6 +23,7 @@ from assistant.interactive_evaluation import (
 )
 from assistant.llm.base import ContextUsage, LLMResponse, Message
 from assistant.runtime import JamieApplication
+from assistant.runtime.application import COMPACT_REQUEST
 from assistant.tools.registry import create_read_only_registry
 from assistant.ui.renderer import EventRenderer
 
@@ -45,6 +46,18 @@ class ScriptedModel:
 
     def _reply(self, messages: list[Message]) -> str:
         prompt = messages[-1].content
+        system = messages[0].content if messages[0].role == "system" else ""
+        if system.startswith("Create a concise web search plan"):
+            return '{"queries":["boiling point of water"]}'
+        if system.startswith("Cross-check"):
+            return "The sources agree [S1] [S2]."
+        if system.startswith("Answer from the supplied evidence"):
+            sources = json.loads(prompt.split("Sources: ", 1)[1])
+            return "\n".join(f"{source['text']} [{source['id']}]" for source in sources)
+        if prompt == COMPACT_REQUEST:
+            if self.forget_history:
+                return "We talked."
+            return " ".join(m.content for m in messages[:-1])
         if "Roman Empire" in prompt:  # a long generation the user cancels
             token = current_token()
             for _ in range(500):
@@ -66,7 +79,13 @@ class ScriptedModel:
 
     def _action(self, messages: list[Message]) -> str:
         last = messages[-1].content
-        task = messages[1].content
+        task = next(
+            m.content
+            for m in reversed(messages)
+            if m.role == "user"
+            and not m.content.startswith("Tool observation:")
+            and m.content != INVALID_OUTPUT_MESSAGE
+        )
         if last.startswith("Tool observation:"):
             observation = json.loads(last.split("\n")[1])
             if observation["tool"] == "read_file" and not observation["success"]:
@@ -81,6 +100,13 @@ class ScriptedModel:
                     return _tool("read_file", path=name)
             if "hello.txt" in task:
                 return _tool("write_file", path="hello.txt", content="hi")
+            if task.startswith("Research "):
+                return _tool("research", question=task)
+            if url := re.search(r"https://\S+", task):
+                return _tool("fetch_url", url=url.group())
+        if last == task:  # a conversational turn: answer from the history, as in chat
+            history = [m for m in messages[1:] if m.role != "system"]
+            return json.dumps({"action": "finish", "message": self._reply(history)})
         return json.dumps({"action": "finish", "message": "done"})
 
 
@@ -108,10 +134,10 @@ def test_every_shipped_scenario_passes_against_a_model_that_behaves(tmp_path: Pa
         r.case_id: (r.failed_step, r.failure_reason) for r in report.results if not r.success
     }
     assert failures == {}
-    assert len(cases) == 9
+    assert len(cases) == 12
     assert report.summary()["success"] is True
     saved = json.loads(path.read_text())
-    assert saved["summary"]["passes"] == 9
+    assert saved["summary"]["passes"] == 12
     growth = next(r for r in report.results if r.case_id == "interactive-context-growth")
     tokens = [step.context_tokens for step in growth.steps]
     assert tokens == sorted(tokens) and len(set(tokens)) == len(tokens)
@@ -126,6 +152,43 @@ def test_a_model_that_loses_history_fails_the_context_scenarios(tmp_path: Path):
         2,
         "answer_mismatch",
     )
+
+
+def test_a_summary_that_drops_facts_fails_the_compact_scenario(tmp_path: Path):
+    cases = [c for c in load_interactive_cases() if c.id == "interactive-compact-keeps-facts"]
+
+    report, _ = _evaluate(cases, ScriptedModel(forget_history=True), tmp_path)
+
+    assert (report.results[0].failed_step, report.results[0].failure_reason) == (
+        3,
+        "answer_mismatch",
+    )
+
+
+def test_a_model_that_skips_the_research_tool_fails_the_research_scenario(tmp_path: Path):
+    class NoResearch(ScriptedModel):
+        def _action(self, messages):
+            if messages[-1].content.startswith("Research "):
+                return json.dumps({"action": "finish", "message": "Water boils at 100 °C."})
+            return super()._action(messages)
+
+    cases = [c for c in load_interactive_cases() if c.id == "interactive-research-tool"]
+
+    report, _ = _evaluate(cases, NoResearch(), tmp_path)
+
+    assert report.results[0].failure_reason == "expected_tool_not_called"
+
+
+def test_compaction_that_fails_is_reported_as_such(tmp_path: Path):
+    case = InteractiveEvalCase(
+        id="empty-compact", steps=[InteractiveStep(prompt="Hello?", compact=True)]
+    )
+
+    report, _ = _evaluate([case], ScriptedModel(), tmp_path)
+
+    step = report.results[0].steps[0]
+    assert step.failure_reason == "compact_failed"
+    assert step.error == "Compaction failed: There is no conversation to compact."
 
 
 def test_new_conversation_really_drops_the_old_history(tmp_path: Path):

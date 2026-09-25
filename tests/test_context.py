@@ -95,7 +95,7 @@ def test_context_command_matches_the_spec_layout():
         "Available:  10,144 tokens",
         "Usage:         38%",
     ]
-    assert "Compaction: none. A conversation that outgrows the context fails; use /new." in lines
+    assert "Use /compact to summarize the conversation, or /new to start over." in lines
     assert not any(line.startswith("Warning") for line in lines)
     assert status_line(state).startswith(" ctx 6.2k/16k │ ")
 

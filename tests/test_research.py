@@ -2,9 +2,17 @@ from collections import deque
 
 import pytest
 
+from assistant.agent.loop import run_agent
 from assistant.llm.base import LLMResponse
 from assistant.research import ResearchError, ResearchWorkflow, citation_urls
-from assistant.tools import ExtractedPage, FetchedPage, SearchResult
+from assistant.security import CallbackApprovalProvider
+from assistant.tools import (
+    ExtractedPage,
+    FetchedPage,
+    SearchResult,
+    ToolRegistry,
+    register_web_tools,
+)
 
 
 class ScriptedBackend:
@@ -123,3 +131,50 @@ def test_research_workflow_rejects_invalid_search_plans(plan: str):
     backend = ScriptedBackend([plan])
     with pytest.raises(ResearchError, match="invalid search plan"):
         ResearchWorkflow(backend, FixtureWeb()).run("Question?")
+
+
+def _research_registry(backend, web=None):
+    registry = ToolRegistry(approvals=CallbackApprovalProvider(lambda request: True))
+    return register_web_tools(registry, web or FixtureWeb(), backend)
+
+
+def test_research_tool_ends_the_agent_turn_with_the_cited_report():
+    backend = ScriptedBackend(
+        [
+            '{"action":"tool","tool":"research","args":{"question":"What are the facts?"}}',
+            '{"queries":["facts"]}',
+            "Cross-check [S1] [S2].",
+            "First supported fact. [S1]\nSecond supported fact. [S2]",
+        ]
+    )
+
+    answer = run_agent(backend, _research_registry(backend), "Research the facts.")
+
+    assert citation_urls(answer) == ["https://one.example/fact_(one)", "https://two.test/fact"]
+    assert len(backend.calls) == 4  # one agent action; the model never retypes the report
+
+
+def test_research_failure_is_reported_to_the_model_as_a_tool_failure():
+    backend = ScriptedBackend(["not a plan"])
+
+    result = _research_registry(backend).execute("research", {"question": "What are the facts?"})
+
+    assert not result.success and not result.final
+    assert "invalid search plan" in result.output
+
+
+def test_research_sources_reach_the_model_without_page_links():
+    class LinkedWeb(FixtureWeb):
+        def extract(self, url, *, fallback_title=""):
+            text = "A [supported fact](<https://tracker.example/x>) is here."
+            return ExtractedPage(url=url, title=fallback_title, text=text)
+
+    backend = ScriptedBackend(
+        ['{"queries":["facts"]}', "Cross-check [S1] [S2].", "Fact. [S1] [S2]"]
+    )
+
+    ResearchWorkflow(backend, LinkedWeb()).run("What are the facts?")
+
+    cross_check_request = backend.calls[1][0][-1].content
+    assert "A supported fact is here." in cross_check_request
+    assert "tracker.example" not in cross_check_request

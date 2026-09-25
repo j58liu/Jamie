@@ -4,9 +4,11 @@ from pathlib import Path
 
 import pytest
 
+from assistant.cancellation import CancellationToken, TurnCancelled
 from assistant.config import ProjectConfig
 from assistant.llm.base import LLMResponse, Message
 from assistant.runtime import JamieApplication, JamieApplicationError, TurnResult
+from assistant.runtime.application import COMPACT_REQUEST
 
 
 class FakeBackend:
@@ -114,3 +116,41 @@ def test_application_context_closes_backend_after_failed_turn(tmp_path: Path):
     assert backend.close_calls == 1
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT status FROM sessions").fetchone()[0] == "failed"
+
+
+def test_compact_summarizes_history_into_one_exchange(tmp_path: Path):
+    backend = FakeBackend([LLMResponse("<think>x</think>The user's favorite color is teal.")])
+    history = [Message("user", "My favorite color is teal."), Message("assistant", "Noted.")]
+
+    async def main() -> list[Message]:
+        async with JamieApplication(
+            ProjectConfig(memory_path=str(tmp_path / "memory.sqlite3")),
+            backend_factory=lambda: backend,
+        ) as application:
+            return await application.compact(history)
+
+    compacted = asyncio.run(main())
+
+    assert compacted == [
+        Message("user", COMPACT_REQUEST),
+        Message("assistant", "The user's favorite color is teal."),
+    ]
+    assert backend.requests[0][0] == [*history, Message("user", COMPACT_REQUEST)]
+
+
+def test_cancelled_compaction_raises_and_leaves_history_alone(tmp_path: Path):
+    backend = FakeBackend([LLMResponse("summary")])
+    history = [Message("user", "hello"), Message("assistant", "hi")]
+    token = CancellationToken()
+    token.cancel()
+
+    async def main() -> None:
+        async with JamieApplication(
+            ProjectConfig(memory_path=str(tmp_path / "memory.sqlite3")),
+            backend_factory=lambda: backend,
+        ) as application:
+            await application.compact(history, cancel=token)
+
+    with pytest.raises(TurnCancelled):
+        asyncio.run(main())
+    assert history == [Message("user", "hello"), Message("assistant", "hi")]

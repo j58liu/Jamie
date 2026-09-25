@@ -1,4 +1,4 @@
-"""Reusable lifecycle for Jamie's direct-chat application runtime."""
+"""Reusable lifecycle for Jamie's direct chat and agent turns."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from assistant.agent.events import (
     TurnStarted,
     discard_event,
 )
+from assistant.agent.loop import ToolExecutor, run_agent
 from assistant.cancellation import CancellationToken, cancellation_scope
 from assistant.config import ProjectConfig
 from assistant.llm.answer import answer_text
@@ -25,11 +26,19 @@ from assistant.memory import (
     ConversationSummary,
     MemoryStore,
     MemoryStoreError,
+    RememberingTools,
     format_memory_context,
 )
 
 BackendFactory = Callable[[], LLMBackend]
 MemoryStoreFactory = Callable[[Path], MemoryStore]
+
+COMPACT_REQUEST = (
+    "Summarize our conversation so far so we can continue from the summary alone. Keep "
+    "facts, names, numbers, file paths, decisions, and open questions. Write plain "
+    "sentences, at most 200 words."
+)
+COMPACT_MAX_TOKENS = 512
 
 
 class JamieApplicationError(RuntimeError):
@@ -38,7 +47,7 @@ class JamieApplicationError(RuntimeError):
 
 @dataclass(frozen=True)
 class TurnResult:
-    """The complete result of one direct-chat turn."""
+    """The complete result of one application turn."""
 
     message: str
     model: str | None = None
@@ -68,8 +77,38 @@ async def _close_backend(backend: LLMBackend) -> None:
         await result
 
 
+class _AgentTurnBackend:
+    """Apply interactive generation settings and collect usage across agent steps."""
+
+    def __init__(
+        self,
+        backend: LLMBackend,
+        application: JamieApplication,
+        temperature: float,
+        max_tokens: int,
+        thinking: bool | None,
+    ) -> None:
+        self._backend = backend
+        self._application = application
+        self._options = {"temperature": temperature, "max_tokens": max_tokens}
+        if thinking is not None:
+            self._options["thinking"] = thinking
+        self.last_response: LLMResponse | None = None
+        self.output_tokens = 0
+        self.first_token_seconds: float | None = None
+
+    def chat(self, messages: list[Message]) -> LLMResponse:
+        self._application.model_calls += 1
+        response = self._backend.chat(messages, **self._options)
+        self.last_response = response
+        self.output_tokens += response.output_tokens or 0
+        if self.first_token_seconds is None:
+            self.first_token_seconds = response.first_token_seconds
+        return response
+
+
 class JamieApplication:
-    """Own one reusable backend and the services needed for direct chat turns."""
+    """Own one reusable backend and the services needed for turns."""
 
     def __init__(
         self,
@@ -120,10 +159,12 @@ class JamieApplication:
         cancel: CancellationToken | None = None,
         conversation_id: str | None = None,
         event_sink: EventSink = discard_event,
+        tools: ToolExecutor | None = None,
     ) -> TurnResult:
-        """Run one direct-chat turn with the initialized application services.
+        """Run one chat or tool-using turn with the initialized services.
 
         ``thinking`` is forwarded only when set, so backends without it keep working.
+        Passing ``tools`` enables the agent action protocol and Python permission policy.
         A cancelled turn raises TurnCancelled once the model request has stopped, and
         its answer is never stored. With ``conversation_id`` the exchange is appended
         to that resumable conversation only after it succeeds; otherwise each turn is
@@ -134,6 +175,18 @@ class JamieApplication:
             raise JamieApplicationError("Start the Jamie application before running a turn.")
         if not prompt.strip():
             raise ValueError("Prompt must not be empty.")
+        if tools is not None:
+            return await self._run_agent_turn(
+                prompt,
+                tools=tools,
+                history=history,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                thinking=thinking,
+                cancel=cancel,
+                conversation_id=conversation_id,
+                event_sink=event_sink,
+            )
 
         event_sink(TurnStarted(prompt))
         session_id = None
@@ -182,6 +235,63 @@ class JamieApplication:
         )
         return result
 
+    async def _run_agent_turn(
+        self,
+        prompt: str,
+        *,
+        tools: ToolExecutor,
+        history: list[Message] | None,
+        temperature: float,
+        max_tokens: int,
+        thinking: bool | None,
+        cancel: CancellationToken | None,
+        conversation_id: str | None,
+        event_sink: EventSink,
+    ) -> TurnResult:
+        memory = self._require_memory()
+        assert self._backend is not None
+        session_id = conversation_id
+        standalone = conversation_id is None
+        try:
+            if standalone:
+                session_id = memory.start_session("agent")
+                memory.add_message(session_id, "user", prompt)
+            assert session_id is not None
+            recalled = memory.search_memories(prompt, exclude_session=conversation_id)
+            context = format_memory_context(recalled)
+            backend = _AgentTurnBackend(self._backend, self, temperature, max_tokens, thinking)
+            answer = await asyncio.to_thread(
+                run_agent,
+                backend,
+                RememberingTools(tools, memory, session_id),
+                prompt,
+                history=history,
+                memory_context=context,
+                event_sink=event_sink,
+                cancel=cancel,
+            )
+            if cancel is not None:
+                cancel.raise_if_cancelled()
+            if standalone:
+                memory.add_message(session_id, "assistant", answer)
+                memory.remember_exchange(session_id, prompt, answer)
+                memory.finish_session(session_id, success=True)
+            else:
+                memory.save_exchange(session_id, prompt, answer, str(Path.cwd()))
+                memory.remember_exchange(session_id, prompt, answer)
+        except BaseException:
+            if standalone and session_id is not None:
+                self._finish_failed_session(session_id)
+            raise
+        last = backend.last_response
+        return TurnResult(
+            answer,
+            model=last.model if last else None,
+            finish_reason=last.finish_reason if last else None,
+            output_tokens=backend.output_tokens,
+            first_token_seconds=backend.first_token_seconds,
+        )
+
     def start_conversation(self) -> str:
         return self._require_memory().start_conversation(str(Path.cwd()))
 
@@ -193,6 +303,34 @@ class JamieApplication:
 
     def conversation_messages(self, conversation_id: str) -> list[Message]:
         return self._require_memory().conversation_messages(conversation_id)
+
+    async def compact(
+        self, history: list[Message], *, cancel: CancellationToken | None = None
+    ) -> list[Message]:
+        """Summarize the history into one exchange that later turns continue from.
+
+        Only the history sent to the model shrinks; the saved conversation keeps every
+        exchange. A cancelled request raises TurnCancelled and leaves the history unchanged.
+        """
+        if self._backend is None:
+            raise JamieApplicationError("Start the Jamie application before compacting.")
+        if not history:
+            raise ValueError("There is no conversation to compact.")
+        self.model_calls += 1
+        with cancellation_scope(cancel):
+            response = await asyncio.to_thread(
+                self._backend.chat,
+                [*history, Message(role="user", content=COMPACT_REQUEST)],
+                temperature=0.2,
+                max_tokens=COMPACT_MAX_TOKENS,
+            )
+        if cancel is not None:
+            cancel.raise_if_cancelled()
+        summary = answer_text(response.content)
+        return [
+            Message(role="user", content=COMPACT_REQUEST),
+            Message(role="assistant", content=summary),
+        ]
 
     def context_usage(self, history: list[Message]) -> ContextUsage | None:
         """Measure the history on the server; None when the backend cannot."""

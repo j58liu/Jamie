@@ -80,6 +80,23 @@ class _Tokens(BaseModel):
     tokens: list[int]
 
 
+def _status_error(response: httpx.Response, url: str) -> str:
+    """Prefer llama.cpp's own reason, such as a request longer than the context."""
+    try:
+        error = response.json().get("error") or {}
+        needed, limit = error.get("n_prompt_tokens"), error.get("n_ctx")
+        if error.get("type") == "exceed_context_size_error" and needed and limit:
+            return (
+                f"The request needs {needed:,} tokens, more than the model's {limit:,}-token "
+                "context. Shorten the conversation or the request."
+            )
+        if error.get("message"):
+            return f"llama.cpp returned HTTP {response.status_code}: {error['message']}"
+    except (ValueError, AttributeError, httpx.ResponseNotRead):
+        pass
+    return f"llama.cpp returned HTTP {response.status_code} at {url}."
+
+
 class LlamaCppBackend:
     """Send text chats to a running llama.cpp server's loaded model."""
 
@@ -139,9 +156,7 @@ class LlamaCppBackend:
         except httpx.TimeoutException as exc:
             raise LLMError(f"Request to llama.cpp timed out at {self._url}.") from exc
         except httpx.HTTPStatusError as exc:
-            raise LLMError(
-                f"llama.cpp returned HTTP {exc.response.status_code} at {self._url}."
-            ) from exc
+            raise LLMError(_status_error(exc.response, self._url)) from exc
         except httpx.RequestError as exc:
             raise LLMError(
                 f"Cannot reach llama.cpp at {self._url}. Check that the server is running."
@@ -251,6 +266,8 @@ class LlamaCppBackend:
         first_token = None
         started = time.perf_counter()
         async with client.stream("POST", self._url, json=streamed) as response:
+            if response.is_error:
+                await response.aread()  # keep llama.cpp's reason for the error message
             response.raise_for_status()
             async for line in response.aiter_lines():
                 data = line.removeprefix("data:").strip()

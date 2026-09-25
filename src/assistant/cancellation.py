@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import signal
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -55,3 +57,23 @@ def cancellation_scope(token: CancellationToken | None) -> Iterator[None]:
         yield
     finally:
         _current.reset(reset)
+
+
+@contextmanager
+def interrupt_cancels(token: CancellationToken) -> Iterator[None]:
+    """While work runs on this event loop, Ctrl+C cancels it instead of stopping Jamie.
+
+    At the prompt, prompt_toolkit reads Ctrl+C as a key, so no signal is involved.
+    """
+    loop = asyncio.get_running_loop()
+    previous = signal.getsignal(signal.SIGINT)
+    try:
+        loop.add_signal_handler(signal.SIGINT, token.cancel)
+    except (NotImplementedError, RuntimeError, ValueError):  # not the main thread
+        yield
+        return
+    try:
+        yield
+    finally:
+        loop.remove_signal_handler(signal.SIGINT)
+        signal.signal(signal.SIGINT, previous)

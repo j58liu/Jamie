@@ -56,7 +56,8 @@
         "tools": true,
         "approve": false,
         "approval_requested": true,
-        "files_absent": ["hello.txt"]
+        "files_absent": ["hello.txt"],
+        "answer_contains": ["not approved"]
       },
       {"prompt": "Reply with the word ready.", "answer_contains": ["ready"]}
     ]
@@ -101,6 +102,64 @@
       {"prompt": "Give me one short fact about the number 7."},
       {"prompt": "Give me one short fact about the number 8."},
       {"prompt": "What code did I ask you to remember? Reply with the code only.", "answer_contains": ["ZEBRA-42"]}
+    ]
+  },
+  {
+    "id": "interactive-research-tool",
+    "web": {
+      "search_results": [
+        {"title": "Water boiling point reference", "url": "https://chemistry.example/water-boiling", "snippet": "Reference values for water at standard pressure."},
+        {"title": "Pressure and boiling", "url": "https://physics.test/pressure-boiling", "snippet": "How atmospheric pressure changes boiling temperature."}
+      ],
+      "pages": {
+        "https://chemistry.example/water-boiling": "<html><head><title>Water boiling point reference</title></head><body><main><p>At standard atmospheric pressure, pure water boils at 100 °C.</p></main></body></html>",
+        "https://physics.test/pressure-boiling": "<html><head><title>Pressure and boiling</title></head><body><main><p>Reducing atmospheric pressure lowers the temperature at which water boils.</p></main></body></html>"
+      }
+    },
+    "steps": [
+      {
+        "prompt": "Research the boiling point of water at standard pressure and how lower pressure changes it.",
+        "tools": true,
+        "approve": true,
+        "approval_requested": true,
+        "tool_called": "research",
+        "answer_contains": ["100"]
+      },
+      {
+        "prompt": "According to your research, at what temperature does water boil at standard pressure? Reply with the number only.",
+        "tools": true,
+        "answer_contains": ["100"]
+      }
+    ]
+  },
+  {
+    "id": "interactive-read-page",
+    "web": {
+      "pages": {
+        "https://docs.example/install": "<html><head><title>Install</title><style>body{}</style></head><body><nav><a href=\"/\">Home</a></nav><main><h1>Install</h1><p>Run this command:</p><pre><code>pip install heron-tool</code></pre></main></body></html>"
+      }
+    },
+    "steps": [
+      {
+        "prompt": "Read https://docs.example/install and tell me the command that installs the tool.",
+        "tools": true,
+        "approve": true,
+        "tool_called": "fetch_url",
+        "answer_contains": ["pip install heron-tool"]
+      }
+    ]
+  },
+  {
+    "id": "interactive-compact-keeps-facts",
+    "steps": [
+      {"prompt": "My favorite color is teal. Reply with the word noted.", "tools": true},
+      {"prompt": "My project is called Heron. Reply with the word noted.", "tools": true},
+      {
+        "prompt": "What is my favorite color, and what is my project called?",
+        "compact": true,
+        "tools": true,
+        "answer_contains": ["teal", "Heron"]
+      }
     ]
   }
 ]

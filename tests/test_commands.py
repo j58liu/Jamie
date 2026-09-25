@@ -74,7 +74,7 @@ def test_context_describes_the_current_conversation():
     assert "Messages: 2 (1 exchanges)" in output
     assert "Used:      ~20 tokens (estimated)" in output
     assert "Maximum:    unknown" in output
-    assert "Compaction: none." in output
+    assert "Use /compact to summarize the conversation" in output
 
 
 def test_cwd_shows_changes_and_validates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

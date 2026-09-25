@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import ipaddress
 import json
+import re
 import socket
 from collections.abc import Callable, Iterable
 from html.parser import HTMLParser
@@ -22,6 +23,8 @@ MAX_QUERY_CHARACTERS = 500
 MAX_URL_CHARACTERS = 2_000
 MAX_PAGE_BYTES = 2_000_000
 MAX_EXTRACTED_CHARACTERS = 30_000
+# ponytail: one fixed cut sized for an 8k-token model context; add paging if pages need more.
+MAX_TOOL_PAGE_CHARACTERS = 6_000
 MAX_SEARCH_RESULTS = 10
 MAX_REDIRECTS = 5
 
@@ -197,90 +200,177 @@ class _SearchParser(HTMLParser):
         self._text = []
 
 
-class _PageParser(HTMLParser):
-    _SKIP = {"script", "style", "noscript", "svg", "template"}
-    _BREAKS = {
-        "article",
-        "blockquote",
-        "br",
-        "div",
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "li",
-        "main",
-        "p",
-        "section",
-        "td",
-        "th",
-        "tr",
-    }
+_HEADINGS = {f"h{level}": level for level in range(1, 7)}
+_BLOCKS = {
+    "address",
+    "aside",
+    "blockquote",
+    "dd",
+    "div",
+    "dl",
+    "dt",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "header",
+    "nav",
+    "p",
+    "section",
+    "table",
+}
+_EMPTY_MARKER = re.compile(r"(?:[-*]|\d+\.|#{1,6})")
+_LIST_MARKER = re.compile(r"(?:-|\d+\.) ")
 
-    def __init__(self) -> None:
+
+def _tidy_markdown(raw: str) -> str:
+    """Collapse HTML whitespace; keep list indentation and code blocks as written."""
+    lines: list[str] = []
+    fenced = False
+    for line in raw.splitlines():
+        if line.strip() == "```":
+            fenced = not fenced
+            lines.append("```")
+        elif fenced:
+            lines.append(line.rstrip())
+        else:
+            body = " ".join(line.split())
+            if _EMPTY_MARKER.fullmatch(body):
+                continue  # a list item or heading with no text
+            indent = len(line) - len(line.lstrip()) if _LIST_MARKER.match(body) else 0
+            lines.append(" " * indent + body)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+class _MarkdownParser(HTMLParser):
+    """Convert readable HTML to Markdown headings, lists, links, code, and paragraphs."""
+
+    _SKIP = {"script", "style", "noscript", "svg", "template"}
+
+    def __init__(self, base_url: str = "") -> None:
         super().__init__(convert_charrefs=True)
+        self._base_url = base_url
         self._skip_depth = 0
         self._in_title = False
         self._title: list[str] = []
         self._text: list[str] = []
         self._focused_depth = 0
         self._focused_text: list[str] = []
+        self._lists: list[int | None] = []  # the next number for <ol>, None for <ul>
+        self._cells = 0
+        self._pre = 0
+        self._link: list[str] | None = None  # text of the open link
+        self._href = ""
+
+    def _emit(self, text: str) -> None:
+        if self._link is not None:
+            self._link.append(text)  # markup inside a link collapses into its text
+            return
+        self._text.append(text)
+        if self._focused_depth:
+            self._focused_text.append(text)
+
+    def _target(self, href: str | None) -> str | None:
+        if not href or href.startswith("#"):
+            return None
+        url = urljoin(self._base_url, href.strip())
+        return url if urlsplit(url).scheme in {"http", "https"} else None
+
+    def _close_link(self) -> None:
+        text = " ".join("".join(self._link or []).split()).replace("[", "").replace("]", "")
+        self._link = None
+        if text:
+            self._emit(f"[{text}](<{self._href}>)")
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in self._SKIP:
             self._skip_depth += 1
-        elif not self._skip_depth and tag in {"main", "article"}:
-            self._focused_depth += 1
-            self._text.append("\n")
-            self._focused_text.append("\n")
-        elif not self._skip_depth and tag == "title":
+        elif self._skip_depth:
+            return
+        elif tag == "title":
             self._in_title = True
-        elif not self._skip_depth and tag in self._BREAKS:
-            self._text.append("\n")
-            if self._focused_depth:
-                self._focused_text.append("\n")
+        elif tag in {"main", "article"}:
+            self._focused_depth += 1
+            self._emit("\n\n")
+        elif tag in _HEADINGS:
+            self._emit("\n\n" + "#" * _HEADINGS[tag] + " ")
+        elif tag in _BLOCKS:
+            self._emit("\n\n")
+        elif tag == "br":
+            self._emit("\n")
+        elif tag in {"ul", "ol"}:
+            self._emit("" if self._lists else "\n")  # a nested list continues its item
+            self._lists.append(1 if tag == "ol" else None)
+        elif tag == "li":
+            number = self._lists[-1] if self._lists else None
+            if number is not None:
+                self._lists[-1] = number + 1
+            marker = "- " if number is None else f"{number}. "
+            self._emit("\n" + "  " * max(len(self._lists) - 1, 0) + marker)
+        elif tag == "tr":
+            self._cells = 0
+            self._emit("\n")
+        elif tag in {"td", "th"}:
+            self._emit(" | " if self._cells else "")
+            self._cells += 1
+        elif tag == "pre":
+            self._pre += 1
+            self._emit("\n\n```\n")
+        elif tag == "code" and not self._pre:
+            self._emit("`")
+        elif tag == "a" and self._link is None:
+            target = self._target(dict(attrs).get("href"))
+            if target is not None:
+                self._href = target
+                self._link = []
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in self._SKIP and self._skip_depth:
-            self._skip_depth -= 1
-        elif not self._skip_depth and tag in {"main", "article"} and self._focused_depth:
-            self._focused_depth -= 1
-            self._text.append("\n")
-            self._focused_text.append("\n")
-        elif not self._skip_depth and tag == "title":
+        if tag in self._SKIP:
+            self._skip_depth = max(self._skip_depth - 1, 0)
+        elif self._skip_depth:
+            return
+        elif tag == "title":
             self._in_title = False
-        elif not self._skip_depth and tag in self._BREAKS:
-            self._text.append("\n")
-            if self._focused_depth:
-                self._focused_text.append("\n")
+        elif tag in {"main", "article"} and self._focused_depth:
+            self._emit("\n\n")
+            self._focused_depth -= 1
+        elif tag in _HEADINGS or tag in _BLOCKS:
+            self._emit("\n\n")
+        elif tag in {"ul", "ol"} and self._lists:
+            self._lists.pop()
+            self._emit("" if self._lists else "\n\n")
+        elif tag == "pre" and self._pre:
+            self._pre -= 1
+            self._emit("\n```\n\n")
+        elif tag == "code" and not self._pre:
+            self._emit("`")
+        elif tag == "a" and self._link is not None:
+            self._close_link()
 
     def handle_data(self, data: str) -> None:
         if self._skip_depth:
             return
         if self._in_title:
             self._title.append(data)
-        self._text.append(data)
-        if self._focused_depth:
-            self._focused_text.append(data)
+            return
+        self._emit(data if self._pre else re.sub(r"\s+", " ", data))
 
     def result(self, fallback_title: str = "") -> tuple[str, str]:
+        if self._link is not None:
+            self._close_link()
         title = " ".join("".join(self._title).split()) or fallback_title
-        focused = "".join(self._focused_text)
-        raw_text = focused if len(focused.strip()) >= 100 else "".join(self._text)
-        lines = [" ".join(line.split()) for line in raw_text.splitlines()]
-        text = "\n".join(line for line in lines if line)
+        focused = _tidy_markdown("".join(self._focused_text))
+        text = focused if len(focused) >= 100 else _tidy_markdown("".join(self._text))
         return title, text[:MAX_EXTRACTED_CHARACTERS]
 
 
 def extract_page(page: FetchedPage, *, fallback_title: str = "") -> ExtractedPage:
-    """Extract readable text from one fetched HTML or plain-text page."""
+    """Convert one fetched HTML page to Markdown; plain-text pages pass through."""
     if page.content_type in {"text/plain", "application/json"}:
         text = page.text[:MAX_EXTRACTED_CHARACTERS]
         title = fallback_title
     else:
-        parser = _PageParser()
+        parser = _MarkdownParser(page.url)
         try:
             parser.feed(page.text)
             parser.close()
@@ -330,10 +420,13 @@ class WebClient:
         if isinstance(limit, bool) or not 1 <= limit <= MAX_SEARCH_RESULTS:
             raise WebError(f"Search limit must be between 1 and {MAX_SEARCH_RESULTS}.")
         try:
-            response = self._client.get(SEARCH_URL, params={"q": query})
+            # Submit like DuckDuckGo's own form; GET requests for longer queries draw bot checks.
+            response = self._client.post(SEARCH_URL, data={"q": query})
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise WebError("Web search request failed.") from exc
+        if response.status_code == 202:  # DuckDuckGo answers with a bot-check page
+            raise WebError("DuckDuckGo blocked the search with a bot check. Try again later.")
         parser = _SearchParser()
         parser.feed(response.text)
         results = [SearchResult.model_validate(item) for item in parser.results[:limit]]
@@ -434,7 +527,7 @@ class WebSearchTool:
 
 class FetchUrlTool:
     name = "fetch_url"
-    description = "Fetch one public HTTP or HTTPS page into the current session."
+    description = "Read one public HTTP or HTTPS page and return its content as Markdown."
     risk = PermissionLevel.EXTERNAL
 
     class Input(_Input):
@@ -446,22 +539,12 @@ class FetchUrlTool:
         self._client = client
 
     def execute(self, arguments: Input) -> str:
-        page = self._client.fetch(arguments.url)
-        return json.dumps(
-            {
-                "url": page.url,
-                "status_code": page.status_code,
-                "content_type": page.content_type,
-                "bytes": page.byte_count,
-                "truncated": page.truncated,
-            },
-            separators=(",", ":"),
-        )
+        return _page_output(extract_page(self._client.fetch(arguments.url)))
 
 
 class ExtractPageTool:
     name = "extract_page"
-    description = "Extract readable text from a page fetched in the current session."
+    description = "Return the Markdown of a page already fetched in the current session."
     risk = PermissionLevel.READ
 
     class Input(_Input):
@@ -473,5 +556,17 @@ class ExtractPageTool:
         self._client = client
 
     def execute(self, arguments: Input) -> str:
-        page = self._client.extract(arguments.url)
-        return json.dumps(page.model_dump(mode="json"), ensure_ascii=False, separators=(",", ":"))
+        return _page_output(self._client.extract(arguments.url))
+
+
+def _page_output(page: ExtractedPage) -> str:
+    return json.dumps(
+        {
+            "url": page.url,
+            "title": page.title,
+            "markdown": page.text[:MAX_TOOL_PAGE_CHARACTERS],
+            "truncated": len(page.text) > MAX_TOOL_PAGE_CHARACTERS,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )

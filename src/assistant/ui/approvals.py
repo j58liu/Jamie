@@ -38,6 +38,7 @@ ACTIONS: dict[str, tuple[str, str | None]] = {
     "clipboard_read": ("read the clipboard", None),
     "web_search": ("search the web for", "query"),
     "fetch_url": ("fetch", "url"),
+    "research": ("research on the web", "question"),
 }
 
 # tool: (argument holding the command, the command line the tool runs with it).

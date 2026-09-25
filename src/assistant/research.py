@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from assistant.evaluation import parse_json
 from assistant.llm.base import LLMBackend, LLMError, Message
+from assistant.security.policy import PermissionLevel
+from assistant.tools.base import ToolError
 from assistant.tools.web import ExtractedPage, FetchedPage, SearchResult, WebError
 
 MAX_QUESTION_CHARACTERS = 2_000
@@ -19,6 +21,7 @@ SOURCE_EXCERPT_CHARACTERS = 2_500
 TOTAL_SOURCE_CHARACTERS = 12_000
 _SOURCE_REFERENCE = re.compile(r"\[S([1-9][0-9]*)\]")
 _MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\((?:<([^>]+)>|([^)]*))\)")
+_LINK_TEXT = re.compile(r"\[([^\]]*)\]\((?:<[^>]+>|[^)]*)\)")
 _RAW_URL = re.compile(r"\b[a-z][a-z0-9+.-]*://", re.IGNORECASE)
 
 
@@ -105,7 +108,8 @@ def _source_payload(sources: list[ResearchSource]) -> str:
                 "id": source.id,
                 "title": source.title,
                 "url": source.url,
-                "text": source.text[:excerpt_limit],
+                # Page links would tempt the model to write URLs, which synthesis rejects.
+                "text": _LINK_TEXT.sub(r"\1", source.text)[:excerpt_limit],
             }
             for source in sources
         ],
@@ -354,3 +358,34 @@ class ResearchWorkflow:
             output_tokens=sum(usage) if usage else None,
             model=models[0] if models else None,
         )
+
+
+class ResearchTool:
+    """Run the whole research workflow as one agent action, in its own model context.
+
+    The cited report ends the turn as the answer, so a small model never has to retype it.
+    """
+
+    name = "research"
+    description = (
+        "Research a question on the public web and answer it with citations. Use this "
+        "whenever the user asks you to research, look up, or find out about a topic."
+    )
+    risk = PermissionLevel.EXTERNAL
+    ends_turn = True
+
+    class Input(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARACTERS)
+
+    input_schema = Input
+
+    def __init__(self, backend: LLMBackend, web: ResearchWeb) -> None:
+        self._workflow = ResearchWorkflow(backend, web)
+
+    def execute(self, arguments: Input) -> str:
+        try:
+            return self._workflow.run(arguments.question).answer
+        except ResearchError as exc:
+            raise ToolError(str(exc)) from exc

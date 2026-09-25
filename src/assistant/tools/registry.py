@@ -7,6 +7,7 @@ from typing import cast
 from pydantic import JsonValue, ValidationError
 
 from assistant.agent.loop import ToolResult
+from assistant.llm.base import LLMBackend
 from assistant.security.approvals import (
     ApprovalError,
     ApprovalProvider,
@@ -162,6 +163,9 @@ class ToolRegistry:
             "extract_page": (
                 '{"action":"tool","tool":"extract_page","args":{"url":"https://example.com/"}}'
             ),
+            "research": (
+                '{"action":"tool","tool":"research","args":{"question":"What changed in X?"}}'
+            ),
         }
         registered_examples = "\n".join(
             examples.get(
@@ -287,7 +291,7 @@ class ToolRegistry:
                 approval=approval,
                 success=False,
             )
-            return ToolResult(success=False, output="User approval was not granted.")
+            return ToolResult(success=False, output="User approval was not granted.", denied=True)
 
         try:
             output = registered.execute(inputs)
@@ -304,7 +308,8 @@ class ToolRegistry:
             )
             raise
         else:
-            result = ToolResult(success=True, output=output)
+            final = getattr(registered, "ends_turn", False)
+            result = ToolResult(success=True, output=output, final=final)
         self._record(
             tool,
             normalized,
@@ -367,8 +372,15 @@ def create_macos_registry(
     return registry
 
 
-def register_web_tools(registry: ToolRegistry, client: WebClient) -> ToolRegistry:
-    """Add web search, retrieval, and extraction to an existing registry."""
+def register_web_tools(
+    registry: ToolRegistry, client: WebClient, backend: LLMBackend | None = None
+) -> ToolRegistry:
+    """Add web search and page reading; with a model backend, also cited research."""
+    if backend is not None:
+        from assistant.research import ResearchTool  # research imports the web tools
+
+        # Listed before web_search so a small model reads it first.
+        registry.register(ResearchTool(backend, client))
     registry.register(WebSearchTool(client))
     registry.register(FetchUrlTool(client))
     registry.register(ExtractPageTool(client))
@@ -393,7 +405,8 @@ def create_agent_registry(
     audit: AuditSink | None = None,
     runner: CommandRunner | None = None,
     web: WebClient | None = None,
+    backend: LLMBackend | None = None,
 ) -> ToolRegistry:
-    """Register workspace, macOS, and web tools for one agent session."""
+    """Register workspace, macOS, and web tools; ``backend`` enables the research tool."""
     registry = create_macos_registry(root, approvals=approvals, audit=audit, runner=runner)
-    return register_web_tools(registry, web if web is not None else WebClient())
+    return register_web_tools(registry, web if web is not None else WebClient(), backend)

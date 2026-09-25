@@ -9,6 +9,7 @@ from assistant.agent.loop import (
     MAX_PARSE_RETRIES,
     MAX_REPEATED_FAILED_ACTIONS,
     MAX_STEPS,
+    REPEATED_RESULT_MESSAGE,
     TIMEOUT_SECONDS,
     AgentInvalidOutputError,
     AgentRepeatedActionError,
@@ -172,6 +173,36 @@ def test_success_resets_repeated_failure_detection():
 
     assert run_agent(backend, tools, "Read the file.") == "Done."
     assert len(tools.calls) == 4
+
+
+def test_repeated_identical_result_asks_the_model_to_use_it():
+    search = tool_action("web_search", '{"query":"natural gas"}')
+    backend = FakeBackend([search, search, finish_action("Summary.")])
+    tools = FakeTools([ToolResult(success=True, output="same results")] * 2)
+
+    assert run_agent(backend, tools, "Research natural gas.") == "Summary."
+    assert REPEATED_RESULT_MESSAGE not in backend.requests[1][-1].content
+    assert backend.requests[2][-1].content.endswith(REPEATED_RESULT_MESSAGE)
+
+
+def test_third_identical_result_stops_loop():
+    search = tool_action("web_search", '{"query":"natural gas"}')
+    backend = FakeBackend([search] * 3)
+    tools = FakeTools([ToolResult(success=True, output="same results")] * 3)
+
+    with pytest.raises(AgentRepeatedActionError, match="same result 3 consecutive times"):
+        run_agent(backend, tools, "Research natural gas.")
+    assert len(tools.calls) == 3
+
+
+def test_denied_approval_ends_the_turn_without_asking_the_model_again():
+    backend = FakeBackend([tool_action("open_application", '{"name":"Safari"}')])
+    denied = ToolResult(success=False, output="User approval was not granted.", denied=True)
+
+    answer = run_agent(backend, FakeTools([denied]), "Open Safari.")
+
+    assert answer == "Stopped: open_application was not approved."
+    assert len(backend.requests) == 1
 
 
 def test_different_failed_action_resets_repeated_failure_detection():

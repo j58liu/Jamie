@@ -6,7 +6,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from functools import partial
 from queue import Empty, Queue
-from threading import Thread
+from threading import Event, Thread
 from time import perf_counter
 from typing import Any, Protocol, cast
 
@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 
 from assistant.agent.events import (
     AgentEvent,
+    ApprovalRequested,
     AssistantFinished,
     EventSink,
     ToolFailed,
@@ -48,6 +49,11 @@ Return exactly one valid action. A tool call must use
 Keep the tool name in "tool" and put every argument inside "args".\
 """
 
+REPEATED_RESULT_MESSAGE = """\
+This action returned the same result as your previous call. Do not repeat it.
+Use the results you have: return a finish action, or choose a different action.\
+"""
+
 
 class AgentError(RuntimeError):
     """The agent stopped before producing a finish action."""
@@ -76,6 +82,8 @@ class ToolResult(BaseModel):
 
     success: bool
     output: str
+    denied: bool = False  # the user declined approval; the turn stops instead of retrying
+    final: bool = False  # the output is the turn's answer, shown as is
 
 
 class ToolExecutor(Protocol):
@@ -108,9 +116,16 @@ def _call_before_deadline[Result](
         raise _DeadlineExceeded
 
     completed: Queue[tuple[bool | None, object]] = Queue()
+    approval_shown = Event()
 
     def progress(event: AgentEvent) -> None:
         completed.put((None, event))
+        if isinstance(event, ApprovalRequested):
+            # The approval prompt shares the terminal, so it waits until the caller has
+            # shown everything before it. Never prompt for a turn that already timed out.
+            if not approval_shown.wait(max(0.0, deadline - perf_counter())):
+                raise _DeadlineExceeded
+            approval_shown.clear()
 
     def invoke() -> None:
         try:
@@ -130,6 +145,8 @@ def _call_before_deadline[Result](
             raise _DeadlineExceeded from exc
         if succeeded is None:
             event_sink(cast("AgentEvent", value))
+            if isinstance(value, ApprovalRequested):
+                approval_shown.set()
         elif succeeded:
             return cast("Result", value)
         else:
@@ -221,6 +238,7 @@ def _run_loop(
     max_parse_retries: int,
     deadline: float,
     memory_context: str | None,
+    history: list[Message] | None,
 ) -> str:
     _optional_call(tools, "begin_turn")
     try:
@@ -230,9 +248,12 @@ def _run_loop(
         messages = [
             Message(role="system", content=system_content),
         ]
+        messages.extend(history or [])
         messages.append(Message(role="user", content=prompt))
         last_failed_action: str | None = None
         repeated_failures = 0
+        last_result: tuple[str, str] | None = None
+        repeated_results = 0
 
         for _ in range(max_steps):
             action = _request_action(llm, messages, max_parse_retries)
@@ -260,9 +281,24 @@ def _run_loop(
                 emit_event(ToolFinished(action.tool, result, duration))
             else:
                 emit_event(ToolFailed(action.tool, result.output, duration))
-            messages.append(tool_observation(action, result))
-
+            if result.denied:
+                # Retrying or working around a "no" would ignore the user's decision.
+                return f"Stopped: {action.tool} was not approved."
+            if result.final:
+                return result.output
+            observation = tool_observation(action, result)
             action_key = _action_key(action)
+            # Small models re-run a successful search instead of using its results.
+            result_key = (action_key, result.output) if result.success else None
+            same = result_key is not None and result_key == last_result
+            repeated_results = repeated_results + 1 if same else 1
+            last_result = result_key
+            if same:
+                observation = Message(
+                    role="user", content=f"{observation.content}\n{REPEATED_RESULT_MESSAGE}"
+                )
+            messages.append(observation)
+
             if result.success:
                 last_failed_action = None
                 repeated_failures = 0
@@ -275,6 +311,11 @@ def _run_loop(
             if repeated_failures >= MAX_REPEATED_FAILED_ACTIONS:
                 raise AgentRepeatedActionError(
                     f"The tool action {action.tool!r} failed "
+                    f"{MAX_REPEATED_FAILED_ACTIONS} consecutive times."
+                )
+            if repeated_results >= MAX_REPEATED_FAILED_ACTIONS:
+                raise AgentRepeatedActionError(
+                    f"The tool action {action.tool!r} returned the same result "
                     f"{MAX_REPEATED_FAILED_ACTIONS} consecutive times."
                 )
         if perf_counter() >= deadline:
@@ -293,6 +334,7 @@ def run_agent(
     max_parse_retries: int = MAX_PARSE_RETRIES,
     timeout_seconds: float = TIMEOUT_SECONDS,
     memory_context: str | None = None,
+    history: list[Message] | None = None,
     event_sink: EventSink = discard_event,
     cancel: CancellationToken | None = None,
 ) -> str:
@@ -323,6 +365,7 @@ def run_agent(
                         max_parse_retries=max_parse_retries,
                         deadline=deadline,
                         memory_context=memory_context,
+                        history=history,
                     ),
                     deadline,
                     event_sink,

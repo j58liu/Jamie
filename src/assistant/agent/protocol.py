@@ -15,7 +15,9 @@ To call a tool, use:
 To finish, use:
 {"action":"finish","message":"your final response"}
 
-Only these two actions are allowed. Return no explanation or Markdown fences.\
+Only these two actions are allowed. Return no explanation or Markdown fences.
+Use a tool only when the request needs it. Create, edit, or move files only when
+the user asks. As soon as you can answer, finish.\
 """
 
 

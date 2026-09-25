@@ -49,6 +49,7 @@ def test_tool_progress_reads_as_prose_without_protocol_json(rendered):
     [
         ("web_search", {"query": "free threading"}, '  ◦ Searching web for "free threading"\n'),
         ("fetch_url", {"url": "https://www.example.com/a/b"}, "  ▸ Reading example.com\n"),
+        ("research", {"question": "natural gas"}, '  ◦ Researching "natural gas"\n'),
         ("read_file", {"path": "src/jamie/agent.py"}, "  ▸ Reading src/jamie/agent.py\n"),
         ("write_file", {"path": "report.md", "content": "secret"}, "  ▸ Writing report.md\n"),
         ("open_application", {"name": "Safari"}, "  ▸ Opening Safari\n"),

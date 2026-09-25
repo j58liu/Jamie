@@ -5,7 +5,15 @@ import httpx
 import pytest
 
 from assistant.security import CallbackApprovalProvider, PermissionLevel
-from assistant.tools import WebClient, WebError, create_web_registry, validate_public_url
+from assistant.tools import (
+    FetchedPage,
+    WebClient,
+    WebError,
+    create_web_registry,
+    extract_page,
+    validate_public_url,
+)
+from assistant.tools.web import MAX_TOOL_PAGE_CHARACTERS
 
 
 def public_resolver(host, port):
@@ -24,8 +32,9 @@ def test_search_parses_results_and_unwraps_redirects():
     """
 
     def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
         assert request.url.host == "html.duckduckgo.com"
-        assert request.url.params["q"] == "test query"
+        assert request.content == b"q=test+query"
         return httpx.Response(200, text=search_html, headers={"content-type": "text/html"})
 
     with WebClient(transport=httpx.MockTransport(handler), resolver=public_resolver) as client:
@@ -36,6 +45,15 @@ def test_search_parses_results_and_unwraps_redirects():
     ]
     assert results[0].title == "First result"
     assert results[0].snippet == "Useful summary."
+
+
+def test_search_reports_a_bot_check_instead_of_empty_results():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(202, text='<div class="anomaly-modal"></div>')
+
+    with WebClient(transport=httpx.MockTransport(handler), resolver=public_resolver) as client:
+        with pytest.raises(WebError, match="bot check"):
+            client.search("natural gas")
 
 
 def test_fetch_then_extract_removes_scripts_and_keeps_readable_text():
@@ -103,12 +121,68 @@ def test_registry_requires_approval_for_network_then_extracts_without_another_pr
         fetched = registry.execute("fetch_url", {"url": "https://example.com/page"})
         extracted = registry.execute("extract_page", {"url": "https://example.com/page"})
     assert search.success and fetched.success and extracted.success
-    assert json.loads(extracted.output)["text"] == "Example\nEvidence."
+    page = {"url": "https://example.com/page", "title": "Example", "markdown": "Evidence."}
+    assert json.loads(fetched.output) == {**page, "truncated": False}
+    assert json.loads(extracted.output) == {**page, "truncated": False}
     assert [request.tool for request in approvals] == ["web_search", "fetch_url"]
     assert [request.permission for request in approvals] == [
         PermissionLevel.EXTERNAL,
         PermissionLevel.EXTERNAL,
     ]
+
+
+def _page(html: str, url: str = "https://docs.example/guide/install") -> FetchedPage:
+    return FetchedPage(
+        requested_url=url,
+        url=url,
+        status_code=200,
+        content_type="text/html",
+        text=html,
+        byte_count=len(html),
+        truncated=False,
+    )
+
+
+def test_pages_are_read_as_markdown():
+    html = """<html><head><title>Install guide</title><script>track()</script></head>
+    <body><nav><a href="/">Home</a></nav><main>
+      <h1>Install   the tool</h1>
+      <p>Run it. See <a href="../faq">the <b>FAQ</b></a>, <a href="#top">top</a>,
+         or <a href="javascript:void(0)">nothing</a>.</p>
+      <pre><code>pip install example-tool
+  example --help</code></pre>
+      <ul><li>Fast <code>setup</code></li>
+          <li>Offline<ol><li>first</li><li>second</li></ol></li><li> </li></ul>
+      <table><tr><th>Name</th><th>Value</th></tr><tr><td>a</td><td>1</td></tr></table>
+      <h2></h2><p>2024 was a good year.</p>
+    </main></body></html>"""
+
+    page = extract_page(_page(html))
+
+    assert page.title == "Install guide"
+    assert page.text == (
+        "# Install the tool\n\n"
+        "Run it. See [the FAQ](<https://docs.example/faq>), top, or nothing.\n\n"
+        "```\npip install example-tool\n  example --help\n```\n\n"
+        "- Fast `setup`\n- Offline\n  1. first\n  2. second\n\n"
+        "Name | Value\na | 1\n\n"
+        "2024 was a good year."
+    )
+
+
+def test_page_tools_cut_long_pages_to_fit_the_model_context():
+    long_page = f"<main><p>{'word ' * 3000}</p></main>"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=long_page, headers={"content-type": "text/html"})
+
+    approvals = CallbackApprovalProvider(lambda request: True)
+    with WebClient(transport=httpx.MockTransport(handler), resolver=public_resolver) as client:
+        registry = create_web_registry(client=client, approvals=approvals)
+        output = json.loads(registry.execute("fetch_url", {"url": "https://example.com"}).output)
+
+    assert output["truncated"] is True
+    assert len(output["markdown"]) == MAX_TOOL_PAGE_CHARACTERS
 
 
 def test_default_denial_prevents_web_request():
