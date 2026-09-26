@@ -33,6 +33,7 @@ packages = ["src/assistant"]
 "evals/agent_cases" = "assistant/agent_eval_cases"
 "evals/research_cases" = "assistant/research_eval_cases"
 "evals/memory_cases" = "assistant/memory_eval_cases"
+"evals/interactive_cases" = "assistant/interactive_eval_cases"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
