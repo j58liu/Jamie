@@ -369,8 +369,8 @@ Jamie provides these web tools without browser automation:
   in-memory session cache, and returns it as Markdown: headings, lists, links
   (made absolute), code blocks, and table rows. Scripts, styles, and the page
   title markup are dropped, and a page's `<main>` or `<article>` is preferred
-  when it has enough text. The model receives at most 6,000 characters, sized
-  for an 8k-token context, with `truncated` set when a page is longer.
+  when it has enough text. The model receives at most 24,000 characters, about
+  6k tokens of the 32k context, with `truncated` set when a page is longer.
 - `extract_page` returns the same Markdown for a page already in the cache.
 - `research` runs the complete research sequence below as one action and
   returns its cited report, which ends the turn. It is available where Jamie

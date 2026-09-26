@@ -171,7 +171,7 @@ def test_pages_are_read_as_markdown():
 
 
 def test_page_tools_cut_long_pages_to_fit_the_model_context():
-    long_page = f"<main><p>{'word ' * 3000}</p></main>"
+    long_page = f"<main><p>{'word ' * 6000}</p></main>"
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=long_page, headers={"content-type": "text/html"})

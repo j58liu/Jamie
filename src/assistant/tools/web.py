@@ -23,8 +23,8 @@ MAX_QUERY_CHARACTERS = 500
 MAX_URL_CHARACTERS = 2_000
 MAX_PAGE_BYTES = 2_000_000
 MAX_EXTRACTED_CHARACTERS = 30_000
-# ponytail: one fixed cut sized for an 8k-token model context; add paging if pages need more.
-MAX_TOOL_PAGE_CHARACTERS = 6_000
+# ponytail: one fixed cut, about 6k tokens of a 32k context; add paging if pages need more.
+MAX_TOOL_PAGE_CHARACTERS = 24_000
 MAX_SEARCH_RESULTS = 10
 MAX_REDIRECTS = 5
 
