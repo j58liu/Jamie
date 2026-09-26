@@ -18,8 +18,8 @@ from assistant.agent.loop import (
     ToolResult,
     run_agent,
 )
-from assistant.agent.protocol import ACTION_PROTOCOL_INSTRUCTIONS
-from assistant.llm.base import LLMResponse, Message
+from assistant.agent.protocol import ACTION_PROTOCOL_INSTRUCTIONS, action_schema
+from assistant.llm.base import LLMResponse, Message, current_response_schema
 
 
 class FakeBackend:
@@ -252,3 +252,29 @@ def test_tool_call_stops_at_total_timeout():
     finally:
         release.set()
     assert perf_counter() - started < 0.5
+
+
+def test_action_requests_are_constrained_but_model_calls_inside_tools_are_not():
+    seen: list[tuple[str, object]] = []
+
+    class Backend(FakeBackend):
+        def chat(self, messages, **options):
+            seen.append(("model", current_response_schema()))
+            return super().chat(messages, **options)
+
+    class Tools(FakeTools):
+        def definitions(self):
+            return [{"name": "research"}, {"name": "read_file"}]
+
+        def execute(self, tool, args):
+            seen.append(("tool", current_response_schema()))  # e.g. research calls the model
+            return super().execute(tool, args)
+
+    backend = Backend([tool_action("research", '{"question":"q"}'), finish_action()])
+    tools = Tools([ToolResult(success=True, output="report")])
+
+    run_agent(backend, tools, "Research q.")
+
+    schema = action_schema(["research", "read_file"])
+    assert seen == [("model", schema), ("tool", None), ("model", schema)]
+    assert schema["oneOf"][0]["properties"]["tool"] == {"enum": ["research", "read_file"]}

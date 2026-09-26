@@ -149,6 +149,9 @@ class _RecordingTools:
     def instructions(self) -> str:
         return self.registry.instructions()
 
+    def definitions(self) -> list[dict[str, object]]:
+        return self.registry.definitions()
+
     def execute(self, tool: str, args: dict[str, Any]) -> ToolResult:
         result = self.registry.execute(tool, args)
         self.calls.append(

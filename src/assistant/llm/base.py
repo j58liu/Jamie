@@ -1,7 +1,10 @@
 """Shared types for text chat backends."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 
 @dataclass(frozen=True)
@@ -67,3 +70,26 @@ class LLMBackend(Protocol):
         max_tokens: int = 1024,
         thinking: bool | None = None,
     ) -> LLMResponse: ...
+
+
+_response_schema: ContextVar[dict[str, Any] | None] = ContextVar("jamie_schema", default=None)
+
+
+def current_response_schema() -> dict[str, Any] | None:
+    """The JSON schema replies must follow, if the caller set one; see ``constrained_to``."""
+    return _response_schema.get()
+
+
+@contextmanager
+def constrained_to(schema: dict[str, Any]) -> Iterator[None]:
+    """Ask backends that can constrain generation to reply with JSON matching ``schema``.
+
+    Like the cancellation token, this reaches the backend through a context variable, so
+    callers and test backends keep the plain ``chat`` signature. Keep the scope around
+    one request: model calls made inside tools must not inherit it.
+    """
+    token = _response_schema.set(schema)
+    try:
+        yield
+    finally:
+        _response_schema.reset(token)

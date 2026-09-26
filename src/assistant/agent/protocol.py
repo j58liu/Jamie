@@ -81,6 +81,31 @@ def validate_action(value: object) -> ToolAction | FinishAction:
         raise ProtocolError("The model response does not match the action protocol.") from exc
 
 
+def action_schema(tool_names: list[str] | None = None) -> dict[str, Any]:
+    """JSON schema for the two actions; ``tool_names`` limits which tools can be named."""
+    tool = {"enum": tool_names} if tool_names else {"type": "string"}
+    return {
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "action": {"const": "tool"},
+                    "tool": tool,
+                    "args": {"type": "object"},
+                },
+                "required": ["action", "tool", "args"],
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "properties": {"action": {"const": "finish"}, "message": {"type": "string"}},
+                "required": ["action", "message"],
+                "additionalProperties": False,
+            },
+        ]
+    }
+
+
 def parse_action(text: str) -> ToolAction | FinishAction:
     """Parse a model response without extracting JSON from surrounding prose."""
     candidate = _remove_json_fence(_remove_thinking(text))

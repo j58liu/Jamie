@@ -11,7 +11,14 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from assistant.cancellation import CancellationToken, TurnCancelled, current_token
-from assistant.llm.base import ContextUsage, LLMError, LLMResponse, Message, ServerInfo
+from assistant.llm.base import (
+    ContextUsage,
+    LLMError,
+    LLMResponse,
+    Message,
+    ServerInfo,
+    current_response_schema,
+)
 
 CANCEL_POLL_SECONDS = 0.1
 CONTEXT_TIMEOUT_SECONDS = 2.0
@@ -138,6 +145,12 @@ class LlamaCppBackend:
         }
         if thinking is not None:
             payload["chat_template_kwargs"] = {"enable_thinking": thinking}
+        schema = current_response_schema()
+        if schema is not None:  # llama.cpp turns the schema into a grammar for sampling
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "response", "schema": schema},
+            }
 
         token = current_token()
         try:

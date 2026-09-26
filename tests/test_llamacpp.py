@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from assistant.cancellation import CancellationToken, cancellation_scope
-from assistant.llm.base import LLMBackend, LLMError, LLMResponse, Message
+from assistant.llm.base import LLMBackend, LLMError, LLMResponse, Message, constrained_to
 from assistant.llm.llamacpp import LlamaCppBackend
 
 
@@ -237,3 +237,23 @@ def test_empty_answer_preserves_model_finish_reason_and_token_usage():
     with pytest.raises(LLMError) as error:
         backend.chat([Message("user", "Hi")])
     assert error.value.response == LLMResponse("", "local-qwen", "length", 1024)
+
+
+def test_a_response_schema_constrains_only_requests_inside_its_scope():
+    payloads: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        return httpx.Response(200, json=completion('{"action":"finish","message":"ok"}'))
+
+    backend = LlamaCppBackend(transport=httpx.MockTransport(handler))
+    schema = {"type": "object"}
+    with constrained_to(schema):
+        backend.chat([Message("user", "Hi")])
+    backend.chat([Message("user", "Hi")])
+
+    assert payloads[0]["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "response", "schema": schema},
+    }
+    assert "response_format" not in payloads[1]

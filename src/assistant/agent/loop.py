@@ -30,11 +30,12 @@ from assistant.agent.protocol import (
     FinishAction,
     ProtocolError,
     ToolAction,
+    action_schema,
     parse_action,
 )
 from assistant.cancellation import CancellationToken, cancellation_scope, check_cancelled
 from assistant.llm.answer import answer_text
-from assistant.llm.base import LLMBackend, Message
+from assistant.llm.base import LLMBackend, Message, constrained_to
 
 MAX_STEPS = 12
 MAX_PARSE_RETRIES = 2
@@ -147,11 +148,14 @@ def _request_action(
     llm: LLMBackend,
     messages: list[Message],
     max_parse_retries: int,
+    schema: dict[str, Any],
 ) -> ToolAction | FinishAction:
     last_error: ProtocolError | None = None
     for attempt in range(max_parse_retries + 1):
         check_cancelled()
-        response = llm.chat(messages)
+        # Without the schema, small models often write a sentence before the JSON action.
+        with constrained_to(schema):
+            response = llm.chat(messages)
         messages.append(Message(role="assistant", content=response.content))
         try:
             action = parse_action(response.content)
@@ -233,6 +237,8 @@ def _run_loop(
     _optional_call(tools, "begin_turn")
     try:
         system_content = _system_instructions(tools)
+        definitions = getattr(tools, "definitions", None)
+        schema = action_schema([d["name"] for d in definitions()] if definitions else None)
         if memory_context is not None:
             system_content = f"{system_content}\n\n{memory_context}"
         messages = [
@@ -246,7 +252,7 @@ def _run_loop(
         repeated_results = 0
 
         for _ in range(max_steps):
-            action = _request_action(llm, messages, max_parse_retries)
+            action = _request_action(llm, messages, max_parse_retries, schema)
             if isinstance(action, FinishAction):
                 verification = _optional_text(tools, "verification_message")
                 if verification is not None:

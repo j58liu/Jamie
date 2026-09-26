@@ -189,6 +189,14 @@ search for embedded JSON or repair model output.
 `ACTION_PROTOCOL_INSTRUCTIONS` gives Qwen the two response shapes as a fixed
 system instruction. Protocol evaluations use that instruction unchanged.
 
+During agent turns, Jamie also sends the two shapes as a JSON schema
+(`response_format`), with `tool` limited to the registered tool names.
+llama.cpp turns the schema into a sampling grammar, so the model cannot write
+prose around an action; without it, Qwen3.5-2B usually starts with a sentence
+before the JSON. With thinking on, the constraint applies after the reasoning.
+The parser still validates every reply, and model calls made inside tools, such
+as the research workflow's, are not constrained.
+
 ## Agent loop
 
 `run_agent` starts a fresh conversation with the action protocol instructions
