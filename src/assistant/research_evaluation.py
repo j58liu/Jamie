@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
 import statistics
-import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Literal, Self
 from urllib.parse import urlsplit
-from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from assistant import __version__
-from assistant.evaluation import EvaluationError, parse_json
+from assistant.evaluation import (
+    load_case_files,
+    new_report_path,
+    run_rounds,
+)
 from assistant.llm.base import LLMBackend
 from assistant.research import ResearchError, ResearchResult, ResearchWorkflow, citation_urls
 from assistant.tools.web import ExtractedPage, FetchedPage, SearchResult, WebError, extract_page
@@ -89,7 +88,6 @@ class ResearchEvalReport(BaseModel):
     finished_at: str | None = None
     status: Literal["running", "completed", "interrupted"] = "running"
     cases: list[ResearchEvalCase]
-    cases_sha256: str
     runs_per_case: int
     total_duration_seconds: float = 0.0
     results: list[ResearchRunResult] = Field(default_factory=list)
@@ -173,31 +171,8 @@ class _FixtureWeb:
         return extract_page(page, fallback_title=fallback_title)
 
 
-def default_research_cases_path() -> Path:
-    checkout = Path(__file__).resolve().parents[2] / "evals" / "research_cases"
-    return checkout if checkout.is_dir() else Path(__file__).with_name("research_eval_cases")
-
-
 def load_research_cases(path: Path | None = None) -> list[ResearchEvalCase]:
-    source = path if path is not None else default_research_cases_path()
-    try:
-        files = sorted(source.glob("*.json")) if source.is_dir() else [source]
-        cases: list[ResearchEvalCase] = []
-        for file in files:
-            data = parse_json(file.read_text(encoding="utf-8"))
-            if not isinstance(data, list) or not data:
-                raise ValueError(f"{file} must contain a non-empty array of cases.")
-            cases.extend(ResearchEvalCase.model_validate(item) for item in data)
-        if not cases:
-            raise ValueError("No research evaluation cases found.")
-        ids = [case.id for case in cases]
-        if len(ids) != len(set(ids)):
-            raise ValueError("Research evaluation case IDs must be unique.")
-    except (OSError, UnicodeError, ValueError) as exc:
-        raise EvaluationError(
-            f"Cannot load research evaluation cases from {source}: {exc}"
-        ) from exc
-    return sorted(cases, key=lambda case: case.id)
+    return load_case_files(path, ResearchEvalCase, "research_cases", "research")
 
 
 def _claims_supported(case: ResearchEvalCase, result: ResearchResult) -> bool:
@@ -297,25 +272,6 @@ def _run_case(
     )
 
 
-def _save_report(path: Path, report: ResearchEvalReport) -> None:
-    payload = report.model_dump(mode="json")
-    payload["summary"] = report.summary()
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent, delete=False
-        ) as file:
-            temporary = Path(file.name)
-            json.dump(payload, file, ensure_ascii=False, indent=2, allow_nan=False)
-            file.write("\n")
-        os.replace(temporary, path)
-    except OSError as exc:
-        raise EvaluationError(f"Cannot save research report to {path}: {exc}") from exc
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-
-
 def run_research_evaluation(
     backend: LLMBackend,
     cases: list[ResearchEvalCase],
@@ -324,44 +280,14 @@ def run_research_evaluation(
     output_dir: Path,
     on_result: Callable[[ResearchRunResult, int], None] | None = None,
 ) -> tuple[ResearchEvalReport, Path]:
-    if not cases:
-        raise EvaluationError("At least one research evaluation case is required.")
-    if isinstance(runs, bool) or not isinstance(runs, int) or runs < 1:
-        raise EvaluationError("Runs must be a positive integer.")
     started = datetime.now(UTC)
-    case_data = json.dumps(
-        [case.model_dump(mode="json") for case in cases],
-        sort_keys=True,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
     report = ResearchEvalReport(
         started_at=started.isoformat(),
         cases=cases,
-        cases_sha256=hashlib.sha256(case_data.encode()).hexdigest(),
         runs_per_case=runs,
     )
-    path = output_dir / f"research-{started.strftime('%Y%m%dT%H%M%S%fZ')}-{uuid4().hex[:8]}.json"
-    try:
-        output_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise EvaluationError(f"Cannot create results directory {output_dir}: {exc}") from exc
-    began = perf_counter()
-    _save_report(path, report)
-    try:
-        for run in range(1, runs + 1):
-            for case in cases:
-                result = _run_case(backend, case, run)
-                report.results.append(result)
-                report.total_duration_seconds = perf_counter() - began
-                _save_report(path, report)
-                if on_result:
-                    on_result(result, len(report.results))
-    except KeyboardInterrupt:
-        report.status = "interrupted"
-    else:
-        report.status = "completed"
-    report.finished_at = datetime.now(UTC).isoformat()
-    report.total_duration_seconds = perf_counter() - began
-    _save_report(path, report)
+    path = new_report_path(output_dir, "research", started)
+    run_rounds(
+        report, path, cases, runs, lambda case, run: _run_case(backend, case, run), on_result
+    )
     return report, path

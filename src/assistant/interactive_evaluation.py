@@ -8,9 +8,6 @@ display code cannot influence what the model sees.
 """
 
 import asyncio
-import hashlib
-import json
-import math
 import statistics
 import tempfile
 from collections.abc import Callable
@@ -18,7 +15,6 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePath
 from time import perf_counter
 from typing import Literal, Self
-from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -28,7 +24,11 @@ from assistant.agent.loop import AgentError
 from assistant.agent_evaluation import ToolCall, _RecordingBackend, _RecordingTools
 from assistant.cancellation import CancellationToken, TurnCancelled
 from assistant.config import ProjectConfig
-from assistant.evaluation import EvaluationError, parse_json, save_report
+from assistant.evaluation import (
+    load_case_files,
+    new_report_path,
+    run_rounds,
+)
 from assistant.llm.base import LLMBackend, LLMError, LLMResponse, Message
 from assistant.research_evaluation import _FixtureWeb
 from assistant.runtime import JamieApplication
@@ -136,7 +136,6 @@ class InteractiveEvalReport(BaseModel):
     finished_at: str | None = None
     status: Literal["running", "completed", "interrupted"] = "running"
     cases: list[InteractiveEvalCase]
-    cases_sha256: str
     runs_per_case: int
     timeout_seconds: float
     total_duration_seconds: float = 0.0
@@ -165,31 +164,8 @@ class InteractiveEvalReport(BaseModel):
         }
 
 
-def default_interactive_cases_path() -> Path:
-    checkout = Path(__file__).resolve().parents[2] / "evals" / "interactive_cases"
-    return checkout if checkout.is_dir() else Path(__file__).with_name("interactive_eval_cases")
-
-
 def load_interactive_cases(path: Path | None = None) -> list[InteractiveEvalCase]:
-    source = path if path is not None else default_interactive_cases_path()
-    try:
-        files = sorted(source.glob("*.json")) if source.is_dir() else [source]
-        cases: list[InteractiveEvalCase] = []
-        for file in files:
-            data = parse_json(file.read_text(encoding="utf-8"))
-            if not isinstance(data, list) or not data:
-                raise ValueError(f"{file} must contain a non-empty array of cases.")
-            cases.extend(InteractiveEvalCase.model_validate(item) for item in data)
-        if not cases:
-            raise ValueError("No interactive evaluation cases found.")
-        ids = [case.id for case in cases]
-        if len(ids) != len(set(ids)):
-            raise ValueError("Interactive evaluation case IDs must be unique.")
-    except (OSError, UnicodeError, ValueError) as exc:
-        raise EvaluationError(
-            f"Cannot load interactive evaluation cases from {source}: {exc}"
-        ) from exc
-    return sorted(cases, key=lambda case: case.id)
+    return load_case_files(path, InteractiveEvalCase, "interactive_cases", "interactive")
 
 
 def _events_well_formed(events: list[AgentEvent]) -> bool:
@@ -436,48 +412,20 @@ def run_interactive_evaluation(
     output_dir: Path,
     on_result: Callable[[InteractiveRunResult, int], None] | None = None,
 ) -> tuple[InteractiveEvalReport, Path]:
-    if not cases:
-        raise EvaluationError("At least one interactive evaluation case is required.")
-    if isinstance(runs, bool) or not isinstance(runs, int) or runs < 1:
-        raise EvaluationError("Runs must be a positive integer.")
-    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-        raise EvaluationError("Timeout must be finite and positive.")
     started = datetime.now(UTC)
-    case_data = json.dumps(
-        [case.model_dump(mode="json") for case in cases],
-        sort_keys=True,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
     report = InteractiveEvalReport(
         started_at=started.isoformat(),
         cases=cases,
-        cases_sha256=hashlib.sha256(case_data.encode()).hexdigest(),
         runs_per_case=runs,
         timeout_seconds=timeout_seconds,
     )
-    stamp = started.strftime("%Y%m%dT%H%M%S%fZ")
-    path = output_dir / f"interactive-{stamp}-{uuid4().hex[:8]}.json"
-    try:
-        output_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise EvaluationError(f"Cannot create results directory {output_dir}: {exc}") from exc
-    began = perf_counter()
-    save_report(path, report)
-    try:
-        for run in range(1, runs + 1):
-            for case in cases:
-                result = _run_case(backend, case, run, timeout_seconds)
-                report.results.append(result)
-                report.total_duration_seconds = perf_counter() - began
-                save_report(path, report)
-                if on_result is not None:
-                    on_result(result, len(report.results))
-    except KeyboardInterrupt:
-        report.status = "interrupted"
-    else:
-        report.status = "completed"
-    report.finished_at = datetime.now(UTC).isoformat()
-    report.total_duration_seconds = perf_counter() - began
-    save_report(path, report)
+    path = new_report_path(output_dir, "interactive", started)
+    run_rounds(
+        report,
+        path,
+        cases,
+        runs,
+        lambda case, run: _run_case(backend, case, run, timeout_seconds),
+        on_result,
+    )
     return report, path

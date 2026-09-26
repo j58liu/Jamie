@@ -1,6 +1,5 @@
 """Fixed-prompt model evaluations with deterministic scoring and saved results."""
 
-import hashlib
 import json
 import math
 import os
@@ -10,7 +9,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
@@ -77,7 +76,6 @@ class EvalReport(BaseModel):
     finished_at: str | None = None
     status: Literal["running", "completed", "interrupted"] = "running"
     cases: list[EvalCase]
-    cases_sha256: str
     runs_per_case: int
     temperature: float
     max_tokens: int
@@ -126,12 +124,6 @@ class EvalReport(BaseModel):
         }
 
 
-def default_cases_path() -> Path:
-    """Use checkout cases, or the copies included in an installed wheel."""
-    checkout = Path(__file__).resolve().parents[2] / "evals" / "cases"
-    return checkout if checkout.is_dir() else Path(__file__).with_name("eval_cases")
-
-
 def _reject_constant(value: str) -> None:
     raise ValueError(f"Non-JSON numeric constant: {value}")
 
@@ -162,24 +154,35 @@ def parse_json(text: str) -> JsonValue:
     )
 
 
-def load_cases(path: Path | None = None) -> list[EvalCase]:
-    source = path if path is not None else default_cases_path()
+def load_case_files[Case: BaseModel](
+    path: Path | None, case_type: type[Case], directory: str, kind: str = ""
+) -> list[Case]:
+    """Read JSON case arrays from ``path``, else the checkout or wheel copy of ``directory``."""
+    if path is None:
+        checkout = Path(__file__).resolve().parents[2] / "evals" / directory
+        wheel = Path(__file__).with_name(directory.replace("cases", "eval_cases"))
+        path = checkout if checkout.is_dir() else wheel
+    label = f"{kind} evaluation".strip()
     try:
-        files = sorted(source.glob("*.json")) if source.is_dir() else [source]
-        cases = []
+        files = sorted(path.glob("*.json")) if path.is_dir() else [path]
+        cases: list[Case] = []
         for file in files:
             data = parse_json(file.read_text(encoding="utf-8"))
             if not isinstance(data, list) or not data:
                 raise ValueError(f"{file} must contain a non-empty array of cases.")
-            cases.extend(EvalCase.model_validate(item) for item in data)
+            cases.extend(case_type.model_validate(item) for item in data)
         if not cases:
-            raise ValueError("No evaluation cases found.")
+            raise ValueError(f"No {label} cases found.")
         ids = [case.id for case in cases]
         if len(ids) != len(set(ids)):
-            raise ValueError("Evaluation case IDs must be unique across all files.")
+            raise ValueError(f"{label.capitalize()} case IDs must be unique.")
     except (OSError, UnicodeError, ValueError) as exc:
-        raise EvaluationError(f"Cannot load evaluation cases from {source}: {exc}") from exc
+        raise EvaluationError(f"Cannot load {label} cases from {path}: {exc}") from exc
     return sorted(cases, key=lambda case: case.id)
+
+
+def load_cases(path: Path | None = None) -> list[EvalCase]:
+    return load_case_files(path, EvalCase, "cases")
 
 
 def _matches(actual: JsonValue, expected: JsonValue) -> bool:
@@ -261,8 +264,11 @@ def messages_for_case(case: EvalCase) -> list[Message]:
     return messages
 
 
-def save_report(path: Path, report: EvalReport) -> None:
-    """Replace a checkpoint atomically, retaining the previous report on failure."""
+def save_report(path: Path, report: Any) -> None:
+    """Replace a checkpoint atomically, keeping the previous one on failure.
+
+    ``report`` is any evaluation report model with a ``summary()`` method.
+    """
     payload = report.model_dump(mode="json")
     payload["summary"] = report.summary()
     temporary: Path | None = None
@@ -281,81 +287,32 @@ def save_report(path: Path, report: EvalReport) -> None:
             temporary.unlink(missing_ok=True)
 
 
-def run_evaluation(
-    backend: LLMBackend,
-    cases: list[EvalCase],
-    *,
-    runs: int = 5,
-    temperature: float = 0.6,
-    max_tokens: int = 1024,
-    output_dir: Path = Path("evals/results"),
-    request_timeout_seconds: float | None = None,
-    on_result: Callable[[RunResult, int], None] | None = None,
-) -> tuple[EvalReport, Path]:
-    """Run all cases once per round, with fresh conversations and no retries."""
-    if not cases or len({case.id for case in cases}) != len(cases):
-        raise EvaluationError("Provide non-empty cases with unique IDs.")
-    if isinstance(runs, bool) or not isinstance(runs, int) or runs < 1:
-        raise EvaluationError("Runs must be a positive integer.")
-    if not math.isfinite(temperature) or temperature < 0:
-        raise EvaluationError("Temperature must be finite and non-negative.")
-    if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens < 1:
-        raise EvaluationError("Max tokens must be a positive integer.")
-
-    started = datetime.now(UTC)
-    case_data = json.dumps(
-        [case.model_dump(mode="json") for case in cases],
-        sort_keys=True,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
-    report = EvalReport(
-        started_at=started.isoformat(),
-        cases=cases,
-        cases_sha256=hashlib.sha256(case_data.encode("utf-8")).hexdigest(),
-        runs_per_case=runs,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        request_timeout_seconds=request_timeout_seconds,
-    )
-    path = output_dir / f"model-{started.strftime('%Y%m%dT%H%M%S%fZ')}-{uuid4().hex[:8]}.json"
+def new_report_path(output_dir: Path, kind: str, started: datetime) -> Path:
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise EvaluationError(f"Cannot create results directory {output_dir}: {exc}") from exc
+    return output_dir / f"{kind}-{started.strftime('%Y%m%dT%H%M%S%fZ')}-{uuid4().hex[:8]}.json"
+
+
+def run_rounds[Case, Result](
+    report: Any,
+    path: Path,
+    cases: list[Case],
+    runs: int,
+    run_case: Callable[[Case, int], Result],
+    on_result: Callable[[Result, int], None] | None,
+) -> None:
+    """Run every case once per round, saving the report after each result.
+
+    Ctrl+C stops the rounds and keeps the partial report, marked interrupted.
+    """
     began = perf_counter()
     save_report(path, report)
     try:
         for run in range(1, runs + 1):
             for case in cases:
-                response = None
-                error = None
-                request_started = perf_counter()
-                try:
-                    response = backend.chat(
-                        messages_for_case(case),
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                    )
-                except LLMError as exc:
-                    response, error = exc.response, str(exc)
-                latency = perf_counter() - request_started
-                parsed, following, success, reason = score_response(case, response, error=error)
-                result = RunResult(
-                    case_id=case.id,
-                    run=run,
-                    raw_output=response.content if response is not None else None,
-                    model=response.model if response is not None else None,
-                    finish_reason=response.finish_reason if response is not None else None,
-                    output_tokens=response.output_tokens if response is not None else None,
-                    latency_seconds=latency,
-                    parse_success=parsed,
-                    instruction_following=following,
-                    success=success,
-                    failure_reason=reason,
-                    error=error,
-                )
+                result = run_case(case, run)
                 report.results.append(result)
                 report.total_duration_seconds = perf_counter() - began
                 save_report(path, report)
@@ -368,4 +325,68 @@ def run_evaluation(
     report.finished_at = datetime.now(UTC).isoformat()
     report.total_duration_seconds = perf_counter() - began
     save_report(path, report)
+
+
+def _run_case(
+    backend: LLMBackend, case: EvalCase, run: int, temperature: float, max_tokens: int
+) -> RunResult:
+    response = None
+    error = None
+    request_started = perf_counter()
+    try:
+        response = backend.chat(
+            messages_for_case(case),
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    except LLMError as exc:
+        response, error = exc.response, str(exc)
+    latency = perf_counter() - request_started
+    parsed, following, success, reason = score_response(case, response, error=error)
+    return RunResult(
+        case_id=case.id,
+        run=run,
+        raw_output=response.content if response is not None else None,
+        model=response.model if response is not None else None,
+        finish_reason=response.finish_reason if response is not None else None,
+        output_tokens=response.output_tokens if response is not None else None,
+        latency_seconds=latency,
+        parse_success=parsed,
+        instruction_following=following,
+        success=success,
+        failure_reason=reason,
+        error=error,
+    )
+
+
+def run_evaluation(
+    backend: LLMBackend,
+    cases: list[EvalCase],
+    *,
+    runs: int = 5,
+    temperature: float = 0.6,
+    max_tokens: int = 1024,
+    output_dir: Path = Path("evals/results"),
+    request_timeout_seconds: float | None = None,
+    on_result: Callable[[RunResult, int], None] | None = None,
+) -> tuple[EvalReport, Path]:
+    """Run all cases once per round, with fresh conversations and no retries."""
+    started = datetime.now(UTC)
+    report = EvalReport(
+        started_at=started.isoformat(),
+        cases=cases,
+        runs_per_case=runs,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        request_timeout_seconds=request_timeout_seconds,
+    )
+    path = new_report_path(output_dir, "model", started)
+    run_rounds(
+        report,
+        path,
+        cases,
+        runs,
+        lambda case, run: _run_case(backend, case, run, temperature, max_tokens),
+        on_result,
+    )
     return report, path

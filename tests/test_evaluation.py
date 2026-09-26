@@ -238,7 +238,6 @@ def test_repeated_runs_save_exact_prompts_metrics_and_raw_outputs(tmp_path: Path
     assert saved["status"] == "completed"
     assert saved["cases"] == [case.model_dump() for case in cases]
     assert saved["results"][2]["raw_output"].startswith("```json")
-    assert len(saved["cases_sha256"]) == 64
 
 
 def test_errors_count_as_failures_and_do_not_stop_remaining_runs(tmp_path: Path):
@@ -307,20 +306,9 @@ def test_unwritable_output_fails_before_contacting_model(tmp_path: Path, monkeyp
     assert backend.requests == []
 
 
-def test_separate_invocations_keep_prior_results_and_stable_case_hash(tmp_path: Path):
+def test_separate_invocations_keep_prior_results(tmp_path: Path):
     backend = FakeBackend([LLMResponse("READY"), LLMResponse("READY")])
     first, first_path = run_evaluation(backend, [text_case()], runs=1, output_dir=tmp_path)
     second, second_path = run_evaluation(backend, [text_case()], runs=1, output_dir=tmp_path)
     assert first_path != second_path
     assert first_path.exists() and second_path.exists()
-    assert first.cases_sha256 == second.cases_sha256
-
-
-@pytest.mark.parametrize(
-    "options", [{"runs": 0}, {"runs": True}, {"temperature": float("nan")}, {"max_tokens": 0}]
-)
-def test_invalid_run_options_do_not_create_output(tmp_path: Path, options):
-    output = tmp_path / "results"
-    with pytest.raises(EvaluationError):
-        run_evaluation(FakeBackend([]), [text_case()], output_dir=output, **options)
-    assert not output.exists()

@@ -491,7 +491,7 @@ and total duration:
   and how many attempts reported usage.
 
 Reports are saved under `evals/results/` with unique timestamped names. Each
-JSON report includes the exact case definitions and their SHA-256 hash,
+JSON report includes the exact case definitions,
 settings (including the read timeout), timestamps, model IDs, unmodified answer
 text, per-run metrics, failure reasons, and summary. Results are checkpointed after every completed
 attempt. Ctrl-C saves an interrupted report; unfinished requests are not counted
@@ -558,7 +558,7 @@ The summary reports passes, expected tool calls, correct tool outputs, answer
 checks, median end-to-end latency, output tokens, and total duration. Reports
 are checkpointed under `evals/results/` after each attempt and include the case
 fixtures, tool arguments and observations, final answers, errors, timestamps,
-model ID, raw model outputs, token usage, and a hash of the case definitions.
+model ID, raw model outputs, token usage, and the case definitions.
 Temporary workspaces are removed after each attempt.
 
 The [saved agent baseline](evals/results/agent-baseline.md) contains five runs
@@ -605,7 +605,7 @@ the expected answer text, a citation on that answer line, and the expected
 evidence in the cited page fixture.
 
 Reports are checkpointed under `evals/results/` and contain the exact fixtures,
-case hash, generated searches, extracted source URLs, cross-check notes, raw
+generated searches, extracted source URLs, cross-check notes, raw
 model outputs, answers, cited URLs, individual checks, failures, model
 information, token usage, and timing. Custom cases can be selected with
 `--cases`:
@@ -625,7 +625,7 @@ jamie eval memory
 Each case seeds an isolated temporary database, performs one natural-language
 query, and checks whether the expected memory appears within its configured
 top-k results. The report includes recall@k, mean reciprocal rank, retrieved
-text, case definitions, and their hash. This provides a baseline for deciding
+text, and case definitions. This provides a baseline for deciding
 whether text retrieval is sufficient before considering embeddings.
 
 The [saved FTS5 baseline](evals/results/memory-fts-baseline.md) passed all five

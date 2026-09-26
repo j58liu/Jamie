@@ -1,9 +1,5 @@
 """End-to-end evaluations of the model, agent loop, and read-only tools."""
 
-import hashlib
-import json
-import math
-import os
 import statistics
 import tempfile
 from collections.abc import Callable
@@ -11,13 +7,16 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePath
 from time import perf_counter
 from typing import Any, Literal, Self
-from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from assistant import __version__
 from assistant.agent.loop import AgentError, ToolResult, run_agent
-from assistant.evaluation import EvaluationError, parse_json
+from assistant.evaluation import (
+    load_case_files,
+    new_report_path,
+    run_rounds,
+)
 from assistant.llm.base import LLMBackend, LLMError, LLMResponse, Message
 from assistant.tools.registry import ToolRegistry, create_read_only_registry
 
@@ -82,7 +81,6 @@ class AgentEvalReport(BaseModel):
     finished_at: str | None = None
     status: Literal["running", "completed", "interrupted"] = "running"
     cases: list[AgentEvalCase]
-    cases_sha256: str
     runs_per_case: int
     timeout_seconds: float
     total_duration_seconds: float = 0.0
@@ -159,52 +157,12 @@ class _RecordingTools:
         return result
 
 
-def default_agent_cases_path() -> Path:
-    checkout = Path(__file__).resolve().parents[2] / "evals" / "agent_cases"
-    return checkout if checkout.is_dir() else Path(__file__).with_name("agent_eval_cases")
-
-
 def load_agent_cases(path: Path | None = None) -> list[AgentEvalCase]:
-    source = path if path is not None else default_agent_cases_path()
-    try:
-        files = sorted(source.glob("*.json")) if source.is_dir() else [source]
-        cases: list[AgentEvalCase] = []
-        for file in files:
-            data = parse_json(file.read_text(encoding="utf-8"))
-            if not isinstance(data, list) or not data:
-                raise ValueError(f"{file} must contain a non-empty array of cases.")
-            cases.extend(AgentEvalCase.model_validate(item) for item in data)
-        if not cases:
-            raise ValueError("No agent evaluation cases found.")
-        ids = [case.id for case in cases]
-        if len(ids) != len(set(ids)):
-            raise ValueError("Agent evaluation case IDs must be unique.")
-    except (OSError, UnicodeError, ValueError) as exc:
-        raise EvaluationError(f"Cannot load agent evaluation cases from {source}: {exc}") from exc
-    return sorted(cases, key=lambda case: case.id)
+    return load_case_files(path, AgentEvalCase, "agent_cases", "agent")
 
 
 def _contains_args(actual: dict[str, Any], expected: dict[str, JsonValue]) -> bool:
     return all(actual.get(key) == value for key, value in expected.items())
-
-
-def _save_report(path: Path, report: AgentEvalReport) -> None:
-    payload = report.model_dump(mode="json")
-    payload["summary"] = report.summary()
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent, delete=False
-        ) as file:
-            temporary = Path(file.name)
-            json.dump(payload, file, ensure_ascii=False, indent=2, allow_nan=False)
-            file.write("\n")
-        os.replace(temporary, path)
-    except OSError as exc:
-        raise EvaluationError(f"Cannot save agent evaluation report to {path}: {exc}") from exc
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
 
 
 def _run_case(
@@ -287,47 +245,20 @@ def run_agent_evaluation(
     output_dir: Path,
     on_result: Callable[[AgentRunResult, int], None] | None = None,
 ) -> tuple[AgentEvalReport, Path]:
-    if not cases:
-        raise EvaluationError("At least one agent evaluation case is required.")
-    if isinstance(runs, bool) or not isinstance(runs, int) or runs < 1:
-        raise EvaluationError("Runs must be a positive integer.")
-    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-        raise EvaluationError("Timeout must be finite and positive.")
     started = datetime.now(UTC)
-    case_data = json.dumps(
-        [case.model_dump(mode="json") for case in cases],
-        sort_keys=True,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
     report = AgentEvalReport(
         started_at=started.isoformat(),
         cases=cases,
-        cases_sha256=hashlib.sha256(case_data.encode()).hexdigest(),
         runs_per_case=runs,
         timeout_seconds=timeout_seconds,
     )
-    path = output_dir / f"agent-{started.strftime('%Y%m%dT%H%M%S%fZ')}-{uuid4().hex[:8]}.json"
-    try:
-        output_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise EvaluationError(f"Cannot create results directory {output_dir}: {exc}") from exc
-    began = perf_counter()
-    _save_report(path, report)
-    try:
-        for run in range(1, runs + 1):
-            for case in cases:
-                result = _run_case(backend, case, run, timeout_seconds)
-                report.results.append(result)
-                report.total_duration_seconds = perf_counter() - began
-                _save_report(path, report)
-                if on_result is not None:
-                    on_result(result, len(report.results))
-    except KeyboardInterrupt:
-        report.status = "interrupted"
-    else:
-        report.status = "completed"
-    report.finished_at = datetime.now(UTC).isoformat()
-    report.total_duration_seconds = perf_counter() - began
-    _save_report(path, report)
+    path = new_report_path(output_dir, "agent", started)
+    run_rounds(
+        report,
+        path,
+        cases,
+        runs,
+        lambda case, run: _run_case(backend, case, run, timeout_seconds),
+        on_result,
+    )
     return report, path
