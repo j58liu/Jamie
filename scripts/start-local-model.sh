@@ -46,7 +46,7 @@ exec llama-server \
   "${model_args[@]}" --offline --no-mmproj \
   --host 127.0.0.1 --port 8080 \
   --gpu-layers all --flash-attn on \
-  --ctx-size 8192 --parallel 1 --cache-ram 512 \
+  --ctx-size 32768 --parallel 1 --cache-ram 512 \
   --jinja --reasoning-format deepseek \
   --chat-template-kwargs '{"enable_thinking":false}' \
   --temp 0.6 --top-p 0.95 --top-k 20 \

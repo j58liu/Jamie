@@ -40,7 +40,7 @@ def test_default_launch_uses_cached_model_offline_and_local_gpu(launcher_environ
     assert args[args.index("--port") + 1] == "8080"
     assert args[args.index("--gpu-layers") + 1] == "all"
     assert args[args.index("--flash-attn") + 1] == "on"
-    assert args[args.index("--ctx-size") + 1] == "8192"
+    assert args[args.index("--ctx-size") + 1] == "32768"
     assert args[args.index("--parallel") + 1] == "1"
     assert args[args.index("--cache-ram") + 1] == "512"
     assert args[args.index("--chat-template-kwargs") + 1] == '{"enable_thinking":false}'

@@ -56,7 +56,7 @@ selected GGUF into llama.cpp's model cache and start the server:
 llama-server \
   -hf unsloth/Qwen3.5-2B-GGUF:Q4_K_M --no-mmproj \
   --host 127.0.0.1 --port 8080 \
-  --ctx-size 8192 --parallel 1 \
+  --ctx-size 32768 --parallel 1 \
   --jinja --reasoning-format deepseek \
   --chat-template-kwargs '{"enable_thinking":false}' \
   --temp 0.6 --top-p 0.95 --top-k 20
@@ -73,7 +73,7 @@ The launcher uses the cached model with llama.cpp's `--offline` option, binds
 only to `127.0.0.1:8080`, enables all GPU layers and Flash Attention, and prints
 generation timings in the server terminal. Saved prompt caching stays enabled
 with a 512 MiB RAM limit to reduce memory pressure on a 16 GB Mac; this limit is
-separate from the active 8,192-token context. The launcher does not download
+separate from the active 32,768-token context. The launcher does not download
 files. It requires a recent llama.cpp build that supports `--offline` and
 `--cache-ram`. If you already have a GGUF file elsewhere, pass its path instead:
 
@@ -90,7 +90,7 @@ pressure. Compare the server's generation timing when measuring model speed;
 Jamie's total turn duration also includes prompt processing and any tool work.
 
 Use a recent llama.cpp build with support for the Qwen3.5 architecture.
-The 8,192-token context and single request slot provide a starting configuration
+The 32,768-token context and single request slot provide a starting configuration
 for a 16 GB Mac; memory use also depends on other running applications.
 The chat template setting disables thinking by default so short requests return
 an answer without spending the token budget on reasoning. When thinking is
