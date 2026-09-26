@@ -1,7 +1,6 @@
 """Synchronous llama.cpp chat requests using plain HTTP."""
 
 import asyncio
-import math
 import time
 from contextlib import suppress
 from dataclasses import asdict
@@ -131,13 +130,6 @@ class LlamaCppBackend:
         Inside a cancellation scope the request streams, because llama.cpp only stops
         generating for a closed connection when it next writes a token.
         """
-        if not messages:
-            raise ValueError("At least one message is required.")
-        if not math.isfinite(temperature) or temperature < 0:
-            raise ValueError("Temperature must be a finite, non-negative number.")
-        if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens < 1:
-            raise ValueError("Max tokens must be a positive integer.")
-
         payload = {
             "messages": [asdict(message) for message in messages],
             "temperature": temperature,

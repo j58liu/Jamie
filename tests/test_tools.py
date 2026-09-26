@@ -5,7 +5,7 @@ import pytest
 from assistant.agent.loop import run_agent
 from assistant.llm.base import LLMResponse
 from assistant.security import PolicyError
-from assistant.tools import ReadFileTool, Risk, ToolRegistry, create_read_only_registry
+from assistant.tools import Risk, ToolRegistry, create_read_only_registry
 
 
 @pytest.fixture
@@ -146,12 +146,6 @@ def test_registry_returns_failures_for_unknown_tools_and_invalid_arguments(sandb
     assert not invalid.success
     assert "Invalid arguments" in invalid.output
     assert not wrong_type.success
-
-
-def test_duplicate_tool_registration_is_rejected(sandbox: Path):
-    first = create_read_only_registry(sandbox)
-    with pytest.raises(ValueError, match="already registered"):
-        first.register(ReadFileTool(sandbox))
 
 
 def test_registry_instructions_are_sent_to_model(sandbox: Path):

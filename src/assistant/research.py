@@ -198,14 +198,6 @@ class ResearchWorkflow:
             raise ResearchError("Research question must not be blank.")
         if len(question) > MAX_QUESTION_CHARACTERS:
             raise ResearchError("Research question is too long.")
-        if isinstance(max_queries, bool) or not 1 <= max_queries <= MAX_QUERIES:
-            raise ResearchError(f"Search count must be between 1 and {MAX_QUERIES}.")
-        if isinstance(max_sources, bool) or not 2 <= max_sources <= MAX_SOURCES:
-            raise ResearchError(f"Source count must be between 2 and {MAX_SOURCES}.")
-        if isinstance(min_sources, bool) or not 2 <= min_sources <= max_sources:
-            raise ResearchError("Minimum sources must be between 2 and the source limit.")
-        if isinstance(results_per_query, bool) or not 1 <= results_per_query <= 10:
-            raise ResearchError("Results per search must be between 1 and 10.")
 
         outputs: list[str] = []
         usage: list[int] = []

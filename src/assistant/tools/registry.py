@@ -89,8 +89,6 @@ class ToolRegistry:
         return self._audit
 
     def register(self, tool: Tool) -> None:
-        if tool.name in self._tools:
-            raise ValueError(f"Tool {tool.name!r} is already registered.")
         self._policy.validate_declaration(tool.name, tool.risk)
         self._tools[tool.name] = tool
 

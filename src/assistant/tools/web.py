@@ -82,7 +82,7 @@ Resolver = Callable[..., Iterable[tuple[object, object, object, object, tuple[ob
 
 
 def _normalize_url(url: str) -> str:
-    if not isinstance(url, str) or not url.strip():
+    if not url.strip():
         raise WebError("URL must not be blank.")
     if len(url) > MAX_URL_CHARACTERS:
         raise WebError("URL is too long.")
@@ -120,7 +120,6 @@ def validate_public_url(url: str, resolver: Resolver = socket.getaddrinfo) -> st
     normalized = _normalize_url(url)
     parts = urlsplit(normalized)
     host = parts.hostname
-    assert host is not None
     if host == "localhost" or host.endswith((".localhost", ".local")):
         raise WebError("URL host must use a public address.")
     try:
@@ -417,8 +416,6 @@ class WebClient:
             raise WebError("Search query must not be blank.")
         if len(query) > MAX_QUERY_CHARACTERS:
             raise WebError("Search query is too long.")
-        if isinstance(limit, bool) or not 1 <= limit <= MAX_SEARCH_RESULTS:
-            raise WebError(f"Search limit must be between 1 and {MAX_SEARCH_RESULTS}.")
         try:
             # Submit like DuckDuckGo's own form; GET requests for longer queries draw bot checks.
             response = self._client.post(SEARCH_URL, data={"q": query})

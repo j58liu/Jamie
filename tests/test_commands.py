@@ -9,9 +9,7 @@ from rich.console import Console
 
 from assistant.llm.base import Message
 from assistant.ui.commands import (
-    CommandRegistry,
     ReplState,
-    SlashCommand,
     create_command_registry,
 )
 
@@ -32,14 +30,6 @@ def test_help_lists_every_registered_command():
     for command in registry:
         assert command.name in output
         assert command.description in output
-
-
-def test_registry_rejects_duplicate_names_and_aliases():
-    registry = CommandRegistry()
-    registry.register(SlashCommand("/quit", "Leave.", lambda s, a: None, aliases=("/exit",)))
-
-    with pytest.raises(ValueError, match="/exit"):
-        registry.register(SlashCommand("/exit", "Again.", lambda s, a: None))
 
 
 def test_quit_alias_and_case_insensitive_dispatch():

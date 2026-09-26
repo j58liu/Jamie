@@ -1,7 +1,6 @@
 """Run the model action loop with bounded retries and tool execution."""
 
 import json
-import math
 from collections.abc import Callable
 from copy import deepcopy
 from functools import partial
@@ -94,15 +93,6 @@ class ToolExecutor(Protocol):
 
 class _DeadlineExceeded(Exception):
     pass
-
-
-def _validate_limits(max_steps: int, max_parse_retries: int, timeout_seconds: float) -> None:
-    if max_steps < 1:
-        raise ValueError("max_steps must be a positive integer.")
-    if max_parse_retries < 0:
-        raise ValueError("max_parse_retries must be a non-negative integer.")
-    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-        raise ValueError("timeout_seconds must be a finite, positive number.")
 
 
 def _call_before_deadline[Result](
@@ -343,11 +333,6 @@ def run_agent(
     Cancellation is checked before each model request and tool call, and is passed to
     the model and tools so they can stop early; it raises TurnCancelled.
     """
-    if not prompt.strip():
-        raise ValueError("prompt must be a non-blank string.")
-    if memory_context is not None and not memory_context.strip():
-        raise ValueError("memory_context must be non-blank when provided.")
-    _validate_limits(max_steps, max_parse_retries, timeout_seconds)
 
     event_sink(TurnStarted(prompt))
     try:

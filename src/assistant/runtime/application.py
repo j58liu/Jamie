@@ -256,14 +256,12 @@ class JamieApplication:
         timeout_seconds: float,
     ) -> TurnResult:
         memory = self._require_memory()
-        assert self._backend is not None
         session_id = conversation_id
         standalone = conversation_id is None
         try:
             if standalone:
                 session_id = memory.start_session("agent")
                 memory.add_message(session_id, "user", prompt)
-            assert session_id is not None
             recalled = memory.search_memories(prompt, exclude_session=conversation_id)
             context = format_memory_context(recalled)
             backend = _AgentTurnBackend(self._backend, self, temperature, max_tokens, thinking)
@@ -274,10 +272,10 @@ class JamieApplication:
                 prompt,
                 history=history,
                 memory_context=context,
-                max_steps=max_steps,
-                timeout_seconds=timeout_seconds,
                 event_sink=event_sink,
                 cancel=cancel,
+                max_steps=max_steps,
+                timeout_seconds=timeout_seconds,
             )
             if cancel is not None:
                 cancel.raise_if_cancelled()

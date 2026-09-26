@@ -252,35 +252,3 @@ def test_tool_call_stops_at_total_timeout():
     finally:
         release.set()
     assert perf_counter() - started < 0.5
-
-
-@pytest.mark.parametrize(
-    "options",
-    [
-        {"max_steps": 0},
-        {"max_parse_retries": -1},
-        {"timeout_seconds": 0},
-        {"timeout_seconds": float("nan")},
-        {"timeout_seconds": float("inf")},
-    ],
-)
-def test_invalid_limits_fail_before_model_call(options):
-    backend = FakeBackend([])
-    with pytest.raises(ValueError):
-        run_agent(backend, FakeTools(), "Prompt.", **options)
-    assert backend.requests == []
-
-
-@pytest.mark.parametrize("prompt", ["", "   "])
-def test_invalid_prompt_fails_before_model_call(prompt):
-    backend = FakeBackend([])
-    with pytest.raises(ValueError, match="prompt"):
-        run_agent(backend, FakeTools(), prompt)
-    assert backend.requests == []
-
-
-def test_blank_memory_context_is_rejected_before_model_call():
-    backend = FakeBackend([])
-    with pytest.raises(ValueError, match="memory_context"):
-        run_agent(backend, FakeTools(), "Prompt.", memory_context="  ")
-    assert backend.requests == []

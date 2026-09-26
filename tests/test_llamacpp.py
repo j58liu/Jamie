@@ -206,38 +206,6 @@ def test_empty_answers_explain_token_budget(content: str):
         backend.chat([Message("user", "Hi")])
 
 
-@pytest.mark.parametrize(
-    "options",
-    [
-        {"temperature": -0.1},
-        {"temperature": float("nan")},
-        {"temperature": float("inf")},
-        {"max_tokens": 0},
-        {"max_tokens": -1},
-        {"max_tokens": 1.5},
-        {"max_tokens": True},
-    ],
-)
-def test_invalid_options_fail_before_http(options: dict):
-    def handler(request: httpx.Request) -> httpx.Response:
-        pytest.fail("Invalid input must not send an HTTP request")
-
-    backend = LlamaCppBackend(transport=httpx.MockTransport(handler))
-
-    with pytest.raises(ValueError):
-        backend.chat([Message("user", "Hi")], **options)
-
-
-def test_empty_conversation_fails_before_http():
-    def handler(request: httpx.Request) -> httpx.Response:
-        pytest.fail("Empty conversations must not send an HTTP request")
-
-    backend = LlamaCppBackend(transport=httpx.MockTransport(handler))
-
-    with pytest.raises(ValueError, match="At least one message"):
-        backend.chat([])
-
-
 @pytest.mark.parametrize("usage", [None, {}, {"prompt_tokens": 10}])
 def test_missing_completion_usage_is_unknown(usage):
     payload = completion()

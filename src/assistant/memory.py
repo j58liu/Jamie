@@ -226,8 +226,6 @@ class MemoryStore:
             raise MemoryStoreError(f"Cannot initialize memory database at {self.path}.") from exc
 
     def start_session(self, kind: str) -> str:
-        if not kind.strip():
-            raise ValueError("Session kind must not be blank.")
         session_id = uuid4().hex
         try:
             with self._connect() as connection:
@@ -253,8 +251,6 @@ class MemoryStore:
             raise MemoryStoreError("Cannot finish memory session.") from exc
 
     def add_message(self, session_id: str, role: str, content: str) -> int:
-        if role not in {"system", "user", "assistant"}:
-            raise ValueError("Message role is invalid.")
         try:
             with self._connect() as connection:
                 row = connection.execute(
@@ -410,8 +406,6 @@ class MemoryStore:
         kind: str = "conversation",
         tags: str = "",
     ) -> int:
-        if not content.strip():
-            raise ValueError("Memory content must not be blank.")
         try:
             with self._connect() as connection:
                 cursor = connection.execute(
@@ -439,8 +433,6 @@ class MemoryStore:
         limit: int = DEFAULT_MEMORY_LIMIT,
         exclude_session: str | None = None,
     ) -> list[MemoryRecord]:
-        if isinstance(limit, bool) or not 1 <= limit <= 20:
-            raise ValueError("Memory search limit must be between 1 and 20.")
         match = _fts_query(query)
         if match is None:
             return []

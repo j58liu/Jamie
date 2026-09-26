@@ -102,8 +102,6 @@ class CommandRegistry:
 
     def register(self, command: SlashCommand) -> None:
         for name in (command.name, *command.aliases):
-            if name in self._lookup:
-                raise ValueError(f"Command {name} is already registered.")
             self._lookup[name] = command
         self._commands[command.name] = command
 
