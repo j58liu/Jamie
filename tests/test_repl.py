@@ -552,8 +552,9 @@ def test_activity_stops_before_answers_and_after_failures(monkeypatch: pytest.Mo
     asyncio.run(main())
 
     assert activity == ["start", "Jamie is using a tool…", "stop", "start", "stop"]
-    assert "Jamie › done" in console.file.getvalue()
-    assert "Error: offline" in console.file.getvalue()
+    output = Text.from_ansi(console.file.getvalue()).plain  # the console forces colors
+    assert "Jamie › done" in output
+    assert "Error: offline" in output
 
 
 def test_a_failed_model_request_does_not_kill_the_repl():
