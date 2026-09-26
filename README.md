@@ -48,8 +48,9 @@ Install llama.cpp on macOS with Homebrew:
 brew install llama.cpp
 ```
 
-In a separate terminal, start the server. The first run downloads the selected
-GGUF into llama.cpp's model cache:
+The first setup needs internet access to install llama.cpp and download the
+model. In a separate terminal, run the following command once to download the
+selected GGUF into llama.cpp's model cache and start the server:
 
 ```sh
 llama-server \
@@ -60,6 +61,33 @@ llama-server \
   --chat-template-kwargs '{"enable_thinking":false}' \
   --temp 0.6 --top-p 0.95 --top-k 20
 ```
+
+After that download finishes, stop the server with Ctrl+C. For subsequent
+starts, use this launcher from the repository root:
+
+```sh
+./scripts/start-local-model.sh
+```
+
+The launcher uses the cached model with llama.cpp's `--offline` option, binds
+only to `127.0.0.1:8080`, enables all GPU layers and Flash Attention, and prints
+generation timings in the server terminal. Saved prompt caching stays enabled
+with a 512 MiB RAM limit to reduce memory pressure on a 16 GB Mac; this limit is
+separate from the active 8,192-token context. The launcher does not download
+files. It requires a recent llama.cpp build that supports `--offline` and
+`--cache-ram`. If you already have a GGUF file elsewhere, pass its path instead:
+
+```sh
+./scripts/start-local-model.sh "/path/to/Qwen3.5-2B-Q4_K_M.gguf"
+```
+
+With the model installed, local conversations and local file tools work without
+internet access. Web research, web search, and fetching web pages still require
+internet access. The cached GGUF is stored on disk and loaded into unified
+memory for generation; moving it to an external drive does not speed up
+generation. Close memory-heavy applications if macOS reports high memory
+pressure. Compare the server's generation timing when measuring model speed;
+Jamie's total turn duration also includes prompt processing and any tool work.
 
 Use a recent llama.cpp build with support for the Qwen3.5 architecture.
 The 8,192-token context and single request slot provide a starting configuration
