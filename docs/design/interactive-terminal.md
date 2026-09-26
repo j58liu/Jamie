@@ -26,7 +26,7 @@ an interactive terminal. It does not change production behavior.
 | Tools | `assistant.tools.registry.ToolRegistry` validates arguments, applies policy and approval, executes tools, records audit events, and tracks edit verification. |
 | Permissions | `assistant.security.policy.PermissionPolicy` assigns fixed permission levels. `authorize` calls an injected `ApprovalProvider` for actions that require confirmation. |
 | Terminal approval | `assistant.cli.TerminalApprovalProvider` prints the normalized request with Rich and asks with Typer. This is the main terminal-specific behavior currently mixed into the CLI module. |
-| Memory | `assistant.memory.MemoryStore` persists sessions, messages, tool calls, sources, preferences, evaluation runs, and FTS5 memories. The application owns direct-chat persistence; CLI helpers still serve agent and research commands. |
+| Memory | `assistant.memory.MemoryStore` persists sessions, conversations, messages, tool calls, sources, and FTS5 memories. The application owns chat and agent persistence; CLI helpers still serve the research command. |
 | Research | `assistant.research.ResearchWorkflow` has its own bounded model workflow. The `research` command creates its backend and web client directly. |
 | Evaluations | `assistant.eval_cli` and the evaluation modules construct their own isolated backends and fixtures. They should remain independent of interactive session state. `jamie eval interactive` drives the runtime and agent loop through multi-turn scenarios (history, `/new`, cancellation, approvals, recovery, context growth) with recorded, unrendered events. |
 

@@ -409,8 +409,8 @@ database is:
 ~/Library/Application Support/Jamie/memory.sqlite3
 ```
 
-The schema contains `sessions`, `messages`, `tool_calls`, `memories`,
-`preferences`, `sources`, and `eval_runs`. Research sessions also retain their
+The schema contains `sessions`, `conversations`, `messages`, `tool_calls`,
+`memories`, and `sources`. Research sessions also retain their
 retrieved source records. Tool arguments use the same bounded redaction as
 audit records, and tool output is stored only as a bounded preview. The database
 file is created with user-only permissions.

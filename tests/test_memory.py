@@ -18,16 +18,15 @@ REQUESTED_TABLES = {
     "messages",
     "tool_calls",
     "memories",
-    "preferences",
     "sources",
-    "eval_runs",
 }
 
 
 def test_store_creates_requested_tables_and_fts5_index(tmp_path: Path):
     path = tmp_path / "state" / "memory.sqlite3"
-    store = MemoryStore(path)
-    names = store.table_names()
+    MemoryStore(path)
+    with sqlite3.connect(path) as connection:
+        names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master")}
     assert REQUESTED_TABLES.issubset(names)
     assert "memories_fts" in names
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
@@ -54,7 +53,7 @@ def test_fts_retrieves_relevant_conversation_with_porter_stemming(tmp_path: Path
     assert store.search_memories("the and what") == []
 
 
-def test_session_records_messages_tools_preferences_sources_and_eval_runs(tmp_path: Path):
+def test_session_records_messages_tools_and_sources(tmp_path: Path):
     path = tmp_path / "memory.sqlite3"
     store = MemoryStore(path)
     session_id = store.start_session("agent")
@@ -67,7 +66,6 @@ def test_session_records_messages_tools_preferences_sources_and_eval_runs(tmp_pa
     )
     store.add_message(session_id, "assistant", "It says hello.")
     store.remember_exchange(session_id, "Read README.md", "It says hello.")
-    store.set_preference("response_style", {"concise": True})
     source_id = store.add_source(
         session_id,
         url="https://example.com/",
@@ -83,15 +81,8 @@ def test_session_records_messages_tools_preferences_sources_and_eval_runs(tmp_pa
         )
         == source_id
     )
-    store.add_eval_run(
-        kind="memory",
-        status="completed",
-        metrics={"recall_at_5": 1.0},
-        report_path=Path("evals/results/memory.json"),
-    )
     store.finish_session(session_id, success=True)
 
-    assert store.get_preference("response_style") == {"concise": True}
     with sqlite3.connect(path) as connection:
         connection.row_factory = sqlite3.Row
         session = connection.execute(
@@ -110,7 +101,6 @@ def test_session_records_messages_tools_preferences_sources_and_eval_runs(tmp_pa
         assert connection.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 1
         assert connection.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 1
         assert connection.execute("SELECT title FROM sources").fetchone()[0] == "Updated example"
-        assert connection.execute("SELECT COUNT(*) FROM eval_runs").fetchone()[0] == 1
 
 
 def test_memory_context_is_bounded_and_marks_recalled_text_untrusted(tmp_path: Path):

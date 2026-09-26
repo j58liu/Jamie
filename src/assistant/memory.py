@@ -127,12 +127,6 @@ CREATE TRIGGER IF NOT EXISTS memories_after_update AFTER UPDATE ON memories BEGI
     INSERT INTO memories_fts(rowid, content, tags) VALUES (new.id, new.content, new.tags);
 END;
 
-CREATE TABLE IF NOT EXISTS preferences (
-    key TEXT PRIMARY KEY,
-    value_json TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
@@ -141,16 +135,6 @@ CREATE TABLE IF NOT EXISTS sources (
     content TEXT NOT NULL,
     retrieved_at TEXT NOT NULL,
     UNIQUE(session_id, url)
-);
-
-CREATE TABLE IF NOT EXISTS eval_runs (
-    id TEXT PRIMARY KEY,
-    kind TEXT NOT NULL,
-    status TEXT NOT NULL,
-    report_path TEXT,
-    metrics_json TEXT NOT NULL,
-    started_at TEXT NOT NULL,
-    finished_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS messages_session_sequence ON messages(session_id, sequence);
@@ -240,16 +224,6 @@ class MemoryStore:
             self.path.chmod(0o600)
         except (OSError, sqlite3.Error) as exc:
             raise MemoryStoreError(f"Cannot initialize memory database at {self.path}.") from exc
-
-    def table_names(self) -> set[str]:
-        try:
-            with self._connect() as connection:
-                rows = connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
-                ).fetchall()
-        except sqlite3.Error as exc:
-            raise MemoryStoreError("Cannot inspect memory database tables.") from exc
-        return {str(row["name"]) for row in rows}
 
     def start_session(self, kind: str) -> str:
         if not kind.strip():
@@ -495,31 +469,6 @@ class MemoryStore:
             for row in rows
         ]
 
-    def set_preference(self, key: str, value: Any) -> None:
-        if not key.strip():
-            raise ValueError("Preference key must not be blank.")
-        try:
-            encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
-            with self._connect() as connection:
-                connection.execute(
-                    "INSERT INTO preferences(key, value_json, updated_at) VALUES (?, ?, ?) "
-                    "ON CONFLICT(key) DO UPDATE SET "
-                    "value_json = excluded.value_json, updated_at = excluded.updated_at",
-                    (key, encoded, _now()),
-                )
-        except (TypeError, ValueError, sqlite3.Error) as exc:
-            raise MemoryStoreError("Cannot save preference.") from exc
-
-    def get_preference(self, key: str) -> Any | None:
-        try:
-            with self._connect() as connection:
-                row = connection.execute(
-                    "SELECT value_json FROM preferences WHERE key = ?", (key,)
-                ).fetchone()
-        except sqlite3.Error as exc:
-            raise MemoryStoreError("Cannot read preference.") from exc
-        return None if row is None else json.loads(str(row["value_json"]))
-
     def add_source(
         self,
         session_id: str,
@@ -545,38 +494,6 @@ class MemoryStore:
         except sqlite3.Error as exc:
             raise MemoryStoreError("Cannot save research source.") from exc
         return int(row["id"])
-
-    def add_eval_run(
-        self,
-        *,
-        kind: str,
-        status: str,
-        metrics: dict[str, Any],
-        report_path: Path | None = None,
-        started_at: str | None = None,
-        finished_at: str | None = None,
-    ) -> str:
-        run_id = uuid4().hex
-        try:
-            encoded = json.dumps(metrics, ensure_ascii=False, sort_keys=True, allow_nan=False)
-            with self._connect() as connection:
-                connection.execute(
-                    "INSERT INTO eval_runs("
-                    "id, kind, status, report_path, metrics_json, started_at, finished_at"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        run_id,
-                        kind,
-                        status,
-                        str(report_path) if report_path is not None else None,
-                        encoded,
-                        started_at or _now(),
-                        finished_at,
-                    ),
-                )
-        except (TypeError, ValueError, sqlite3.Error) as exc:
-            raise MemoryStoreError("Cannot save evaluation run.") from exc
-        return run_id
 
 
 def format_memory_context(records: list[MemoryRecord]) -> str | None:

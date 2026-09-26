@@ -64,7 +64,11 @@ def test_existing_databases_gain_the_conversations_table(tmp_path: Path):
 
     with sqlite3.connect(path) as connection:
         connection.execute("DROP TABLE conversations")  # as created by the previous release
-    assert "conversations" in MemoryStore(path).table_names()
+    MemoryStore(path)
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE name = 'conversations'"
+        ).fetchone()
 
 
 # Runtime
