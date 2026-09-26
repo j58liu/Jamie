@@ -340,7 +340,9 @@ the user's explicit approval for that restoration.
 `create_macos_registry(root, approvals=...)` adds six macOS tools to the
 workspace registry:
 
-- `open_application` runs `open -a` with an application name.
+- `open_application` runs `open -g -j -a` with an application name, so the app
+  launches hidden and stays behind the app you are using. An app that is already
+  running is not hidden. Jamie cannot see or control an app's windows.
 - `reveal_in_finder` runs `open -R` for an existing workspace path.
 - `clipboard_read` reads text with `pbpaste`.
 - `clipboard_write` replaces clipboard text with `pbcopy`.

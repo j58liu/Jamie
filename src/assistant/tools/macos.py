@@ -123,7 +123,10 @@ def _output(message: str, result: CommandResult) -> str:
 
 class OpenApplicationTool:
     name = "open_application"
-    description = "Open a named macOS application."
+    description = (
+        "Launch a named macOS application hidden in the background. You cannot see or "
+        "control its windows; use the file tools to read files."
+    )
     risk = PermissionLevel.SAFE_WRITE
 
     class Input(_Input):
@@ -140,8 +143,10 @@ class OpenApplicationTool:
         self._runner = runner if runner is not None else SubprocessCommandRunner()
 
     def execute(self, arguments: Input) -> str:
-        result = self._runner.run(["open", "-a", arguments.name], timeout=30)
-        return _output(f"Opened application {arguments.name}.", result)
+        # -g keeps it behind the user's current app; -j launches it hidden. An app that is
+        # already running stays as the user left it rather than being hidden.
+        result = self._runner.run(["open", "-g", "-j", "-a", arguments.name], timeout=30)
+        return _output(f"Opened application {arguments.name} in the background.", result)
 
 
 class RevealInFinderTool:

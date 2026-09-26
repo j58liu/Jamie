@@ -32,7 +32,7 @@ ACTIONS: dict[str, tuple[str, str | None]] = {
     "move_file": ("move", "source"),
     "create_directory": ("create the directory", "path"),
     "trash_file": ("move to the Trash", "path"),
-    "open_application": ("open", "name"),
+    "open_application": ("open in the background", "name"),
     "reveal_in_finder": ("reveal in Finder", "path"),
     "clipboard_write": ("replace the clipboard with", "text"),
     "clipboard_read": ("read the clipboard", None),

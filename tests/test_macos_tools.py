@@ -51,8 +51,8 @@ def test_open_application_uses_fixed_argument_array_after_approval(tmp_path: Pat
     registry, requests = approved_registry(tmp_path, runner)
     result = registry.execute("open_application", {"name": "Safari"})
     assert result.success
-    assert result.output == "Opened application Safari."
-    assert runner.calls == [(["open", "-a", "Safari"], None, 30)]
+    assert result.output == "Opened application Safari in the background."
+    assert runner.calls == [(["open", "-g", "-j", "-a", "Safari"], None, 30)]
     assert requests[0].tool == "open_application"
     assert requests[0].arguments == {"name": "Safari"}
 

@@ -235,7 +235,7 @@ def test_interactive_agent_uses_approval_before_opening_safari(
 
     assert [request.tool for request in requests] == ["open_application"]
     assert terminal[:3] == ["start", "stop", "ask"]  # the prompt never shares the spinner line
-    assert launches == ([["open", "-a", "Safari"]] if approved else [])
+    assert launches == ([["open", "-g", "-j", "-a", "Safari"]] if approved else [])
     # A denial ends the turn; the model is not asked to try again.
     assert len(backend.requests) == (3 if approved else 2)
     assert backend.requests[-1][1:4] == [
