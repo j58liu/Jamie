@@ -16,7 +16,7 @@ from assistant.agent.events import (
     TurnStarted,
     discard_event,
 )
-from assistant.agent.loop import ToolExecutor, run_agent
+from assistant.agent.loop import MAX_STEPS, TIMEOUT_SECONDS, ToolExecutor, run_agent
 from assistant.cancellation import CancellationToken, cancellation_scope
 from assistant.config import ProjectConfig
 from assistant.llm.answer import answer_text
@@ -160,11 +160,14 @@ class JamieApplication:
         conversation_id: str | None = None,
         event_sink: EventSink = discard_event,
         tools: ToolExecutor | None = None,
+        max_steps: int = MAX_STEPS,
+        timeout_seconds: float = TIMEOUT_SECONDS,
     ) -> TurnResult:
         """Run one chat or tool-using turn with the initialized services.
 
         ``thinking`` is forwarded only when set, so backends without it keep working.
-        Passing ``tools`` enables the agent action protocol and Python permission policy.
+        Passing ``tools`` enables the agent action protocol and Python permission policy;
+        ``max_steps`` and ``timeout_seconds`` then bound the agent.
         A cancelled turn raises TurnCancelled once the model request has stopped, and
         its answer is never stored. With ``conversation_id`` the exchange is appended
         to that resumable conversation only after it succeeds; otherwise each turn is
@@ -186,6 +189,8 @@ class JamieApplication:
                 cancel=cancel,
                 conversation_id=conversation_id,
                 event_sink=event_sink,
+                max_steps=max_steps,
+                timeout_seconds=timeout_seconds,
             )
 
         event_sink(TurnStarted(prompt))
@@ -247,6 +252,8 @@ class JamieApplication:
         cancel: CancellationToken | None,
         conversation_id: str | None,
         event_sink: EventSink,
+        max_steps: int,
+        timeout_seconds: float,
     ) -> TurnResult:
         memory = self._require_memory()
         assert self._backend is not None
@@ -267,6 +274,8 @@ class JamieApplication:
                 prompt,
                 history=history,
                 memory_context=context,
+                max_steps=max_steps,
+                timeout_seconds=timeout_seconds,
                 event_sink=event_sink,
                 cancel=cancel,
             )

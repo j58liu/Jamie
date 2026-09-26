@@ -377,6 +377,8 @@ class FakeJamieApplication:
         conversation_id=None,
         event_sink=lambda event: None,
         tools=None,
+        max_steps=12,
+        timeout_seconds=300.0,
     ) -> TurnResult:
         self.calls.append(Call(prompt, list(history or []), conversation_id))
         self.model_calls += 1

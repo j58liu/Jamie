@@ -32,8 +32,8 @@ an interactive terminal. It does not change production behavior.
 
 The local model is loaded by the separately running llama.cpp server. Jamie does
 not load model weights. One `JamieApplication` constructs one backend and
-reuses it for every direct-chat turn until `close()`. Agent and research
-commands still construct their own backends. Each call to `chat()` creates and
+reuses it for every turn until `close()`. The research command still
+constructs its own backend. Each call to `chat()` creates and
 closes an HTTPX client, so HTTP connection reuse remains separate work.
 
 Conversation state has two forms today:
@@ -101,8 +101,8 @@ sequenceDiagram
 ```
 
 The tool-using path is `jamie agent` or an unrecognized command name. It creates
-`WebClient`, `ToolRegistry`, `TerminalApprovalProvider`, and
-`RememberingTools`, then passes them with a new backend to `run_agent`.
+`WebClient`, `ToolRegistry`, and `TerminalApprovalProvider`, then runs one
+`JamieApplication.run_turn(tools=...)`, the same agent turn the REPL uses.
 `ToolRegistry.execute` is the only supported path from a model action to a tool.
 
 ## Shared runtime and session boundary

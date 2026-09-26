@@ -11,8 +11,9 @@ from rich.text import Text
 from typer.core import TyperGroup
 
 from assistant import STARTED, __version__
-from assistant.agent import AgentError, run_agent
+from assistant.agent import AgentError
 from assistant.agent.events import EventSink
+from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
 from assistant.config import ConfigurationError, ProjectConfig, load_config
 from assistant.doctor import Status, run_checks
 from assistant.eval_cli import app as eval_app
@@ -21,7 +22,6 @@ from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import (
     MemoryStore,
     MemoryStoreError,
-    RememberingTools,
     format_memory_context,
 )
 from assistant.research import ResearchError, ResearchWorkflow
@@ -102,6 +102,29 @@ async def _run_ask(
             thinking=thinking,
             event_sink=event_sink,
         )
+
+
+async def _run_agent(
+    settings: ProjectConfig, prompt: str, workspace: Path, *, max_steps: int, timeout: float
+) -> None:
+    """One agent turn on the shared runtime; Ctrl+C cancels it at the next safe point."""
+    console = Console(no_color=not settings.color)
+    renderer = EventRenderer(console, Console(stderr=True, no_color=not settings.color))
+    backend = LlamaCppBackend()
+    token = CancellationToken()
+    async with JamieApplication(settings, backend_factory=lambda: backend) as application:
+        with WebClient() as web, interrupt_cancels(token):
+            tools = create_agent_registry(
+                workspace, approvals=TerminalApprovalProvider(console), web=web, backend=backend
+            )
+            await application.run_turn(
+                prompt,
+                tools=tools,
+                max_steps=max_steps,
+                timeout_seconds=timeout,
+                cancel=token,
+                event_sink=renderer.handle,
+            )
 
 
 class StartupError(RuntimeError):
@@ -238,33 +261,20 @@ def agent(
     if not math.isfinite(timeout):
         raise typer.BadParameter("Timeout must be finite.", param_hint="--timeout")
 
-    store = None
-    session_id = None
     try:
         settings = load_config(config)
-        console = Console(no_color=not settings.color)
-        store, session_id, memory_context = _start_memory(settings, "agent", prompt)
-        renderer = EventRenderer(console, Console(stderr=True, no_color=not settings.color))
-        backend = LlamaCppBackend()
-        with WebClient() as web:
-            tools = create_agent_registry(
-                workspace,
-                approvals=TerminalApprovalProvider(console),
-                web=web,
-                backend=backend,
-            )
-            answer = run_agent(
-                backend,
-                RememberingTools(tools, store, session_id),
-                prompt,
-                max_steps=max_steps,
-                timeout_seconds=timeout,
-                memory_context=memory_context,
-                event_sink=renderer.handle,
-            )
-        _complete_memory(store, session_id, prompt, answer)
-    except (AgentError, ConfigurationError, LLMError, MemoryStoreError, ValueError) as exc:
-        _fail_memory(store, session_id)
+        asyncio.run(_run_agent(settings, prompt, workspace, max_steps=max_steps, timeout=timeout))
+    except TurnCancelled as exc:
+        Console(stderr=True).print("Cancelled.", markup=False, highlight=False)
+        raise typer.Exit(code=130) from exc
+    except (
+        AgentError,
+        ConfigurationError,
+        JamieApplicationError,
+        LLMError,
+        MemoryStoreError,
+        ValueError,
+    ) as exc:
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
 
