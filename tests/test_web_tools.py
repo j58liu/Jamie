@@ -124,9 +124,8 @@ def test_registry_requires_approval_for_network_then_extracts_without_another_pr
     page = {"url": "https://example.com/page", "title": "Example", "markdown": "Evidence."}
     assert json.loads(fetched.output) == {**page, "truncated": False}
     assert json.loads(extracted.output) == {**page, "truncated": False}
-    assert [request.tool for request in approvals] == ["web_search", "fetch_url"]
+    assert [request.tool for request in approvals] == ["fetch_url"]  # searching asks nothing
     assert [request.permission for request in approvals] == [
-        PermissionLevel.EXTERNAL,
         PermissionLevel.EXTERNAL,
     ]
 
@@ -194,7 +193,7 @@ def test_default_denial_prevents_web_request():
 
     with WebClient(transport=httpx.MockTransport(handler)) as client:
         registry = create_web_registry(client=client)
-        result = registry.execute("web_search", {"query": "private question"})
+        result = registry.execute("fetch_url", {"url": "https://example.com/private"})
     assert not result.success
     assert requests == []
 

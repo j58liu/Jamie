@@ -384,10 +384,12 @@ Jamie provides these web tools without browser automation:
   returns its cited report, which ends the turn. It is available where Jamie
   has a model backend: the interactive terminal and `jamie agent`.
 
-Search, retrieval, and research are `EXTERNAL` operations, so model-directed
-calls require approval; approving `research` covers the searches and page
-reads inside it. Extraction reads only the session cache and is classified as
-`READ`.
+Search, retrieval, and research are `EXTERNAL` operations. `web_search` runs
+without asking: it sends only the model-written query to DuckDuckGo, which can
+include text from the conversation or from files Jamie read. `fetch_url` and
+`research` require approval, and approving `research` covers the searches and
+page reads inside it. Extraction reads only the session cache and is classified
+as `READ`.
 Retrieval does not use environment proxies or automatic redirects. It validates
 every redirect, rejects credentials and private, loopback, link-local, or
 otherwise non-public addresses, restricts content types, and limits downloaded

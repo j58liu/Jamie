@@ -63,9 +63,13 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
     }
 )
 
+# Contacts the network but runs without asking. Only the model-written query is sent,
+# to DuckDuckGo; it can contain text from the conversation or files the model read.
+ALLOWED_WITHOUT_APPROVAL = frozenset({"web_search"})
+
 
 class PermissionPolicy:
-    """Classify tools and require confirmation for every non-read action."""
+    """Classify tools and require confirmation for every non-read action but web search."""
 
     def __init__(self, permissions: Mapping[str, PermissionLevel] | None = None) -> None:
         source = DEFAULT_TOOL_PERMISSIONS if permissions is None else permissions
@@ -90,5 +94,6 @@ class PermissionPolicy:
 
     def decide(self, tool: str) -> PolicyDecision:
         permission = self.permission_for(tool)
-        action = PolicyAction.ALLOW if permission is PermissionLevel.READ else PolicyAction.CONFIRM
+        allowed = permission is PermissionLevel.READ or tool in ALLOWED_WITHOUT_APPROVAL
+        action = PolicyAction.ALLOW if allowed else PolicyAction.CONFIRM
         return PolicyDecision(tool=tool, permission=permission, action=action)

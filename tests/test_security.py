@@ -73,13 +73,16 @@ def test_default_policy_classifies_named_tools():
     ("tool", "expected"),
     [
         ("read_file", PolicyAction.ALLOW),
+        ("web_search", PolicyAction.ALLOW),
+        ("fetch_url", PolicyAction.CONFIRM),
+        ("research", PolicyAction.CONFIRM),
         ("write_file", PolicyAction.CONFIRM),
         ("shell", PolicyAction.CONFIRM),
         ("send_email", PolicyAction.CONFIRM),
         ("delete_file", PolicyAction.CONFIRM),
     ],
 )
-def test_policy_allows_only_read_actions_without_confirmation(tool: str, expected: PolicyAction):
+def test_policy_allows_reads_and_web_search_without_confirmation(tool: str, expected: PolicyAction):
     assert PermissionPolicy().decide(tool).action is expected
 
 

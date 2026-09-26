@@ -333,11 +333,13 @@ def _permissions(state: ReplState, argument: str) -> None:
     registered = {str(d["name"]) for d in _tool_definitions()}
     for level in PermissionLevel:
         tools = sorted(name for name in registered if policy.permission_for(name) is level)
-        if not tools:
-            continue
-        action = policy.decide(tools[0]).action
-        rule = "runs without asking" if action is PolicyAction.ALLOW else "asks for approval"
-        state.say(f"  {level.value} ({rule}): {', '.join(tools)}")
+        for action, rule in (
+            (PolicyAction.ALLOW, "runs without asking"),
+            (PolicyAction.CONFIRM, "asks for approval"),
+        ):
+            matching = [name for name in tools if policy.decide(name).action is action]
+            if matching:
+                state.say(f"  {level.value} ({rule}): {', '.join(matching)}")
 
 
 def _cwd(state: ReplState, argument: str) -> None:
