@@ -19,7 +19,10 @@ from assistant.llm.base import ContextUsage, LLMError, Message
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import ConversationSummary
 from assistant.runtime.application import JamieApplicationError
+from assistant.runtime.workspaces import WorkspaceTools
+from assistant.security.audit import AuditError
 from assistant.security.policy import PermissionLevel, PermissionPolicy, PolicyAction
+from assistant.tools.base import ToolError
 from assistant.tools.registry import create_agent_registry
 from assistant.tools.web import WebClient
 from assistant.ui.renderer import render_error
@@ -59,6 +62,7 @@ class ReplState:
     startup_seconds: float | None = None
     started: float = field(default_factory=time.monotonic)
     running: bool = True
+    workspace_tools: WorkspaceTools | None = None
 
     def estimated_tokens(self) -> int:
         return sum(len(m.content) for m in self.history) // CHARACTERS_PER_TOKEN
@@ -157,6 +161,25 @@ def _new(state: ReplState, argument: str) -> None:
 
 def _clear(state: ReplState, argument: str) -> None:
     state.console.clear()
+
+
+def _workspace_command(command: str) -> CommandHandler:
+    def handler(state: ReplState, argument: str) -> None:
+        if argument:
+            state.say(f"Usage: {command}")
+            return
+        if state.workspace_tools is None:
+            state.say("Workspace tools are not available.")
+            return
+        try:
+            tools = state.workspace_tools.current()
+            handle = getattr(tools, "handle_command", None)
+            result = handle(command) if handle is not None else None
+            state.say(result or "Workspace changes are not available.")
+        except (AuditError, ToolError, OSError, ValueError) as exc:
+            state.say(f"Error: {exc}")
+
+    return handler
 
 
 def ago(timestamp: str, now: datetime | None = None) -> str:
@@ -405,6 +428,12 @@ def create_command_registry() -> CommandRegistry:
         SlashCommand("/help", "Show commands.", _help(registry)),
         SlashCommand("/new", "Start a new conversation; the model stays loaded.", _new),
         SlashCommand("/clear", "Clear the screen; the conversation is kept.", _clear),
+        SlashCommand(
+            "/diff", "Show the latest changes in this workspace.", _workspace_command("/diff")
+        ),
+        SlashCommand(
+            "/undo", "Undo the latest changed turn in this workspace.", _workspace_command("/undo")
+        ),
         SlashCommand("/history", "List recent saved conversations.", _history),
         SlashCommand(
             "/resume", "Continue a saved conversation; the model stays loaded.", _resume, "<n|id>"

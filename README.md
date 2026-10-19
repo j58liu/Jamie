@@ -335,6 +335,12 @@ Snapshots last for the lifetime of the workspace registry and are stored
 outside the workspace. Undo and diff commands are audited; entering `/undo` is
 the user's explicit approval for that restoration.
 
+Interactive sessions retain a separate registry for each resolved working directory.
+`/diff` and `/undo` apply to the current directory's latest changed turn, including
+after later chat turns. `/cwd` switches registries; returning to a directory restores
+its undo history. `/new` starts a conversation without discarding workspace changes.
+Temporary snapshots are removed when the terminal session exits.
+
 ## macOS tools
 
 `create_macos_registry(root, approvals=...)` adds six macOS tools to the

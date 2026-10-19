@@ -33,6 +33,7 @@ from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_c
 from assistant.llm.base import LLMError, Message
 from assistant.memory import MemoryStoreError, default_memory_path
 from assistant.runtime import JamieApplication, JamieApplicationError
+from assistant.runtime.workspaces import WorkspaceTools
 from assistant.ui.commands import ReplState, create_command_registry, refresh_context
 from assistant.ui.prompt import JamieCompleter, command_preview, continuation, input_bindings
 from assistant.ui.renderer import EventRenderer, render_error
@@ -100,11 +101,41 @@ async def run_repl(
     started: float | None = None,
     agent_tools_factory: Callable[[], ToolExecutor] | None = None,
 ) -> None:
+    """Own workspace registries until the interactive session exits."""
+    workspace_tools = WorkspaceTools(agent_tools_factory) if agent_tools_factory else None
+    try:
+        await _run_repl(
+            application,
+            console=console,
+            session=session,
+            model=model,
+            started=started,
+            workspace_tools=workspace_tools,
+        )
+    finally:
+        if workspace_tools is not None:
+            workspace_tools.close()
+
+
+async def _run_repl(
+    application: JamieApplication,
+    *,
+    console: Console | None,
+    session: PromptSession | None,
+    model: str | None,
+    started: float | None,
+    workspace_tools: WorkspaceTools | None,
+) -> None:
     """Send prompts to the already initialized application until the user exits.
 
     ``started`` is the time.monotonic() value when Jamie began starting up.
     """
-    state = ReplState(console or Console(), application=application, model=model)
+    state = ReplState(
+        console or Console(),
+        application=application,
+        model=model,
+        workspace_tools=workspace_tools,
+    )
     session = session or create_prompt_session()
     renderer = EventRenderer(state.console, answer_prefix="Jamie › ", markdown=True)
     _welcome(state.console)
@@ -164,7 +195,7 @@ async def run_repl(
                 state.conversation_id = application.start_conversation()
             with interrupt_cancels(token):
                 agent_options = (
-                    {"tools": agent_tools_factory()} if agent_tools_factory is not None else {}
+                    {"tools": workspace_tools.current()} if workspace_tools is not None else {}
                 )
                 result = await application.run_turn(
                     prompt,

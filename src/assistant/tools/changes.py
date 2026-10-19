@@ -85,6 +85,10 @@ class WorkspaceChanges:
         self._active: _Turn | None = None
         self._history: list[_Turn] = []
 
+    def close(self) -> None:
+        """Remove the session's temporary snapshots."""
+        self._storage.cleanup()
+
     def resolve(self, requested: Path, *, must_exist: bool) -> Path:
         if requested.is_absolute() or ".." in PurePath(requested).parts:
             raise ToolError("Paths must stay within the workspace root.")

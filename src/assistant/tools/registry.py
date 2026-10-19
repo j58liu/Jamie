@@ -88,6 +88,11 @@ class ToolRegistry:
     def audit(self) -> AuditSink:
         return self._audit
 
+    def close(self) -> None:
+        """Release workspace snapshots; shared web clients belong to the caller."""
+        if self._changes is not None:
+            self._changes.close()
+
     def register(self, tool: Tool) -> None:
         self._policy.validate_declaration(tool.name, tool.risk)
         self._tools[tool.name] = tool

@@ -33,6 +33,7 @@ from assistant.runtime import JamieApplication, TurnResult
 from assistant.runtime.application import COMPACT_REQUEST
 from assistant.security import CallbackApprovalProvider
 from assistant.tools import CommandResult, create_macos_registry
+from assistant.tools.registry import create_workspace_registry
 from assistant.ui.approvals import TerminalApprovalProvider
 from assistant.ui.repl import COMMANDS, create_prompt_session, run_repl
 
@@ -88,6 +89,61 @@ def test_repl_keeps_transcript_between_turns_and_exits_on_quit(tmp_path: Path):
         Message("user", "what did I just ask?"),
     ]
     assert backend.close_calls == 1
+
+
+def test_diff_and_undo_survive_chat_and_workspace_switches(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    original = tmp_path / "notes.txt"
+    original.write_text("before\n")
+    backend = FakeBackend(
+        [
+            LLMResponse(
+                '{"action":"tool","tool":"write_file","args":{"path":"notes.txt","content":"after\\n"}}'
+            ),
+            LLMResponse('{"action":"tool","tool":"read_file","args":{"path":"notes.txt"}}'),
+            LLMResponse('{"action":"finish","message":"Updated."}'),
+            LLMResponse('{"action":"finish","message":"Hello."}'),
+        ]
+    )
+    registries = []
+    storage = []
+
+    def factory():
+        tools = create_workspace_registry(
+            Path.cwd(), approvals=CallbackApprovalProvider(lambda request: True)
+        )
+        registries.append(tools)
+        storage.append(tools._changes._storage_path)
+        return tools
+
+    application = JamieApplication(
+        ProjectConfig(memory_path=str(tmp_path / "memory.sqlite3")), backend_factory=lambda: backend
+    )
+    console = Console(file=io.StringIO(), width=200, no_color=True)
+
+    async def main():
+        with create_pipe_input() as pipe:
+            pipe.send_text("edit\nhello\n/diff\n/cwd other\n/undo\n/cwd ..\n/undo\n/diff\n/quit\n")
+            async with application:
+                await run_repl(
+                    application,
+                    console=console,
+                    session=PromptSession(input=pipe, output=DummyOutput()),
+                    agent_tools_factory=factory,
+                )
+
+    asyncio.run(main())
+    output = console.file.getvalue()
+    assert "-before" in output and "+after" in output
+    assert "Nothing to undo." in output  # the second workspace has no changes
+    assert "Undid the most recent turn." in output
+    assert "No changes to show." in output
+    assert original.read_text() == "before\n"
+    assert len(registries) == 2 and len(backend.requests) == 4
+    assert [e.tool for e in registries[0].audit.events].count("/undo") == 2
+    assert all(not path.exists() for path in storage)
 
 
 def test_repl_reports_turn_failure_and_continues_until_ctrl_d(tmp_path: Path):
