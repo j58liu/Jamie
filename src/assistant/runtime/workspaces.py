@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from assistant.agent.loop import ToolExecutor
+from assistant.tools.scopes import ToolScope, select_tools
 
 
 class WorkspaceTools:
@@ -13,11 +14,11 @@ class WorkspaceTools:
         self._factory = factory
         self._registries: dict[Path, ToolExecutor] = {}
 
-    def current(self) -> ToolExecutor:
+    def current(self, scope: ToolScope | str = ToolScope.ALL) -> ToolExecutor:
         root = Path.cwd().resolve()
         if root not in self._registries:
             self._registries[root] = self._factory()
-        return self._registries[root]
+        return select_tools(self._registries[root], scope)
 
     def close(self) -> None:
         for registry in self._registries.values():

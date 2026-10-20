@@ -135,6 +135,7 @@ async def _run_repl(
         application=application,
         model=model,
         workspace_tools=workspace_tools,
+        mode="task" if workspace_tools is not None else "chat",
     )
     session = session or create_prompt_session()
     renderer = EventRenderer(state.console, answer_prefix="Jamie › ", markdown=True)
@@ -195,7 +196,9 @@ async def _run_repl(
                 state.conversation_id = application.start_conversation()
             with interrupt_cancels(token):
                 agent_options = (
-                    {"tools": workspace_tools.current()} if workspace_tools is not None else {}
+                    {"tools": workspace_tools.current(state.scope)}
+                    if workspace_tools is not None and state.mode == "task"
+                    else {}
                 )
                 result = await application.run_turn(
                     prompt,

@@ -55,6 +55,7 @@ def status_line(state: ReplState) -> str:
             fields.append(f"ctx ~{_count(state.estimated_tokens())}")
         else:
             fields.append(f"ctx {_count(usage.used)}/{_count(usage.maximum)}")
+        fields.append("chat" if state.mode == "chat" else f"task / {state.scope}")
         if state.thinking is not None:
             fields.append(f"thinking {'on' if state.thinking else 'off'}")
         cwd = Path.cwd()

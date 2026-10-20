@@ -24,8 +24,9 @@ from assistant.security.audit import AuditError
 from assistant.security.policy import PermissionLevel, PermissionPolicy, PolicyAction
 from assistant.tools.base import ToolError
 from assistant.tools.registry import create_agent_registry
+from assistant.tools.scopes import ToolScope
 from assistant.tools.web import WebClient
-from assistant.ui.renderer import render_error
+from assistant.ui.renderer import EventRenderer, render_error
 
 if TYPE_CHECKING:
     from assistant.runtime import JamieApplication
@@ -63,6 +64,8 @@ class ReplState:
     started: float = field(default_factory=time.monotonic)
     running: bool = True
     workspace_tools: WorkspaceTools | None = None
+    mode: str = "task"
+    scope: ToolScope = ToolScope.ALL
 
     def estimated_tokens(self) -> int:
         return sum(len(m.content) for m in self.history) // CHARACTERS_PER_TOKEN
@@ -82,7 +85,12 @@ def refresh_context(state: ReplState) -> str | None:
         return None
     try:
         options = (
-            {"tools": state.workspace_tools.current(), "max_tokens": state.max_tokens}
+            {
+                "tools": state.workspace_tools.current(state.scope)
+                if state.mode == "task"
+                else None,
+                "max_tokens": state.max_tokens,
+            }
             if state.workspace_tools is not None
             else {}
         )
@@ -166,6 +174,73 @@ def _new(state: ReplState, argument: str) -> None:
 
 def _clear(state: ReplState, argument: str) -> None:
     state.console.clear()
+
+
+def _mode(state: ReplState, argument: str) -> None:
+    if argument and argument not in {"chat", "task"}:
+        state.say("Usage: /mode chat|task")
+        return
+    if argument == "task" and state.workspace_tools is None:
+        state.say("Workspace tools are not available.")
+        return
+    if argument:
+        state.mode = argument
+        refresh_context(state)
+    state.say(f"Mode: {state.mode}")
+
+
+def _scope(state: ReplState, argument: str) -> None:
+    if argument:
+        try:
+            state.scope = ToolScope(argument)
+        except ValueError:
+            state.say("Usage: /scope all|files|read|web|macos")
+            return
+        refresh_context(state)
+    state.say(f"Tool scope: {state.scope}")
+
+
+def _tokens(state: ReplState, argument: str) -> None:
+    if argument:
+        try:
+            value = int(argument)
+            if not 1 <= value <= 32768:
+                raise ValueError
+        except ValueError:
+            state.say("Usage: /tokens <1-32768>")
+            return
+        state.max_tokens = value
+        refresh_context(state)
+    state.say(f"Maximum answer tokens: {state.max_tokens:,}")
+
+
+def _local_tool(name: str, field: str, command: str, default: str = "") -> CommandHandler:
+    async def handler(state: ReplState, argument: str) -> None:
+        value = argument or default
+        if not value:
+            state.say(f"Usage: {command} <{field}>")
+            return
+        if state.workspace_tools is None or state.application is None:
+            state.say("Workspace tools are not available.")
+            return
+        token = CancellationToken()
+        renderer = EventRenderer(state.console)
+        try:
+            with interrupt_cancels(token):
+                await state.application.run_local_tool(
+                    name,
+                    {field: value},
+                    tools=state.workspace_tools.current(),
+                    cancel=token,
+                    event_sink=renderer.handle,
+                )
+            state.tool_calls += 1
+        except TurnCancelled:
+            state.say("Cancelled.")
+        except (AuditError, ToolError, OSError, ValueError) as exc:
+            render_error(state.console, str(exc))
+
+    return handler
 
 
 def _workspace_command(command: str) -> CommandHandler:
@@ -356,7 +431,11 @@ def _tool_definitions() -> list[dict[str, object]]:
 
 def _tools(state: ReplState, argument: str) -> None:
     state.say("Tools Jamie can use:")
-    definitions = _tool_definitions()
+    definitions = (
+        state.workspace_tools.current(state.scope).definitions()
+        if state.workspace_tools is not None
+        else _tool_definitions()
+    )
     width = max(len(str(d["name"])) for d in definitions)
     for definition in definitions:
         summary = str(definition["description"]).split(". ")[0].rstrip(".")
@@ -438,8 +517,47 @@ def create_command_registry() -> CommandRegistry:
     registry = CommandRegistry()
     for command in (
         SlashCommand("/help", "Show commands.", _help(registry)),
+        SlashCommand("/tokens", "Set the maximum answer length.", _tokens, "[1-32768]"),
         SlashCommand("/new", "Start a new conversation; the model stays loaded.", _new),
         SlashCommand("/clear", "Clear the screen; the conversation is kept.", _clear),
+        SlashCommand(
+            "/mode",
+            "Choose direct chat or tool-using tasks.",
+            _mode,
+            "[chat|task]",
+            completions=("chat", "task"),
+        ),
+        SlashCommand(
+            "/scope",
+            "Choose the tools sent to the model.",
+            _scope,
+            "[all|files|read|web|macos]",
+            completions=tuple(ToolScope),
+        ),
+        SlashCommand(
+            "/read",
+            "Read a file without calling the model.",
+            _local_tool("read_file", "path", "/read"),
+            "<path>",
+        ),
+        SlashCommand(
+            "/ls",
+            "List a directory without calling the model.",
+            _local_tool("list_directory", "path", "/ls", "."),
+            "[path]",
+        ),
+        SlashCommand(
+            "/find",
+            "Find files without calling the model.",
+            _local_tool("find_files", "pattern", "/find"),
+            "<pattern>",
+        ),
+        SlashCommand(
+            "/search",
+            "Search file contents without calling the model.",
+            _local_tool("search_files", "query", "/search"),
+            "<query>",
+        ),
         SlashCommand(
             "/diff", "Show the latest changes in this workspace.", _workspace_command("/diff")
         ),

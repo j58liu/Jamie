@@ -55,7 +55,7 @@ def test_status_line_shows_model_context_thinking_cwd_and_branch(
     )
 
     assert status_line(state) == (
-        " Qwen3.8-9B-Distill │ ctx ~3.2k │ thinking off │ ~/Projects/jamie │ main "
+        " Qwen3.8-9B-Distill │ ctx ~3.2k │ task / all │ thinking off │ ~/Projects/jamie │ main "
     )
 
 

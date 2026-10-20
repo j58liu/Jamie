@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 from queue import Empty, Queue
+from time import perf_counter
 from typing import Self
 
 from assistant.agent.events import (
@@ -15,6 +17,9 @@ from assistant.agent.events import (
     AssistantFinished,
     EventSink,
     RequestContext,
+    ToolFailed,
+    ToolFinished,
+    ToolStarted,
     TurnFailed,
     TurnStarted,
     discard_event,
@@ -39,6 +44,7 @@ from assistant.memory import (
     format_memory_context,
 )
 from assistant.runtime.context import RequestBudget
+from assistant.tools.scopes import READ_TOOLS
 
 BackendFactory = Callable[[], LLMBackend]
 MemoryStoreFactory = Callable[[Path], MemoryStore]
@@ -396,6 +402,40 @@ class JamieApplication:
     def _tool_names(tools) -> tuple[str, ...]:
         definitions = getattr(tools, "definitions", None)
         return tuple(d["name"] for d in definitions()) if definitions is not None else ()
+
+    async def run_local_tool(
+        self,
+        tool: str,
+        args: dict,
+        *,
+        tools: ToolExecutor,
+        cancel: CancellationToken | None = None,
+        event_sink: EventSink = discard_event,
+    ):
+        """Run an explicit local read through the same validation, policy, and audit."""
+        self._require_memory()
+        if tool not in READ_TOOLS:
+            raise ValueError("Local commands support workspace reads only.")
+        event_sink(TurnStarted(tool))
+        event_sink(ToolStarted(tool, deepcopy(args)))
+        started = perf_counter()
+        try:
+            with cancellation_scope(cancel):
+                if cancel is not None:
+                    cancel.raise_if_cancelled()
+                result = await asyncio.to_thread(tools.execute, tool, args)
+                if cancel is not None:
+                    cancel.raise_if_cancelled()
+            duration = perf_counter() - started
+            if result.success:
+                event_sink(ToolFinished(tool, result, duration))
+            else:
+                event_sink(ToolFailed(tool, result.output, duration))
+            event_sink(AssistantFinished(result.output))
+            return result
+        except BaseException as exc:
+            event_sink(TurnFailed(str(exc)))
+            raise
 
     def start_conversation(self) -> str:
         return self._require_memory().start_conversation(str(Path.cwd()))

@@ -15,6 +15,7 @@ from pydantic import JsonValue
 from assistant.evaluation import load_case_files
 from assistant.interactive_evaluation import InteractiveEvalCase, run_interactive_evaluation
 from assistant.llm.llamacpp import LlamaCppBackend
+from assistant.tools.scopes import ToolScope
 
 
 def _command(arguments: list[str]) -> str | None:
@@ -95,13 +96,16 @@ def run_benchmark(
     output_dir: Path = Path("evals/results"),
     on_result=None,
     environment: dict[str, JsonValue] | None = None,
+    scope: ToolScope = ToolScope.ALL,
     visible_streaming: bool = True,
 ):
     loaded = load_case_files(cases, InteractiveEvalCase, "benchmark_cases", "benchmark")
-    loaded = [case.model_copy(update={"all_tools": True, "tool_scope": "all"}) for case in loaded]
+    loaded = [
+        case.model_copy(update={"all_tools": True, "tool_scope": scope.value}) for case in loaded
+    ]
     options = {"max_tokens": max_tokens, "temperature": temperature}
     metadata = capture_environment(backend, options) if environment is None else dict(environment)
-    metadata["tool_scope"] = "all"
+    metadata["tool_scope"] = scope.value
     metadata["visible_streaming"] = visible_streaming
     metadata["task_cases_sha256"] = hashlib.sha256(
         json.dumps(

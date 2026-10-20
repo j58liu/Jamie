@@ -27,6 +27,7 @@ from assistant.memory import (
 from assistant.research import ResearchError, ResearchWorkflow
 from assistant.runtime import JamieApplication, JamieApplicationError, TurnResult
 from assistant.tools import WebClient, create_agent_registry
+from assistant.tools.scopes import ToolScope, select_tools
 from assistant.ui.approvals import TerminalApprovalProvider
 from assistant.ui.renderer import EventRenderer, OneShotRenderer
 from assistant.ui.repl import run_repl
@@ -105,7 +106,13 @@ async def _run_ask(
 
 
 async def _run_agent(
-    settings: ProjectConfig, prompt: str, workspace: Path, *, max_steps: int, timeout: float
+    settings: ProjectConfig,
+    prompt: str,
+    workspace: Path,
+    *,
+    max_steps: int,
+    timeout: float,
+    scope: ToolScope = ToolScope.ALL,
 ) -> None:
     """One agent turn on the shared runtime; Ctrl+C cancels it at the next safe point."""
     console = Console(no_color=not settings.color)
@@ -117,6 +124,7 @@ async def _run_agent(
             tools = create_agent_registry(
                 workspace, approvals=TerminalApprovalProvider(console), web=web, backend=backend
             )
+            tools = select_tools(tools, scope)
             await application.run_turn(
                 prompt,
                 tools=tools,
@@ -247,6 +255,9 @@ def agent(
     prompt: Annotated[str, typer.Argument(help="Task for the local agent.")],
     workspace: Annotated[Path, typer.Option(help="Workspace available to file tools.")] = Path("."),
     max_steps: Annotated[int, typer.Option(min=1, help="Maximum number of model actions.")] = 12,
+    scope: Annotated[
+        ToolScope, typer.Option(help="Tools available for this task.")
+    ] = ToolScope.ALL,
     timeout: Annotated[
         float, typer.Option(min=0.001, help="Maximum seconds for the complete task.")
     ] = 300.0,
@@ -263,7 +274,11 @@ def agent(
 
     try:
         settings = load_config(config)
-        asyncio.run(_run_agent(settings, prompt, workspace, max_steps=max_steps, timeout=timeout))
+        asyncio.run(
+            _run_agent(
+                settings, prompt, workspace, max_steps=max_steps, timeout=timeout, scope=scope
+            )
+        )
     except TurnCancelled as exc:
         Console(stderr=True).print("Cancelled.", markup=False, highlight=False)
         raise typer.Exit(code=130) from exc

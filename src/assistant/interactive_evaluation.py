@@ -46,6 +46,7 @@ from assistant.tools.registry import (
     create_workspace_registry,
     register_web_tools,
 )
+from assistant.tools.scopes import select_tools
 from assistant.tools.web import SearchResult
 
 CANCEL_AFTER_SECONDS = 1.0
@@ -290,7 +291,7 @@ def _step_tools(
     if case.web is not None and not case.all_tools:
         web = _FixtureWeb(case.web.search_results, case.web.pages)
         register_web_tools(registry, web, backend)
-    return _RecordingTools(registry)
+    return _RecordingTools(select_tools(registry, case.tool_scope))
 
 
 async def _run_steps(

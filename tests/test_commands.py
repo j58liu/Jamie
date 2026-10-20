@@ -55,6 +55,14 @@ def test_new_clears_conversation_but_keeps_settings():
     assert state.thinking is False
 
 
+def test_token_limit_command_validates_without_calling_the_model():
+    state = _state()
+    assert "Maximum answer tokens: 256" in _run(state, "/tokens 256")
+    for value in ("0", "-1", "32769", "many"):
+        assert "Usage: /tokens" in _run(state, f"/tokens {value}")
+        assert state.max_tokens == 256
+
+
 def test_context_describes_the_current_conversation():
     state = _state()
     state.history = [Message("user", "a" * 40), Message("assistant", "b" * 40)]

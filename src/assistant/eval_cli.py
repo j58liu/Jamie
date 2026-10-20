@@ -35,6 +35,7 @@ from assistant.research_evaluation import (
     load_research_cases,
     run_research_evaluation,
 )
+from assistant.tools.scopes import ToolScope
 
 app = typer.Typer(help="Evaluate the local model with fixed prompts.", no_args_is_help=True)
 
@@ -47,6 +48,7 @@ def benchmark(
     max_tokens: Annotated[int, typer.Option(min=1)] = 1024,
     temperature: Annotated[float, typer.Option(min=0, max=2)] = 0.6,
     timeout: Annotated[float, typer.Option(min=0.001)] = 300,
+    scope: Annotated[ToolScope, typer.Option()] = ToolScope.ALL,
     server: Annotated[str, typer.Option(help="llama.cpp server URL.")] = "http://127.0.0.1:8080",
     stream: Annotated[
         bool,
@@ -78,6 +80,7 @@ def benchmark(
             temperature=temperature,
             timeout_seconds=timeout,
             on_result=completed,
+            scope=scope,
             visible_streaming=stream,
         )
     except (EvaluationError, OSError, ValueError, RuntimeError) as exc:

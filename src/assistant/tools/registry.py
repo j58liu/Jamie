@@ -97,6 +97,16 @@ class ToolRegistry:
         self._policy.validate_declaration(tool.name, tool.risk)
         self._tools[tool.name] = tool
 
+    def subset(self, names: set[str]) -> "ToolRegistry":
+        """Share policy, approvals, audit, and changes while exposing fewer tools."""
+        selected = ToolRegistry(
+            policy=self._policy, approvals=self._approvals, audit=self._audit, changes=self._changes
+        )
+        for name, tool in self._tools.items():
+            if name in names:
+                selected.register(tool)
+        return selected
+
     def definitions(self) -> list[dict[str, object]]:
         """Return the registered tool metadata included in the model prompt."""
         return [

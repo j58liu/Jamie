@@ -146,6 +146,19 @@ ends the turn; Jamie does not retry or look for another way. Asking Jamie to
 research a topic runs the `research` tool described under
 [Web research](#web-research); its cited report is the answer.
 
+Use `/mode chat` for streamed conversation without tools, and `/mode task` for
+actions. `/scope files`, `/scope read`, `/scope web`, `/scope macos`, or
+`/scope all` selects the tools supplied to the model in task mode. The status
+line shows the active mode and scope. These settings keep the same Python
+permission checks. One-shot tasks accept the same choice with
+`jamie agent "Read README.md" --scope read`.
+
+`/read <path>`, `/ls [path]`, `/find <pattern>`, and `/search <text>` display
+workspace results immediately without calling the model. They use the same
+validated, audited file tools. Use a normal task prompt when you want the model
+to interpret the file contents. `/tokens 256` changes the session's maximum
+answer length; `/tokens` shows the current value.
+
 Before inference, the runtime measures the complete request, including tool
 instructions, recalled memory, the current prompt, and tool observations. It
 reserves space for the requested answer. When older history no longer fits,
@@ -432,7 +445,8 @@ sources. Use `--max-sources` to select a limit from two through eight.
 ## Everyday performance benchmarks
 
 ```sh
-jamie eval benchmark --runs 3
+jamie eval benchmark --runs 3 --scope files
+jamie eval benchmark --runs 3 --scope all
 ```
 
 The fixed everyday suite covers file discovery, document questions, verified edits,
