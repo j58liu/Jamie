@@ -17,7 +17,7 @@ from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_c
 from assistant.config import ConfigurationError, ProjectConfig, load_config
 from assistant.doctor import Status, run_checks
 from assistant.eval_cli import app as eval_app
-from assistant.llm.base import LLMError
+from assistant.llm.base import LLMError, managed_backend
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import (
     MemoryStore,
@@ -160,6 +160,9 @@ async def _run_repl(settings: ProjectConfig) -> None:
     try:
         info = backend.server_info()
     except LLMError as exc:
+        close = getattr(backend, "close", None)
+        if close is not None:
+            close()
         raise StartupError(backend.server_url, str(exc)) from exc
     console = Console(no_color=not settings.color)
     approvals = TerminalApprovalProvider(console)  # one per session, so "allow session" lasts
@@ -313,8 +316,8 @@ def research(
     try:
         settings = load_config(config)
         store, session_id, _ = _start_memory(settings, "research", question)
-        with WebClient() as web:
-            result = ResearchWorkflow(LlamaCppBackend(), web).run(
+        with WebClient() as web, managed_backend(LlamaCppBackend()) as backend:
+            result = ResearchWorkflow(backend, web).run(
                 question,
                 max_sources=max_sources,
             )
@@ -349,7 +352,8 @@ def doctor(
     ] = None,
 ) -> None:
     """Check Jamie's prerequisites without changing anything."""
-    checks = run_checks(config, LlamaCppBackend())
+    with managed_backend(LlamaCppBackend()) as backend:
+        checks = run_checks(config, backend)
     console = Console()
     width = max(len(check.name) for check in checks)
     for check in checks:

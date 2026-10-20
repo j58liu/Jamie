@@ -48,6 +48,40 @@ def test_default_launch_uses_cached_model_offline_and_local_gpu(launcher_environ
     assert "first-download steps in README.md" in result.stderr
 
 
+def test_launcher_accepts_measured_context_cache_and_cached_model_choices(launcher_environment):
+    result = run_launcher(
+        {
+            **launcher_environment,
+            "JAMIE_CONTEXT_SIZE": "8192",
+            "JAMIE_CACHE_RAM_MIB": "0",
+            "JAMIE_MODEL_REPO": "unsloth/Qwen3.5-4B-GGUF:Q4_K_M",
+        }
+    )
+    assert result.returncode == 0
+    args = result.stdout.rstrip("\0").split("\0")
+    assert args[1] == "unsloth/Qwen3.5-4B-GGUF:Q4_K_M"
+    assert args[args.index("--ctx-size") + 1] == "8192"
+    assert args[args.index("--cache-ram") + 1] == "0"
+    assert "--offline" in args
+
+
+@pytest.mark.parametrize(
+    "name,value",
+    [
+        ("JAMIE_CONTEXT_SIZE", "0"),
+        ("JAMIE_CONTEXT_SIZE", "-1"),
+        ("JAMIE_CONTEXT_SIZE", "abc"),
+        ("JAMIE_CONTEXT_SIZE", "99999999999999"),
+        ("JAMIE_CACHE_RAM_MIB", "-1"),
+        ("JAMIE_CACHE_RAM_MIB", "8193"),
+    ],
+)
+def test_launcher_rejects_invalid_settings_before_starting(launcher_environment, name, value):
+    result = run_launcher({**launcher_environment, name: value})
+    assert result.returncode == 2
+    assert result.stdout == "" and name in result.stderr
+
+
 def test_local_model_path_preserves_spaces_without_hugging_face(launcher_environment, tmp_path):
     model = tmp_path / "local model.gguf"
     model.write_bytes(b"GGUF")

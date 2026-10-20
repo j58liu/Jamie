@@ -23,7 +23,7 @@ from assistant.interactive_evaluation import (
     load_interactive_cases,
     run_interactive_evaluation,
 )
-from assistant.llm.base import LLMError
+from assistant.llm.base import LLMError, managed_backend
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory_evaluation import (
     MemoryEvalReport,
@@ -304,17 +304,17 @@ def evaluate_model(
             )
 
         progress.print(f"Running {len(loaded)} fixed cases, {runs} runs per case.")
-        backend = LlamaCppBackend()
-        report, path = run_evaluation(
-            backend,
-            loaded,
-            runs=runs,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            output_dir=output_dir,
-            request_timeout_seconds=backend.read_timeout_seconds,
-            on_result=on_result,
-        )
+        with managed_backend(LlamaCppBackend()) as backend:
+            report, path = run_evaluation(
+                backend,
+                loaded,
+                runs=runs,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                output_dir=output_dir,
+                request_timeout_seconds=backend.read_timeout_seconds,
+                on_result=on_result,
+            )
     except (ConfigurationError, EvaluationError) as exc:
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
@@ -362,14 +362,15 @@ def evaluate_agent(
             )
 
         progress.print(f"Running {len(loaded)} agent cases, {runs} runs per case.")
-        report, path = run_agent_evaluation(
-            LlamaCppBackend(),
-            loaded,
-            runs=runs,
-            timeout_seconds=timeout,
-            output_dir=output_dir,
-            on_result=on_result,
-        )
+        with managed_backend(LlamaCppBackend()) as backend:
+            report, path = run_agent_evaluation(
+                backend,
+                loaded,
+                runs=runs,
+                timeout_seconds=timeout,
+                output_dir=output_dir,
+                on_result=on_result,
+            )
     except (ConfigurationError, EvaluationError) as exc:
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
@@ -421,14 +422,15 @@ def evaluate_interactive(
             )
 
         progress.print(f"Running {len(loaded)} interactive cases, {runs} runs per case.")
-        report, path = run_interactive_evaluation(
-            LlamaCppBackend(),
-            loaded,
-            runs=runs,
-            timeout_seconds=timeout,
-            output_dir=output_dir,
-            on_result=on_result,
-        )
+        with managed_backend(LlamaCppBackend()) as backend:
+            report, path = run_interactive_evaluation(
+                backend,
+                loaded,
+                runs=runs,
+                timeout_seconds=timeout,
+                output_dir=output_dir,
+                on_result=on_result,
+            )
     except (ConfigurationError, EvaluationError) as exc:
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
@@ -479,22 +481,22 @@ def evaluate_research(
         progress.print(f"Running {len(loaded)} research cases, {runs} runs per case.")
         from assistant.benchmark import capture_environment
 
-        backend = LlamaCppBackend()
-        environment = (
-            capture_environment(backend, {"workflow": "research"})
-            if hasattr(backend, "server_info")
-            else {}
-        )
-        report, path = run_research_evaluation(
-            backend,
-            loaded,
-            runs=runs,
-            output_dir=output_dir,
-            on_result=on_result,
-            max_workers=workers,
-            fixture_delay_seconds=fixture_delay,
-            environment=environment,
-        )
+        with managed_backend(LlamaCppBackend()) as backend:
+            environment = (
+                capture_environment(backend, {"workflow": "research"})
+                if hasattr(backend, "server_info")
+                else {}
+            )
+            report, path = run_research_evaluation(
+                backend,
+                loaded,
+                runs=runs,
+                output_dir=output_dir,
+                on_result=on_result,
+                max_workers=workers,
+                fixture_delay_seconds=fixture_delay,
+                environment=environment,
+            )
     except (ConfigurationError, EvaluationError, LLMError) as exc:
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc

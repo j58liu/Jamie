@@ -1,0 +1,309 @@
+[
+  {
+    "profile": {
+      "id": "2b-32k-1024",
+      "model_repo": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+      "context_size": 32768,
+      "max_tokens": 1024,
+      "cache_ram_mib": 512
+    },
+    "report": "evals/results/inference/2b-32k-1024/benchmark-20261019T152025692400Z-7ced4d58.json",
+    "summary": {
+      "models": [
+        "unsloth/Qwen3.5-2B-GGUF:Q4_K_M"
+      ],
+      "cases": 6,
+      "runs_per_case": 3,
+      "planned_runs": 18,
+      "completed_runs": 18,
+      "passes": 16,
+      "failures": 2,
+      "failed_cases": [
+        "find-file",
+        "recover-missing-file"
+      ],
+      "median_latency_seconds": 1.8240612914960366,
+      "p95_latency_seconds": 3.9156480000237934,
+      "median_first_visible_seconds": 1.716169000021182,
+      "first_visible_reported_turns": 21,
+      "model_calls": 52,
+      "parse_retries": 0,
+      "compactions": 0,
+      "median_initial_input_tokens": 1060,
+      "approval_prompts": 6,
+      "input_tokens": 54403,
+      "input_usage_reported_turns": 21,
+      "output_tokens": 1122,
+      "total_duration_seconds": 35.31379374995595,
+      "success": false
+    }
+  },
+  {
+    "profile": {
+      "id": "2b-8k-1024",
+      "model_repo": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+      "context_size": 8192,
+      "max_tokens": 1024,
+      "cache_ram_mib": 512
+    },
+    "report": "evals/results/inference/2b-8k-1024/benchmark-20261019T152107847658Z-a2ddd87b.json",
+    "summary": {
+      "models": [
+        "unsloth/Qwen3.5-2B-GGUF:Q4_K_M"
+      ],
+      "cases": 6,
+      "runs_per_case": 3,
+      "planned_runs": 18,
+      "completed_runs": 18,
+      "passes": 15,
+      "failures": 3,
+      "failed_cases": [
+        "find-file",
+        "recover-missing-file"
+      ],
+      "median_latency_seconds": 1.740827082976466,
+      "p95_latency_seconds": 3.46455341699766,
+      "median_first_visible_seconds": 1.220090834016446,
+      "first_visible_reported_turns": 21,
+      "model_calls": 49,
+      "parse_retries": 0,
+      "compactions": 0,
+      "median_initial_input_tokens": 1060,
+      "approval_prompts": 6,
+      "input_tokens": 50485,
+      "input_usage_reported_turns": 21,
+      "output_tokens": 1006,
+      "total_duration_seconds": 32.02312633401016,
+      "success": false
+    }
+  },
+  {
+    "profile": {
+      "id": "2b-4k-1024",
+      "model_repo": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+      "context_size": 4096,
+      "max_tokens": 1024,
+      "cache_ram_mib": 512
+    },
+    "report": "evals/results/inference/2b-4k-1024/benchmark-20261019T152146652359Z-e7f365ac.json",
+    "summary": {
+      "models": [
+        "unsloth/Qwen3.5-2B-GGUF:Q4_K_M"
+      ],
+      "cases": 6,
+      "runs_per_case": 3,
+      "planned_runs": 18,
+      "completed_runs": 18,
+      "passes": 15,
+      "failures": 3,
+      "failed_cases": [
+        "find-file",
+        "recover-missing-file"
+      ],
+      "median_latency_seconds": 1.9261070835054852,
+      "p95_latency_seconds": 3.6630285829887725,
+      "median_first_visible_seconds": 1.709839666960761,
+      "first_visible_reported_turns": 21,
+      "model_calls": 50,
+      "parse_retries": 0,
+      "compactions": 0,
+      "median_initial_input_tokens": 1060,
+      "approval_prompts": 6,
+      "input_tokens": 51604,
+      "input_usage_reported_turns": 21,
+      "output_tokens": 1132,
+      "total_duration_seconds": 34.55427958397195,
+      "success": false
+    }
+  },
+  {
+    "profile": {
+      "id": "2b-8k-256",
+      "model_repo": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+      "context_size": 8192,
+      "max_tokens": 256,
+      "cache_ram_mib": 512
+    },
+    "report": "evals/results/inference/2b-8k-256/benchmark-20261019T152228072710Z-af0e7099.json",
+    "summary": {
+      "models": [
+        "unsloth/Qwen3.5-2B-GGUF:Q4_K_M"
+      ],
+      "cases": 6,
+      "runs_per_case": 3,
+      "planned_runs": 18,
+      "completed_runs": 18,
+      "passes": 17,
+      "failures": 1,
+      "failed_cases": [
+        "edit-and-verify"
+      ],
+      "median_latency_seconds": 2.0913117915042676,
+      "p95_latency_seconds": 3.6348230830044486,
+      "median_first_visible_seconds": 1.465541833487805,
+      "first_visible_reported_turns": 20,
+      "model_calls": 54,
+      "parse_retries": 0,
+      "compactions": 0,
+      "median_initial_input_tokens": 1060,
+      "approval_prompts": 6,
+      "input_tokens": 57071,
+      "input_usage_reported_turns": 21,
+      "output_tokens": 1156,
+      "total_duration_seconds": 35.910625124990474,
+      "success": false
+    }
+  },
+  {
+    "profile": {
+      "id": "2b-8k-512",
+      "model_repo": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+      "context_size": 8192,
+      "max_tokens": 512,
+      "cache_ram_mib": 512
+    },
+    "report": "evals/results/inference/2b-8k-512/benchmark-20261019T152310815050Z-dd53de99.json",
+    "summary": {
+      "models": [
+        "unsloth/Qwen3.5-2B-GGUF:Q4_K_M"
+      ],
+      "cases": 6,
+      "runs_per_case": 3,
+      "planned_runs": 18,
+      "completed_runs": 18,
+      "passes": 18,
+      "failures": 0,
+      "failed_cases": [],
+      "median_latency_seconds": 2.119699833507184,
+      "p95_latency_seconds": 4.3898203750140965,
+      "median_first_visible_seconds": 1.191422792035155,
+      "first_visible_reported_turns": 21,
+      "model_calls": 53,
+      "parse_retries": 0,
+      "compactions": 0,
+      "median_initial_input_tokens": 1060,
+      "approval_prompts": 7,
+      "input_tokens": 56118,
+      "input_usage_reported_turns": 21,
+      "output_tokens": 1140,
+      "total_duration_seconds": 37.26996624999447,
+      "success": true
+    }
+  },
+  {
+    "profile": {
+      "id": "4b-8k-512",
+      "model_repo": "unsloth/Qwen3.5-4B-GGUF:Q4_K_M",
+      "context_size": 8192,
+      "max_tokens": 512,
+      "cache_ram_mib": 512
+    },
+    "report": "evals/results/inference/4b-8k-512/benchmark-20261019T152358907813Z-57f0cace.json",
+    "summary": {
+      "models": [
+        "unsloth/Qwen3.5-4B-GGUF:Q4_K_M"
+      ],
+      "cases": 6,
+      "runs_per_case": 3,
+      "planned_runs": 18,
+      "completed_runs": 18,
+      "passes": 18,
+      "failures": 0,
+      "failed_cases": [],
+      "median_latency_seconds": 4.2435665624798276,
+      "p95_latency_seconds": 6.420197874947917,
+      "median_first_visible_seconds": 2.480035582964774,
+      "first_visible_reported_turns": 21,
+      "model_calls": 44,
+      "parse_retries": 0,
+      "compactions": 0,
+      "median_initial_input_tokens": 1060,
+      "approval_prompts": 6,
+      "input_tokens": 44018,
+      "input_usage_reported_turns": 21,
+      "output_tokens": 910,
+      "total_duration_seconds": 70.50842625001678,
+      "success": true
+    }
+  },
+  {
+    "profile": {
+      "id": "2b-iq4-xs-8k-512",
+      "model_repo": "unsloth/Qwen3.5-2B-GGUF:IQ4_XS",
+      "context_size": 8192,
+      "max_tokens": 512,
+      "cache_ram_mib": 512
+    },
+    "report": "evals/results/inference/2b-iq4-xs-8k-512/benchmark-20261019T152516987409Z-fc9ec29c.json",
+    "summary": {
+      "models": [
+        "unsloth/Qwen3.5-2B-GGUF:IQ4_XS"
+      ],
+      "cases": 6,
+      "runs_per_case": 3,
+      "planned_runs": 18,
+      "completed_runs": 18,
+      "passes": 11,
+      "failures": 7,
+      "failed_cases": [
+        "document-answer",
+        "edit-and-verify",
+        "find-file",
+        "recover-missing-file"
+      ],
+      "median_latency_seconds": 2.176366958505241,
+      "p95_latency_seconds": 5.718116125033703,
+      "median_first_visible_seconds": 0.5404563749907538,
+      "first_visible_reported_turns": 15,
+      "model_calls": 66,
+      "parse_retries": 0,
+      "compactions": 0,
+      "median_initial_input_tokens": 1060,
+      "approval_prompts": 7,
+      "input_tokens": 74763,
+      "input_usage_reported_turns": 21,
+      "output_tokens": 1262,
+      "total_duration_seconds": 39.67492354096612,
+      "success": false
+    }
+  },
+  {
+    "profile": {
+      "id": "2b-8k-512-no-cache",
+      "model_repo": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+      "context_size": 8192,
+      "max_tokens": 512,
+      "cache_ram_mib": 0
+    },
+    "report": "evals/results/inference/2b-8k-512-no-cache/benchmark-20261019T152603480134Z-66e54256.json",
+    "summary": {
+      "models": [
+        "unsloth/Qwen3.5-2B-GGUF:Q4_K_M"
+      ],
+      "cases": 6,
+      "runs_per_case": 3,
+      "planned_runs": 18,
+      "completed_runs": 18,
+      "passes": 14,
+      "failures": 4,
+      "failed_cases": [
+        "document-answer",
+        "recover-missing-file"
+      ],
+      "median_latency_seconds": 2.0185270624933764,
+      "p95_latency_seconds": 2.9016061660367996,
+      "median_first_visible_seconds": 1.6158985419897363,
+      "first_visible_reported_turns": 21,
+      "model_calls": 45,
+      "parse_retries": 0,
+      "compactions": 0,
+      "median_initial_input_tokens": 1060,
+      "approval_prompts": 7,
+      "input_tokens": 45021,
+      "input_usage_reported_turns": 21,
+      "output_tokens": 1051,
+      "total_duration_seconds": 34.45866287499666,
+      "success": false
+    }
+  }
+]

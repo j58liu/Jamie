@@ -57,6 +57,7 @@ def test_cancel_model_generation_closes_the_streamed_request():
 
     with cancellation_scope(token), pytest.raises(TurnCancelled):
         backend.chat([Message("user", "Write an essay.")])
+    backend.close()
 
     assert time.monotonic() - started < 2
 
@@ -82,6 +83,7 @@ def test_streamed_answer_is_assembled_with_model_and_usage():
     assert result == LLMResponse("Hello", "qwen", "stop", 7, result.first_token_seconds)
     assert result.first_token_seconds is not None and result.first_token_seconds >= 0
     assert requests[0]["stream"] is True
+    backend.close()
 
 
 def test_requests_without_a_token_are_unchanged():

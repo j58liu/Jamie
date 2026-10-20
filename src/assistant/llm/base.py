@@ -95,3 +95,14 @@ def constrained_to(schema: dict[str, Any] | None) -> Iterator[None]:
         yield
     finally:
         _response_schema.reset(token)
+
+
+@contextmanager
+def managed_backend(backend: LLMBackend) -> Iterator[LLMBackend]:
+    """Close an owned backend, including adapters that do not require cleanup."""
+    try:
+        yield backend
+    finally:
+        closer = getattr(backend, "close", None)
+        if closer is not None:
+            closer()

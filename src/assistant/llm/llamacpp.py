@@ -4,8 +4,10 @@ import asyncio
 import time
 from collections.abc import Callable
 from contextlib import suppress
+from contextvars import copy_context
 from dataclasses import asdict
 from pathlib import Path
+from threading import RLock
 from typing import Literal
 
 import httpx
@@ -120,6 +122,53 @@ class LlamaCppBackend:
         self._url = f"{self._base_url}/v1/chat/completions"
         self._timeout = httpx.Timeout(timeout, connect=5.0)
         self._transport = transport
+        self._sync_client: httpx.Client | None = None
+        self._async_client: httpx.AsyncClient | None = None
+        self._runner: asyncio.Runner | None = None
+        self._stream_lock = RLock()
+        self._closed = False
+
+    def close(self) -> None:
+        """Close both connection pools and the streaming event loop once."""
+        with self._stream_lock:
+            if self._closed:
+                return
+            self._closed = True
+            try:
+                if self._sync_client is not None:
+                    self._sync_client.close()
+                if self._runner is not None and self._async_client is not None:
+                    self._runner.run(self._async_client.aclose())
+            finally:
+                if self._runner is not None:
+                    self._runner.close()
+
+    async def aclose(self) -> None:
+        await asyncio.to_thread(self.close)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
+
+    def _client(self) -> httpx.Client:
+        with self._stream_lock:
+            if self._closed:
+                raise LLMError("The llama.cpp backend is closed.")
+            if self._sync_client is None:
+                self._sync_client = httpx.Client(**self._client_options())
+            return self._sync_client
+
+    def _run_stream(self, payload, token, on_delta) -> LLMResponse:
+        with self._stream_lock:
+            if self._closed:
+                raise LLMError("The llama.cpp backend is closed.")
+            if self._runner is None:
+                self._runner = asyncio.Runner()
+            return self._runner.run(
+                self._stream_until_cancelled(payload, token, on_delta), context=copy_context()
+            )
 
     @property
     def read_timeout_seconds(self) -> float | None:
@@ -191,9 +240,7 @@ class LlamaCppBackend:
             if token is None and on_delta is None:
                 result = self._complete(payload)
             else:
-                result = asyncio.run(
-                    self._stream_until_cancelled(payload, token or CancellationToken(), on_delta)
-                )
+                result = self._run_stream(payload, token or CancellationToken(), on_delta)
         except httpx.TimeoutException as exc:
             raise LLMError(f"Request to llama.cpp timed out at {self._url}.") from exc
         except httpx.HTTPStatusError as exc:
@@ -216,11 +263,9 @@ class LlamaCppBackend:
     def server_info(self) -> ServerInfo:
         """Confirm the server is up with a loaded model; raise LLMError with the reason."""
         url = f"{self._base_url}/props"
-        options = {**self._client_options(), "timeout": CONTEXT_TIMEOUT_SECONDS}
         try:
-            with httpx.Client(**options) as client:
-                response = client.get(url)
-                response.raise_for_status()
+            response = self._client().get(url, timeout=CONTEXT_TIMEOUT_SECONDS)
+            response.raise_for_status()
             props = _Props.model_validate_json(response.content)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 503:
@@ -244,37 +289,36 @@ class LlamaCppBackend:
         self, messages: list[Message], *, thinking: bool | None = None
     ) -> ContextUsage:
         """Count ``messages`` exactly as the chat template renders them."""
-        options = {**self._client_options(), "timeout": CONTEXT_TIMEOUT_SECONDS}
         try:
-            with httpx.Client(**options) as client:
-                props = client.get(f"{self._base_url}/props")
-                props.raise_for_status()
-                maximum = _Props.model_validate_json(props.content)
-                used = 0
-                if messages:
-                    template = client.post(
-                        f"{self._base_url}/apply-template",
-                        json={
-                            "messages": [asdict(message) for message in messages],
-                            "add_generation_prompt": True,
-                            **(
-                                {"chat_template_kwargs": {"enable_thinking": thinking}}
-                                if thinking is not None
-                                else {}
-                            ),
-                        },
-                    )
-                    template.raise_for_status()
-                    tokens = client.post(
-                        f"{self._base_url}/tokenize",
-                        json={
-                            "content": _Template.model_validate_json(template.content).prompt,
-                            "add_special": True,
-                            "parse_special": True,
-                        },
-                    )
-                    tokens.raise_for_status()
-                    used = len(_Tokens.model_validate_json(tokens.content).tokens)
+            client = self._client()
+            props = client.get(f"{self._base_url}/props", timeout=CONTEXT_TIMEOUT_SECONDS)
+            props.raise_for_status()
+            maximum = _Props.model_validate_json(props.content)
+            used = 0
+            if messages:
+                template_payload = {
+                    "messages": [asdict(message) for message in messages],
+                    "add_generation_prompt": True,
+                }
+                if thinking is not None:
+                    template_payload["chat_template_kwargs"] = {"enable_thinking": thinking}
+                template = client.post(
+                    f"{self._base_url}/apply-template",
+                    json=template_payload,
+                    timeout=CONTEXT_TIMEOUT_SECONDS,
+                )
+                template.raise_for_status()
+                tokens = client.post(
+                    f"{self._base_url}/tokenize",
+                    json={
+                        "content": _Template.model_validate_json(template.content).prompt,
+                        "add_special": True,
+                        "parse_special": True,
+                    },
+                    timeout=CONTEXT_TIMEOUT_SECONDS,
+                )
+                tokens.raise_for_status()
+                used = len(_Tokens.model_validate_json(tokens.content).tokens)
         except (httpx.HTTPError, ValidationError) as exc:
             raise LLMError("llama.cpp did not report context usage.") from exc
         return ContextUsage(used, maximum.default_generation_settings.n_ctx)
@@ -283,9 +327,8 @@ class LlamaCppBackend:
         return {"timeout": self._timeout, "transport": self._transport, "trust_env": False}
 
     def _complete(self, payload: dict) -> LLMResponse:
-        with httpx.Client(**self._client_options()) as client:
-            response = client.post(self._url, json=payload)
-            response.raise_for_status()
+        response = self._client().post(self._url, json=payload)
+        response.raise_for_status()
         completion = _ChatCompletion.model_validate_json(response.content)
         choice = completion.choices[0]
         return LLMResponse(
@@ -297,20 +340,28 @@ class LlamaCppBackend:
         )
 
     async def _stream_until_cancelled(
-        self, payload: dict, token: CancellationToken, on_delta: Callable[[str], None] | None = None
+        self,
+        payload: dict,
+        token: CancellationToken,
+        on_delta: Callable[[str], None] | None = None,
     ) -> LLMResponse:
         """Cancelling the task closes the socket, even while the prompt is processed."""
         token.raise_if_cancelled()
-        async with httpx.AsyncClient(**self._client_options()) as client:
-            request = asyncio.ensure_future(self._stream(client, payload, on_delta))
-            while not request.done():
-                await asyncio.wait({request}, timeout=CANCEL_POLL_SECONDS)
-                if token.cancelled and not request.done():
-                    request.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await request
-                    raise TurnCancelled
+        if self._async_client is None:
+            self._async_client = httpx.AsyncClient(**self._client_options())
+        request = asyncio.ensure_future(self._stream(self._async_client, payload, on_delta))
+        while not request.done():
+            await asyncio.wait({request}, timeout=CANCEL_POLL_SECONDS)
+            if token.cancelled and not request.done():
+                request.cancel()
+                with suppress(asyncio.CancelledError):
+                    await request
+                raise TurnCancelled
+        try:
             return request.result()
+        finally:
+            # Allow response iterator cleanup to finish while retaining the client and loop.
+            await asyncio.sleep(0)
 
     async def _stream(
         self,

@@ -344,6 +344,7 @@ def run_agent(
     try:
         answer = _optional_text(tools, "handle_command", prompt.strip())
         if answer is None:
+            turn_cancel = cancel or CancellationToken()
             deadline = perf_counter() + timeout_seconds
             try:
                 answer = _call_before_deadline(
@@ -360,9 +361,11 @@ def run_agent(
                     ),
                     deadline,
                     event_sink,
-                    cancel,
+                    turn_cancel,
                 )
             except _DeadlineExceeded as exc:
+                # Close cooperative model requests before the application closes shared clients.
+                turn_cancel.cancel()
                 raise AgentTimeoutError(
                     f"The agent exceeded its {timeout_seconds:g}-second timeout."
                 ) from exc

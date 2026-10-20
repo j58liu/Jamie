@@ -131,6 +131,7 @@ def test_a_request_longer_than_the_context_says_so(streamed: bool):
         "The request needs 9,012 tokens, more than the model's 8,192-token context. "
         "Shorten the conversation or the request."
     )
+    backend.close()
 
 
 def test_other_server_errors_keep_llamacpp_reason():

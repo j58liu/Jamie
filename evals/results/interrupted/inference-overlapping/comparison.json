@@ -1,0 +1,40 @@
+[
+  {
+    "profile": {
+      "id": "2b-32k-1024",
+      "model_repo": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+      "context_size": 32768,
+      "max_tokens": 1024,
+      "cache_ram_mib": 512
+    },
+    "report": "evals/results/inference/2b-32k-1024/benchmark-20261019T151927125522Z-11ebec5c.json",
+    "summary": {
+      "models": [
+        "unsloth/Qwen3.5-2B-GGUF:Q4_K_M"
+      ],
+      "cases": 6,
+      "runs_per_case": 3,
+      "planned_runs": 18,
+      "completed_runs": 8,
+      "passes": 7,
+      "failures": 1,
+      "failed_cases": [
+        "find-file"
+      ],
+      "median_latency_seconds": 2.645506270491751,
+      "p95_latency_seconds": 7.730900250026025,
+      "median_first_visible_seconds": 2.1012191670015454,
+      "first_visible_reported_turns": 9,
+      "model_calls": 22,
+      "parse_retries": 0,
+      "compactions": 0,
+      "median_initial_input_tokens": 1060,
+      "approval_prompts": 3,
+      "input_tokens": 23593,
+      "input_usage_reported_turns": 9,
+      "output_tokens": 492,
+      "total_duration_seconds": 30.249164957960602,
+      "success": false
+    }
+  }
+]

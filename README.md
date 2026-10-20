@@ -459,14 +459,19 @@ jamie eval research --runs 3 --workers 3 --fixture-delay 0.5
 ```sh
 jamie eval benchmark --runs 3 --scope files
 jamie eval benchmark --runs 3 --scope all
+python scripts/benchmark-local-models.py --runs 3
 ```
 
-The fixed everyday suite covers file discovery, document questions, verified edits,
-remembered decisions, failed-file recovery, and declined approval. Reports record
-task success, median and p95 completion time, time to visible text, model calls,
-retries, approvals, token usage, fixture hashes, model identity, server settings,
-and hardware. Failed trials remain in the results. Timing covers warm-server use;
-each trial gets a fresh temporary workspace and SQLite database.
+The everyday suite covers file discovery, document questions, verified edits,
+remembered decisions, failed-file recovery, and declined approval. Reports include
+task success, median and p95 time, time to visible text, model calls, protocol
+retries, approval prompts, input/output usage, fixed fixtures and their hashes,
+model file/hash, server build/settings, generation options, and hardware. Failed
+trials remain in the results. Timing covers warm-server use; each trial has a fresh
+temporary workspace and SQLite database. The model comparison uses cached files
+offline, starts one test server at a time on port 8081, and stops only that server.
+Run GPU benchmarks serially. See [the implementation record](docs/design/performance-improvements.md)
+for recorded comparisons and limitations.
 
 ## Persistent memory
 

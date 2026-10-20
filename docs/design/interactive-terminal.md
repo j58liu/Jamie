@@ -17,15 +17,15 @@ an interactive terminal. It does not change production behavior.
 | Area | Current responsibility |
 | --- | --- |
 | CLI entry point | `pyproject.toml` maps `jamie` to `assistant.cli:app`; `python -m assistant` calls the same Typer application. |
-| Command routing | `assistant.cli.JamieGroup` routes an unknown first argument to `jamie agent`. With no arguments, Typer shows help. |
+| Command routing | `assistant.cli.JamieGroup` routes an unknown first argument to `jamie agent`. With no arguments, Jamie starts the REPL. |
 | Configuration | `assistant.config` validates `assistant.toml` without write side effects. |
 | Application runtime | `assistant.runtime.JamieApplication` owns one backend and memory store for its async lifecycle and runs direct-chat turns. |
-| Model transport | `assistant.llm.llamacpp.LlamaCppBackend` sends synchronous, non-streaming HTTP requests to `/v1/chat/completions`. |
-| Direct chat | `jamie ask` starts a `JamieApplication`, runs one turn, prints the complete result, and closes the application. |
+| Model transport | `LlamaCppBackend` provides buffered `chat` and visible `stream_chat`, with reusable HTTP clients and a reusable streaming loop. |
+| Direct chat | `jamie ask` and `/mode chat` use the shared runtime and stream visible answer events; only completed answers are saved. |
 | Agent | `assistant.agent.loop.run_agent` owns one turn's model transcript, action parsing, tool observations, retries, repeated-failure checks, verification, and timeout. It contains no terminal printing. |
 | Tools | `assistant.tools.registry.ToolRegistry` validates arguments, applies policy and approval, executes tools, records audit events, and tracks edit verification. |
 | Permissions | `assistant.security.policy.PermissionPolicy` assigns fixed permission levels. `authorize` calls an injected `ApprovalProvider` for actions that require confirmation. |
-| Terminal approval | `assistant.cli.TerminalApprovalProvider` prints the normalized request with Rich and asks with Typer. This is the main terminal-specific behavior currently mixed into the CLI module. |
+| Terminal approval | `assistant.ui.approvals.TerminalApprovalProvider` presents normalized requests and implements the existing approval contract. |
 | Memory | `assistant.memory.MemoryStore` persists sessions, conversations, messages, tool calls, sources, and FTS5 memories. The application owns chat and agent persistence; CLI helpers still serve the research command. |
 | Research | `assistant.research.ResearchWorkflow` has its own bounded model workflow. The `research` command creates its backend and web client directly. |
 | Evaluations | `assistant.eval_cli` and the evaluation modules construct their own isolated backends and fixtures. They should remain independent of interactive session state. `jamie eval interactive` drives the runtime and agent loop through multi-turn scenarios (history, `/new`, cancellation, approvals, recovery, context growth) with recorded, unrendered events. |
@@ -33,8 +33,9 @@ an interactive terminal. It does not change production behavior.
 The local model is loaded by the separately running llama.cpp server. Jamie does
 not load model weights. One `JamieApplication` constructs one backend and
 reuses it for every turn until `close()`. The research command still
-constructs its own backend. Each call to `chat()` creates and
-closes an HTTPX client, so HTTP connection reuse remains separate work.
+constructs its own backend. Each backend owns reusable synchronous and asynchronous
+HTTPX clients. `close()` or `aclose()` closes both pools and the streaming loop.
+The runtime and commands close owned backends on success and failure.
 
 Conversation state has two forms today:
 
@@ -50,10 +51,12 @@ Conversation state has two forms today:
   `/resume` reload these messages into the running application; recall skips
   memories from the active conversation because they are already in the history.
 
-There is no streaming interface. `LLMBackend.chat` returns one `LLMResponse`,
-and only completion token usage is available. Requests without a cancellation
-token set `stream` to `false`. The agent timeout stops waiting on a worker
-thread; it cannot stop an HTTP request or tool already in progress.
+`LLMBackend.chat` returns one `LLMResponse`; `stream_chat` is a separate optional
+capability for direct chat. Responses report input and completion token usage when
+available. Agent actions remain buffered until complete parsing and verification.
+Requests using neither cancellation nor visible streaming set `stream` to `false`.
+Agent timeouts cancel cooperative model requests; synchronous tools stop at
+their next cancellation check.
 
 A `CancellationToken` (`assistant.cancellation`) cancels a turn cooperatively.
 The REPL creates one per turn and maps Ctrl+C to it only while the turn runs.
@@ -90,8 +93,10 @@ sequenceDiagram
     App->>Memory: start session and store prompt
     App->>Memory: search FTS5 for relevant memories
     App->>Backend: chat(messages)
-    Backend->>Server: POST /v1/chat/completions, stream=false
-    Server-->>Backend: complete response
+    Backend->>Server: POST /v1/chat/completions, stream=true
+    Server-->>Backend: response fragments
+    Backend-->>App: visible answer fragments
+    App-->>CLI: AssistantDelta events
     Backend-->>App: LLMResponse
     App->>Memory: store answer and finish session
     App-->>CLI: TurnResult
@@ -186,14 +191,15 @@ The callback receives these event types:
 | `ToolFinished` | tool name, successful `ToolResult`, and elapsed seconds |
 | `ToolFailed` | tool name, error text, and elapsed seconds |
 | `ApprovalRequested` | copy of the existing normalized `ApprovalRequest` |
-| `AssistantDelta` | user-visible answer fragment; reserved for future streaming |
+| `AssistantDelta` | user-visible direct-chat fragment, delivered on the caller thread |
 | `AssistantFinished` | complete answer; optional model, finish reason, and completion usage |
 | `TurnFailed` | error message |
+| `RequestContext` | complete request token count, server limit and answer reservation; nested research updates the last measured request too |
 
 The default callback does nothing. Return values and raised exceptions remain
-available to library callers. `OneShotRenderer.handle` prints only the final
-answer and its token-limit notice; CLI handlers retain error rendering and exit
-codes. Each callback is scoped to one invocation. Invalid input is rejected
+available to library callers. `OneShotRenderer.handle` prints visible fragments
+as they arrive, then completes the answer once and shows its token-limit notice.
+CLI handlers retain error rendering and exit codes. Each callback is scoped to one invocation. Invalid input is rejected
 before `TurnStarted`; an accepted turn ends with `AssistantFinished` or
 `TurnFailed`. Callbacks must be short, synchronous, and must not raise.
 
@@ -217,8 +223,8 @@ before calling the provider. A context-local sink connects this nested event to
 the active agent turn without replacing the provider. Events report requests;
 only the trusted provider's boolean response determines approval.
 
-The transport does not stream, so no `AssistantDelta` is emitted yet. Agent
-answer events contain only an accepted finish message, never action JSON,
+Direct chat emits `AssistantDelta` as text arrives; a chunk-aware filter hides
+leading reasoning blocks. Agent answer events contain only an accepted finish message, never action JSON,
 parse-retry text, or reasoning blocks. Direct-chat answers remove leading
 `<think>...</think>` blocks and reject incomplete reasoning-only responses.
 The transport already excludes the server's separate `reasoning_content`
@@ -317,15 +323,18 @@ own a reusable HTTPX client so the interactive process also reuses connections.
 - **`ask` compatibility:** direct chat currently accepts temperature and token
   options and prints literal model text. Moving it to the runtime must preserve
   its request payload, errors, exit codes, and token-limit notice.
-- **Conversation growth:** retaining transcripts across turns can exceed
-  llama.cpp's configured context. `/context` and the status bar report the
-  history's exact size (llama.cpp `/apply-template` and `/tokenize`) against
-  the server's `n_ctx`, re-measured after each turn. `/compact` replaces the
-  in-memory history with one model-written summary exchange
-  (`JamieApplication.compact`); the saved conversation is unchanged, so
-  `/resume` reloads every exchange. Compaction is manual; there is no automatic
-  compaction near the limit. The `interactive-compact-keeps-facts` evaluation
-  checks that facts survive a summary.
+- **Conversation growth:** `runtime.context.RequestBudget` measures complete requests
+  with `/apply-template` and `/tokenize`, including system instructions, recalled
+  memory, the current prompt and tool observations. It reserves the maximum answer
+  length. Older history is compacted by selecting verbatim excerpts with validated
+  IDs; summary requests are chunked to fit too. Recent exchanges are retained when
+  possible, and the current task's observations remain intact. Failed compaction
+  leaves history unchanged; oversized current requests fail before inference.
+  `/context` reports the last complete request and reserve after a turn, or base
+  conversation/tool cost before a turn. `/compact` remains available for manual
+  summarization. SQLite keeps full exchanges, so `/resume` can restore them and
+  the next request will be budgeted again. `evals/context_cases/long-session.json`
+  checks fact retention across automatic compaction.
 - **Memory duplication:** active-session messages and FTS5 recall can contain
   the same exchange. Retrieval needs an active-session exclusion or a clear
   deduplication rule.
