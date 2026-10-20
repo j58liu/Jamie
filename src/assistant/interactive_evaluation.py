@@ -39,6 +39,7 @@ from assistant.evaluation import (
 from assistant.llm.base import LLMBackend, LLMError, LLMResponse, Message
 from assistant.research_evaluation import _FixtureWeb
 from assistant.runtime import JamieApplication
+from assistant.runtime.context import SUMMARY_INSTRUCTION
 from assistant.security.approvals import CallbackApprovalProvider
 from assistant.tools.registry import (
     create_agent_registry,
@@ -375,6 +376,8 @@ async def _run_steps(
             timer.cancel()
             tool_calls = tools.calls if tools is not None else []
         if answer is not None:
+            if turn.compacted_history is not None:
+                history = list(turn.compacted_history)
             history = [*history, Message("user", step.prompt), Message("assistant", answer)]
 
         context_tokens = None
@@ -411,7 +414,10 @@ async def _run_steps(
                 if len(backend.responses) > responses_before
                 else None
             ),
-            compactions=0,
+            compactions=sum(
+                bool(request) and request[0].content == SUMMARY_INSTRUCTION
+                for request in backend.requests[requests_before:]
+            ),
         )
         reason = (
             "compact_failed" if compact_failed else _step_failure(step, result, events, workspace)

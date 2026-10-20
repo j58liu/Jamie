@@ -462,7 +462,7 @@ class FakeJamieApplication:
         self.conversations += 1
         return f"conversation-{self.conversations}"
 
-    def context_usage(self, history):
+    def context_usage(self, history, *, tools=None, max_tokens=1024):
         return None
 
     def recent_conversations(self, limit=10):

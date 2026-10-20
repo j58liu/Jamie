@@ -37,7 +37,8 @@ def test_backend_counts_the_templated_history_and_reads_the_maximum():
     assert usage == ContextUsage(6_240, 16_384)
     assert [r.url.path for r in requests] == ["/props", "/apply-template", "/tokenize"]
     assert json.loads(requests[1].content) == {
-        "messages": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+        "messages": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}],
+        "add_generation_prompt": True,
     }
     assert json.loads(requests[2].content) == {
         "content": "<rendered>",

@@ -42,10 +42,11 @@ class ContextUsage:
 
     used: int
     maximum: int
+    output_reserved: int = 0
 
     @property
     def available(self) -> int:
-        return max(self.maximum - self.used, 0)
+        return max(self.maximum - self.used - self.output_reserved, 0)
 
     @property
     def percent(self) -> int:
@@ -82,7 +83,7 @@ def current_response_schema() -> dict[str, Any] | None:
 
 
 @contextmanager
-def constrained_to(schema: dict[str, Any]) -> Iterator[None]:
+def constrained_to(schema: dict[str, Any] | None) -> Iterator[None]:
     """Ask backends that can constrain generation to reply with JSON matching ``schema``.
 
     Like the cancellation token, this reaches the backend through a context variable, so

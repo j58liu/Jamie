@@ -254,5 +254,6 @@ def test_status_bar_context_is_remeasured_after_each_turn(tmp_path: Path):
     backend = MeasuringBackend([LLMResponse("one"), LLMResponse("two")])
     output = _repl(tmp_path, "first\nsecond\n/context\n/quit\n", backend)
 
-    assert "Used:         400 tokens" in output
+    assert "Used:         300 tokens" in output  # complete last request, before its answer
+    assert "Answer reserve: 1,024 tokens" in output
     assert "Maximum:    8,192 tokens" in output

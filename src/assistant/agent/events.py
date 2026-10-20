@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from assistant.agent.loop import ToolResult
+    from assistant.llm.base import ContextUsage
     from assistant.security.approvals import ApprovalRequest
 
 
@@ -63,6 +64,13 @@ class TurnFailed:
     error: str
 
 
+@dataclass(frozen=True)
+class RequestContext:
+    """The complete prompt and answer reservation for an inference request."""
+
+    usage: ContextUsage
+
+
 type AgentEvent = (
     TurnStarted
     | AssistantDelta
@@ -72,6 +80,7 @@ type AgentEvent = (
     | ToolFailed
     | ApprovalRequested
     | TurnFailed
+    | RequestContext
 )
 type EventSink = Callable[[AgentEvent], None]
 

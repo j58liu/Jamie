@@ -240,7 +240,9 @@ class LlamaCppBackend:
     def server_url(self) -> str:
         return self._base_url
 
-    def context_usage(self, messages: list[Message]) -> ContextUsage:
+    def context_usage(
+        self, messages: list[Message], *, thinking: bool | None = None
+    ) -> ContextUsage:
         """Count ``messages`` exactly as the chat template renders them."""
         options = {**self._client_options(), "timeout": CONTEXT_TIMEOUT_SECONDS}
         try:
@@ -252,7 +254,15 @@ class LlamaCppBackend:
                 if messages:
                     template = client.post(
                         f"{self._base_url}/apply-template",
-                        json={"messages": [asdict(message) for message in messages]},
+                        json={
+                            "messages": [asdict(message) for message in messages],
+                            "add_generation_prompt": True,
+                            **(
+                                {"chat_template_kwargs": {"enable_thinking": thinking}}
+                                if thinking is not None
+                                else {}
+                            ),
+                        },
                     )
                     template.raise_for_status()
                     tokens = client.post(

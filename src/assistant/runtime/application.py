@@ -14,11 +14,18 @@ from assistant.agent.events import (
     AssistantDelta,
     AssistantFinished,
     EventSink,
+    RequestContext,
     TurnFailed,
     TurnStarted,
     discard_event,
 )
-from assistant.agent.loop import MAX_STEPS, TIMEOUT_SECONDS, ToolExecutor, run_agent
+from assistant.agent.loop import (
+    MAX_STEPS,
+    TIMEOUT_SECONDS,
+    ToolExecutor,
+    _system_instructions,
+    run_agent,
+)
 from assistant.cancellation import CancellationToken, cancellation_scope
 from assistant.config import ProjectConfig
 from assistant.llm.answer import answer_text
@@ -31,6 +38,7 @@ from assistant.memory import (
     RememberingTools,
     format_memory_context,
 )
+from assistant.runtime.context import RequestBudget
 
 BackendFactory = Callable[[], LLMBackend]
 MemoryStoreFactory = Callable[[Path], MemoryStore]
@@ -56,6 +64,8 @@ class TurnResult:
     finish_reason: str | None = None
     output_tokens: int | None = None
     first_token_seconds: float | None = None
+    compacted_history: tuple[Message, ...] | None = None
+    context: ContextUsage | None = None
 
     @classmethod
     def from_response(cls, response: LLMResponse) -> TurnResult:
@@ -89,6 +99,7 @@ class _AgentTurnBackend:
         temperature: float,
         max_tokens: int,
         thinking: bool | None,
+        history_count: int = 0,
     ) -> None:
         self._backend = backend
         self._application = application
@@ -98,8 +109,21 @@ class _AgentTurnBackend:
         self.last_response: LLMResponse | None = None
         self.output_tokens = 0
         self.first_token_seconds: float | None = None
+        self.history_count = history_count
+        self.compacted_history: tuple[Message, ...] | None = None
+        self.context: ContextUsage | None = None
 
     def chat(self, messages: list[Message]) -> LLMResponse:
+        prepared = self._application._budget.prepare(
+            messages,
+            reserve=self._options["max_tokens"],
+            history_count=self.history_count,
+            thinking=self._options.get("thinking"),
+        )
+        if prepared.history is not None:
+            self.compacted_history = tuple(prepared.history)
+            self.history_count = len(prepared.history)
+        self.context = prepared.usage
         self._application.model_calls += 1
         response = self._backend.chat(messages, **self._options)
         self.last_response = response
@@ -126,6 +150,10 @@ class JamieApplication:
         self._memory: MemoryStore | None = None
         self._closed = False
         self.model_calls = 0  # requests sent to the model, including failed ones
+        self._budget: RequestBudget | None = None
+        self._last_context: ContextUsage | None = None
+        self._measured_history: list[Message] | None = None
+        self._last_tool_names: tuple[str, ...] = ()
 
     async def __aenter__(self) -> Self:
         await self.start()
@@ -149,6 +177,10 @@ class JamieApplication:
             raise
         self._backend = backend
         self._memory = memory
+        self._budget = RequestBudget(backend, self._summary_started)
+
+    def _summary_started(self) -> None:
+        self.model_calls += 1
 
     async def run_turn(
         self,
@@ -210,14 +242,17 @@ class JamieApplication:
             messages.extend(history or [])
             messages.append(Message(role="user", content=prompt))
             options = {} if thinking is None else {"thinking": thinking}
-            self.model_calls += 1
             with cancellation_scope(cancel):
-                response = await self._chat(
+                prepared = await asyncio.to_thread(
+                    self._budget.prepare,
                     messages,
-                    event_sink,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    **options,
+                    reserve=max_tokens,
+                    history_count=len(history or []),
+                    thinking=thinking,
+                )
+                self.model_calls += 1
+                response = await self._chat(
+                    messages, event_sink, temperature=temperature, max_tokens=max_tokens, **options
                 )
             if cancel is not None:
                 cancel.raise_if_cancelled()
@@ -234,7 +269,14 @@ class JamieApplication:
                 self._finish_failed_session(session_id)
             event_sink(TurnFailed(str(exc) or type(exc).__name__))
             raise
-        result = replace(TurnResult.from_response(response), message=text)
+        compacted = tuple(prepared.history) if prepared.history is not None else None
+        result = replace(
+            TurnResult.from_response(response),
+            message=text,
+            compacted_history=compacted,
+            context=prepared.usage,
+        )
+        self._remember_context(result, prompt, history)
         event_sink(
             AssistantFinished(
                 result.message, result.model, result.finish_reason, result.output_tokens
@@ -286,13 +328,23 @@ class JamieApplication:
         memory = self._require_memory()
         session_id = conversation_id
         standalone = conversation_id is None
+        request_context = None
+
+        def observe(event):
+            nonlocal request_context
+            if isinstance(event, RequestContext):
+                request_context = event.usage
+            event_sink(event)
+
         try:
             if standalone:
                 session_id = memory.start_session("agent")
                 memory.add_message(session_id, "user", prompt)
             recalled = memory.search_memories(prompt, exclude_session=conversation_id)
             context = format_memory_context(recalled)
-            backend = _AgentTurnBackend(self._backend, self, temperature, max_tokens, thinking)
+            backend = _AgentTurnBackend(
+                self._backend, self, temperature, max_tokens, thinking, len(history or [])
+            )
             answer = await asyncio.to_thread(
                 run_agent,
                 backend,
@@ -300,7 +352,7 @@ class JamieApplication:
                 prompt,
                 history=history,
                 memory_context=context,
-                event_sink=event_sink,
+                event_sink=observe,
                 cancel=cancel,
                 max_steps=max_steps,
                 timeout_seconds=timeout_seconds,
@@ -319,13 +371,31 @@ class JamieApplication:
                 self._finish_failed_session(session_id)
             raise
         last = backend.last_response
-        return TurnResult(
+        result = TurnResult(
             answer,
             model=last.model if last else None,
             finish_reason=last.finish_reason if last else None,
             output_tokens=backend.output_tokens,
             first_token_seconds=backend.first_token_seconds,
+            compacted_history=backend.compacted_history,
+            context=request_context or backend.context,
         )
+        self._remember_context(result, prompt, history, tools)
+        return result
+
+    def _remember_context(self, result: TurnResult, prompt: str, history, tools=None) -> None:
+        self._last_context = result.context
+        self._last_tool_names = self._tool_names(tools)
+        self._measured_history = [
+            *(result.compacted_history if result.compacted_history is not None else history or []),
+            Message("user", prompt),
+            Message("assistant", result.message),
+        ]
+
+    @staticmethod
+    def _tool_names(tools) -> tuple[str, ...]:
+        definitions = getattr(tools, "definitions", None)
+        return tuple(d["name"] for d in definitions()) if definitions is not None else ()
 
     def start_conversation(self) -> str:
         return self._require_memory().start_conversation(str(Path.cwd()))
@@ -353,9 +423,16 @@ class JamieApplication:
             raise ValueError("There is no conversation to compact.")
         self.model_calls += 1
         with cancellation_scope(cancel):
+            messages = [*history, Message(role="user", content=COMPACT_REQUEST)]
+            await asyncio.to_thread(
+                self._budget.prepare,
+                messages,
+                reserve=COMPACT_MAX_TOKENS,
+                history_count=len(history),
+            )
             response = await asyncio.to_thread(
                 self._backend.chat,
-                [*history, Message(role="user", content=COMPACT_REQUEST)],
+                messages,
                 temperature=0.2,
                 max_tokens=COMPACT_MAX_TOKENS,
             )
@@ -367,10 +444,27 @@ class JamieApplication:
             Message(role="assistant", content=summary),
         ]
 
-    def context_usage(self, history: list[Message]) -> ContextUsage | None:
-        """Measure the history on the server; None when the backend cannot."""
-        measure = getattr(self._backend, "context_usage", None)
-        return measure(history) if measure is not None else None
+    def context_usage(
+        self,
+        history: list[Message],
+        *,
+        tools: ToolExecutor | None = None,
+        max_tokens: int | None = None,
+    ) -> ContextUsage | None:
+        """Last complete request, or the conversation's base cost before the next prompt."""
+        if (
+            history == self._measured_history
+            and self._last_context is not None
+            and self._tool_names(tools) == self._last_tool_names
+            and (max_tokens is None or max_tokens == self._last_context.output_reserved)
+        ):
+            return self._last_context
+        messages = list(history)
+        if tools is not None:
+            messages.insert(0, Message("system", _system_instructions(tools)))
+        return (
+            self._budget.measure(messages, max_tokens or 1024) if self._budget is not None else None
+        )
 
     def _require_memory(self) -> MemoryStore:
         if self._closed:

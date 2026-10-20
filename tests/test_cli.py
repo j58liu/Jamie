@@ -10,9 +10,17 @@ from typer.testing import CliRunner
 
 from assistant import cli
 from assistant.agent.events import AssistantFinished, TurnStarted
-from assistant.llm.base import LLMResponse, ServerInfo
+from assistant.llm.base import ContextUsage, LLMResponse, ServerInfo
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.runtime import TurnResult
+
+
+def chat_backend(transport):
+    """These command tests isolate chat HTTP; context endpoints have separate coverage."""
+    backend = LlamaCppBackend(transport=transport)
+    backend.context_usage = lambda messages: ContextUsage(16, 32768)
+    return backend
+
 
 runner = CliRunner()
 
@@ -71,7 +79,7 @@ def test_help_and_commands_do_not_start_the_interactive_session(
     assert runner.invoke(cli.app, ["doctor"]).exit_code == 0
     answer = {"choices": [{"message": {"role": "assistant", "content": "Hi"}}]}
     transport = httpx.MockTransport(lambda request: httpx.Response(200, json=answer))
-    monkeypatch.setattr(cli, "LlamaCppBackend", lambda: LlamaCppBackend(transport=transport))
+    monkeypatch.setattr(cli, "LlamaCppBackend", lambda: chat_backend(transport))
     ask = runner.invoke(cli.app, ["ask", "hello"])
     assert ask.exit_code == 0 and ask.stdout == "Hi\n"
 
@@ -295,7 +303,7 @@ def chat_http(monkeypatch: pytest.MonkeyPatch):
         requests.append(request)
         return response
 
-    backend = LlamaCppBackend(transport=httpx.MockTransport(handler))
+    backend = chat_backend(httpx.MockTransport(handler))
     monkeypatch.setattr(cli, "LlamaCppBackend", lambda: backend)
     return requests, response
 
@@ -440,7 +448,7 @@ def test_ask_reports_unreachable_server(monkeypatch: pytest.MonkeyPatch):
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("Connection refused", request=request)
 
-    backend = LlamaCppBackend(transport=httpx.MockTransport(handler))
+    backend = chat_backend(httpx.MockTransport(handler))
     monkeypatch.setattr(cli, "LlamaCppBackend", lambda: backend)
 
     result = runner.invoke(cli.app, ["ask", "hello"])
@@ -521,7 +529,7 @@ def test_ask_warns_when_answer_reaches_token_limit(monkeypatch: pytest.MonkeyPat
             },
         )
     )
-    monkeypatch.setattr(cli, "LlamaCppBackend", lambda: LlamaCppBackend(transport=transport))
+    monkeypatch.setattr(cli, "LlamaCppBackend", lambda: chat_backend(transport))
 
     result = runner.invoke(cli.app, ["ask", "hello"])
 

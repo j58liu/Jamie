@@ -146,6 +146,16 @@ ends the turn; Jamie does not retry or look for another way. Asking Jamie to
 research a topic runs the `research` tool described under
 [Web research](#web-research); its cited report is the answer.
 
+Before inference, the runtime measures the complete request, including tool
+instructions, recalled memory, the current prompt, and tool observations. It
+reserves space for the requested answer. When older history no longer fits,
+automatic compaction selects original conversation excerpts by validated IDs;
+it preserves recent exchanges when space permits and keeps the current task's
+observations. An oversized current request produces an error before inference.
+Compaction failures leave the conversation unchanged. `/context` reports the
+last complete request and its answer reserve after a turn; before a turn it
+reports the conversation's base cost.
+
 `/compact` asks the model to summarize the conversation and continues from that
 summary, which frees context for long sessions. It runs like a turn: Ctrl+C
 cancels it and leaves the conversation unchanged. The saved conversation keeps

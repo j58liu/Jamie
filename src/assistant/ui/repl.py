@@ -226,5 +226,7 @@ async def _run_repl(
             state.first_token_seconds.append(result.first_token_seconds)
         state.model = result.model or state.model
         # ponytail: transcript grows unbounded; compaction is a separate task needing evals.
+        if result.compacted_history is not None:
+            state.history = list(result.compacted_history)
         state.history += [Message("user", prompt), Message("assistant", result.message)]
         refresh_context(state)  # a failure falls back to the estimate in the status bar

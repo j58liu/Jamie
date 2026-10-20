@@ -81,7 +81,12 @@ def refresh_context(state: ReplState) -> str | None:
     if state.application is None:
         return None
     try:
-        state.context = state.application.context_usage(state.history)
+        options = (
+            {"tools": state.workspace_tools.current(), "max_tokens": state.max_tokens}
+            if state.workspace_tools is not None
+            else {}
+        )
+        state.context = state.application.context_usage(state.history, **options)
     except LLMError as exc:
         return str(exc)
     return None
@@ -269,10 +274,17 @@ def _context(state: ReplState, argument: str) -> None:
         state.say(f"Used:       {usage.used:>{width},} tokens")
         state.say(f"Maximum:    {usage.maximum:>{width},} tokens")
         state.say(f"Available:  {usage.available:>{width},} tokens")
+        if usage.output_reserved:
+            state.say(f"Answer reserve: {usage.output_reserved:,} tokens")
         state.say(f"Usage:      {f'{usage.percent}%':>{width}}")
     state.say("")
     state.say(f"Messages: {len(state.history)} ({len(state.history) // 2} exchanges)")
-    state.say("Each request also adds the new prompt and any recalled memories.")
+    state.say(
+        "After a turn, counts cover its complete request, including tools and recalled memories."
+    )
+    state.say(
+        "Before a turn, counts cover the conversation and tools; the next prompt adds tokens."
+    )
     state.say("Use /compact to summarize the conversation, or /new to start over.")
     if usage is not None and usage.percent >= CONTEXT_WARNING_PERCENT:
         state.say(f"Warning: {usage.percent}% of the context is used. Run /compact to free it.")
