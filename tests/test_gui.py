@@ -17,14 +17,23 @@ from assistant.agent.events import (
     TurnFailed,
 )
 from assistant.agent.loop import ToolResult
+from assistant.cancellation import CancellationToken, cancellation_scope
 from assistant.config import ProjectConfig
 from assistant.llm.base import LLMError, LLMResponse, ServerInfo
 from assistant.runtime import JamieApplication
+from assistant.runtime.workspaces import WorkspaceTools
 from assistant.security.approvals import ApprovalRequest
 from assistant.security.policy import PermissionLevel
 from assistant.tools.registry import create_workspace_registry
 from assistant.ui import gui
-from assistant.ui.gui import GuiSession, StartupFailed, ensure_server, event_payload, page_html
+from assistant.ui.gui import (
+    GuiApprovalProvider,
+    GuiSession,
+    StartupFailed,
+    ensure_server,
+    event_payload,
+    page_html,
+)
 
 
 def test_payloads_describe_tool_steps_without_their_output():
@@ -80,11 +89,15 @@ def finish(message):
     return {"action": "finish", "message": message}
 
 
+def kinds(pushed):
+    return [payload["type"] for payload in pushed]
+
+
 @pytest.fixture
 def session_for(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
-    def build(backend, pending=None):
+    def build(backend, pending=None, push=None, approvals=None, **options):
         application = JamieApplication(
             ProjectConfig(memory_path=str(tmp_path / "memory.sqlite3")),
             backend_factory=lambda: backend,
@@ -93,8 +106,8 @@ def session_for(tmp_path, monkeypatch):
         pushed = []
         # Run each turn to completion, or hold it to test a turn that is still running.
         submit = pending.append if pending is not None else asyncio.run
-        tools = create_workspace_registry(tmp_path)
-        session = GuiSession(application, tools, pushed.append, submit)
+        tools = WorkspaceTools(lambda: create_workspace_registry(tmp_path, approvals=approvals))
+        session = GuiSession(application, tools, push or pushed.append, submit, **options)
         return session, pushed
 
     return build
@@ -112,11 +125,13 @@ def test_turns_keep_the_conversation_and_end_idle(session_for, tmp_path):
     assert session.send("  what does notes.md say?  ")
     assert session.send("what did I ask?")
 
-    assert [p["type"] for p in pushed] == ["tool", "tool", "answer", "idle", "answer", "idle"]
+    assert kinds(pushed) == ["tool", "tool", "answer", "idle", "answer", "idle"]
     assert pushed[1]["text"].startswith("Read notes.md · 1 line")
     assert pushed[2]["text"] == "It says hello."
+    assert pushed[3] == {"type": "idle", "workspace": str(tmp_path)}
     last_request = [m.content for m in backend.requests[-1]]
     assert "what does notes.md say?" in last_request and "It says hello." in last_request
+    assert session.state.turns == 2 and session.state.tool_calls == 1
 
 
 def test_one_turn_at_a_time_and_new_conversation_waits(session_for):
@@ -129,9 +144,9 @@ def test_one_turn_at_a_time_and_new_conversation_waits(session_for):
     assert not session.new_conversation()
     asyncio.run(pending.pop())
 
-    assert pushed[-1] == {"type": "idle"}
-    assert session.history and session.new_conversation()
-    assert session.history == [] and session.conversation_id is None
+    assert pushed[-1]["type"] == "idle"
+    assert session.state.history and session.new_conversation()
+    assert session.state.history == [] and session.state.conversation_id is None
 
 
 def test_cancel_stops_the_turn_and_the_next_one_runs(session_for):
@@ -145,10 +160,11 @@ def test_cancel_stops_the_turn_and_the_next_one_runs(session_for):
     session.send("again")
     asyncio.run(pending.pop())
 
-    assert [p["type"] for p in pushed] == ["cancelled", "idle", "answer", "idle"]
+    assert kinds(pushed) == ["cancelled", "idle", "answer", "idle"]
     assert pushed[2]["text"] == "ready"
     assert len(backend.requests) == 1  # cancelled before the model was asked
-    assert [m.content for m in session.history] == ["again", "ready"]
+    assert [m.content for m in session.state.history] == ["again", "ready"]
+    assert session.state.cancelled == 1
 
 
 def test_failures_are_shown_and_the_window_recovers(session_for):
@@ -158,24 +174,164 @@ def test_failures_are_shown_and_the_window_recovers(session_for):
     session.send("second")
 
     assert pushed[0] == {"type": "error", "lines": ["llama.cpp went away"]}
-    assert [p["type"] for p in pushed[1:]] == ["idle", "answer", "idle"]
+    assert kinds(pushed[1:]) == ["idle", "answer", "idle"]
+    assert session.state.failures == 1
 
 
-def test_a_closed_window_does_not_fail_the_turn(session_for, tmp_path):
-    backend = Backend(finish("done"))
-    application = JamieApplication(
-        ProjectConfig(memory_path=str(tmp_path / "memory.sqlite3")),
-        backend_factory=lambda: backend,
-    )
-    asyncio.run(application.start())
-
+def test_a_closed_window_does_not_fail_the_turn(session_for):
     def closed(payload):
         raise RuntimeError("window closed")
 
-    session = GuiSession(application, create_workspace_registry(tmp_path), closed, asyncio.run)
+    session, _ = session_for(Backend(finish("done")), push=closed)
 
     assert session.send("hi")
-    assert session.history[-1].content == "done"
+    assert session.state.history[-1].content == "done"
+
+
+def test_commands_print_into_the_window_without_calling_the_model(session_for):
+    backend = Backend()
+    session, pushed = session_for(backend)
+
+    session.send("/help")
+    session.send("/mode chat")
+    session.send("/nonsense")
+
+    outputs = [p["text"] for p in pushed if p["type"] == "command"]
+    assert "/resume <n|id>" in outputs[0] and outputs[1] == "Mode: chat"
+    assert outputs[2] == "Unknown command /nonsense. Type /help for commands."
+    assert kinds(pushed).count("idle") == 3 and backend.requests == []
+    assert session.state.mode == "chat"
+
+
+def test_resume_and_new_redraw_the_conversation(session_for):
+    session, pushed = session_for(Backend(finish("Paris.")))
+    session.send("capital of France?")
+    saved = session.state.conversation_id
+    session.send("/new")
+    session.send("/resume 1")
+
+    redraws = [(p["messages"], p["note"]) for p in pushed if p["type"] == "conversation"]
+    (cleared, started), (restored, resumed) = redraws
+    assert cleared == [] and started == "Started a new conversation."
+    assert restored == [
+        {"role": "user", "text": "capital of France?"},
+        {"role": "assistant", "text": "Paris."},
+    ]
+    assert resumed.startswith("Resumed: capital of France? (1 exchanges)")
+    assert session.state.conversation_id == saved
+
+
+def test_clear_and_quit_reach_the_window(session_for):
+    quit_calls = []
+    session, pushed = session_for(Backend(), on_quit=lambda: quit_calls.append(1))
+
+    session.send("/clear")
+    session.send("/quit")
+
+    assert kinds(pushed) == ["clear", "idle", "idle"] and quit_calls == [1]
+
+
+def test_local_commands_run_tools_without_the_model(session_for, tmp_path):
+    (tmp_path / "notes.md").write_text("alpha\nbeta\n")
+    backend = Backend()
+    session, pushed = session_for(backend)
+
+    session.send("/read notes.md")
+
+    output = next(p["text"] for p in pushed if p["type"] == "command")
+    assert "Read notes.md" in output and "beta" in output
+    assert backend.requests == []
+
+
+def answering(provider, choice, pushed):
+    """A window that clicks ``choice`` as soon as an approval card appears."""
+
+    def push(payload):
+        pushed.append(payload)
+        if payload["type"] == "approval":
+            provider.answer(payload["id"], choice)
+
+    return push
+
+
+def approval(tool="write_file", permission=PermissionLevel.SAFE_WRITE, **arguments):
+    return ApprovalRequest(tool=tool, permission=permission, arguments=arguments)
+
+
+def test_approval_card_shows_the_exact_action_and_waits_for_a_click():
+    pushed = []
+    provider = GuiApprovalProvider(lambda payload: pushed.append(payload))
+    provider._push = answering(provider, "once", pushed)
+
+    assert provider.request(approval(path="notes.md", content="hi"))
+
+    card, closed = pushed
+    assert card["heading"] == "Jamie wants to write:" and card["subject"] == "notes.md"
+    assert [tuple(detail) for detail in card["details"]] == [("content", "hi")]
+    assert card["session"] is True and "SAFE_WRITE" in card["footer"]
+    assert closed == {"type": "approval-closed", "id": card["id"], "choice": "once"}
+
+
+def test_denial_and_session_approval():
+    pushed = []
+    provider = GuiApprovalProvider(pushed.append)
+    provider._push = answering(provider, "deny", pushed)
+    assert not provider.request(approval(path="a"))
+
+    provider._push = answering(provider, "session", pushed)
+    assert provider.request(approval(path="b"))
+    pushed.clear()
+    assert provider.request(approval(path="c")) and pushed == []  # remembered for the tool
+
+
+def test_answers_must_match_a_waiting_request():
+    pushed = []
+    provider = GuiApprovalProvider(pushed.append)
+
+    assert not provider.answer("unknown", "once")
+
+    def push(payload):
+        pushed.append(payload)
+        if payload["type"] == "approval":
+            assert not provider.answer(payload["id"], "always")  # not a choice
+            assert provider.answer(payload["id"], "deny")
+            assert not provider.answer(payload["id"], "once")  # already answered
+
+    provider._push = push
+    assert not provider.request(approval(path="x"))
+
+
+def test_cancelling_the_turn_denies_a_waiting_approval():
+    token = CancellationToken()
+    pushed = []
+    provider = GuiApprovalProvider(lambda payload: (pushed.append(payload), token.cancel()))
+
+    with cancellation_scope(token):
+        assert not provider.request(approval(path="x"))
+    assert pushed[-1]["choice"] == "deny"
+
+
+@pytest.mark.usefixtures("confirm_every_tool")
+def test_a_turn_waits_for_approval_and_a_denial_ends_it(session_for, tmp_path):
+    pushed = []
+    provider = GuiApprovalProvider(pushed.append)
+    write = {"action": "tool", "tool": "write_file", "args": {"path": "a.txt", "content": "1"}}
+    read = {"action": "tool", "tool": "read_file", "args": {"path": "a.txt"}}  # verification
+    session, _ = session_for(
+        Backend(write, read, finish("Wrote it."), write), push=pushed.append, approvals=provider
+    )
+
+    provider._push = answering(provider, "once", pushed)
+    session.send("write a.txt")
+    assert (tmp_path / "a.txt").read_text() == "1"
+
+    provider._push = answering(provider, "deny", pushed)
+    (tmp_path / "a.txt").unlink()
+    session.send("write it again")
+
+    assert not (tmp_path / "a.txt").exists()
+    answers = [p["text"] for p in pushed if p["type"] == "answer"]
+    assert answers == ["Wrote it.", "Stopped: write_file was not approved."]
 
 
 class Server:

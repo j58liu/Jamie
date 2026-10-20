@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
 
+from assistant.agent.events import ToolFailed, ToolFinished
 from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
 from assistant.llm.base import ContextUsage, LLMError, Message
 from assistant.llm.llamacpp import LlamaCppBackend
@@ -29,7 +30,7 @@ from assistant.tools.web import WebClient
 from assistant.ui.renderer import EventRenderer, render_error
 
 if TYPE_CHECKING:
-    from assistant.runtime import JamieApplication
+    from assistant.runtime import JamieApplication, TurnResult
 
 # ponytail: rough English average; use llama.cpp /tokenize if exact counts matter.
 CHARACTERS_PER_TOKEN = 4
@@ -72,6 +73,25 @@ class ReplState:
 
     def say(self, text: str) -> None:
         self.console.print(text, markup=False, highlight=False)
+
+    def count_tool(self, event: object) -> None:
+        if isinstance(event, ToolFinished | ToolFailed):
+            self.tool_calls += 1
+            self.tool_seconds += event.duration
+
+    def record_turn(self, prompt: str, result: TurnResult, seconds: float) -> None:
+        """Keep a completed exchange and its statistics, as every front end does."""
+        self.turns += 1
+        self.turn_seconds += seconds
+        self.output_tokens += result.output_tokens or 0
+        if result.first_token_seconds is not None:
+            self.first_token_seconds.append(result.first_token_seconds)
+        self.model = result.model or self.model
+        # ponytail: transcript grows unbounded; compaction is a separate task needing evals.
+        if result.compacted_history is not None:
+            self.history = list(result.compacted_history)
+        self.history += [Message("user", prompt), Message("assistant", result.message)]
+        refresh_context(self)  # a failure falls back to the estimate in the status bar
 
 
 # A handler that needs the model returns an awaitable, which the REPL runs.

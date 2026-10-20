@@ -207,10 +207,19 @@ macOS also asks before Jamie first controls another app.
 The window uses the same runtime, tools, permission policy, and memory as the
 terminal. Enter sends, Shift+Enter adds a line, Escape stops a running turn, and
 the plus button starts a new conversation. Model text is inserted as text, never
-as HTML, and the page loads nothing from the network. Approval prompts are not
-in the window yet, so an action that requires approval is declined; no tool that
-Jamie currently registers requires one. DM Sans is bundled under the SIL Open
-Font License (`src/assistant/ui/gui/fonts/OFL.txt`).
+as HTML, and the page loads nothing from the network.
+
+Slash commands work as in the terminal and print into the window: `/help`,
+`/history`, `/resume`, `/diff`, `/undo`, `/mode`, `/scope`, `/compact`, `/stats`,
+and the rest. `/new` and `/resume` redraw the conversation, `/clear` empties the
+window, and `/quit` closes it.
+
+When the permission policy requires approval, the window shows the exact action
+and its arguments with Allow once, Allow for this session (for `SAFE_WRITE` and
+`EXTERNAL` tools), and Deny. Only a click answers; nothing is focused for you, so
+typing can never approve an action. Stopping the turn or closing the window
+denies it. DM Sans is bundled under the SIL Open Font License
+(`src/assistant/ui/gui/fonts/OFL.txt`).
 
 ## Action protocol
 

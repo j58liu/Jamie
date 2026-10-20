@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import html
+import inspect
+import io
 import json
 import os
 import subprocess
@@ -16,6 +18,8 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+from rich.console import Console
+
 from assistant.agent.events import (
     AgentEvent,
     AssistantDelta,
@@ -24,12 +28,15 @@ from assistant.agent.events import (
     ToolFinished,
     ToolStarted,
 )
-from assistant.agent.loop import ToolExecutor
-from assistant.cancellation import CancellationToken, TurnCancelled
+from assistant.cancellation import CancellationToken, TurnCancelled, current_token
 from assistant.config import ProjectConfig
-from assistant.llm.base import LLMError, Message, ServerInfo
+from assistant.llm.base import LLMError, ServerInfo
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.runtime import JamieApplication
+from assistant.runtime.workspaces import WorkspaceTools
+from assistant.security.approvals import ApprovalRequest
+from assistant.ui.approvals import summarize_approval
+from assistant.ui.commands import ReplState, create_command_registry
 from assistant.ui.renderer import error_lines, tool_summary
 from assistant.ui.status import short_model
 
@@ -42,6 +49,8 @@ MODEL_LOG = Path.home() / "Library" / "Logs" / "Jamie" / "llama-server.log"
 MODEL_START_SECONDS = 900.0  # a first, uncached load can take minutes
 # Apps opened from Finder get a minimal PATH without Homebrew.
 EXTRA_PATH = ("/opt/homebrew/bin", "/usr/local/bin")
+COMMAND_WIDTH = 88  # command output is shown in a monospace block
+COMMANDS = create_command_registry()
 
 type Payload = dict[str, Any]
 type Submit = Callable[[Coroutine[Any, Any, None]], object]
@@ -65,40 +74,110 @@ def event_payload(event: AgentEvent, args: dict[str, Any] | None = None) -> Payl
             return {"type": "delta", "text": text}
         case AssistantFinished(text=text, finish_reason=reason):
             return {"type": "answer", "text": text, "truncated": reason == "length"}
-    return None  # failures arrive as the turn's exception; approvals come in phase 2
+    return None  # failures arrive as the turn's exception; approvals ask separately
+
+
+class GuiApprovalProvider:
+    """Ask in the window. Cancelling the turn, closing the window, or a timeout all deny.
+
+    Only a click on the window's own card answers; the model cannot, because its text
+    reaches the page as text and the request ID is never sent to the model.
+    """
+
+    CHOICES = frozenset({"once", "session", "deny"})
+
+    def __init__(self, push: Callable[[Payload], object]) -> None:
+        self._push = push
+        self._lock = threading.Lock()
+        self._pending: dict[str, tuple[threading.Event, list[str]]] = {}
+        self._session_tools: set[str] = set()
+
+    def request(self, approval: ApprovalRequest) -> bool:
+        if approval.tool in self._session_tools:
+            return True
+        summary = summarize_approval(approval)
+        answered, answer = threading.Event(), []
+        with self._lock:
+            self._pending[approval.id] = (answered, answer)
+        token = current_token()  # the agent worker runs inside the turn's scope
+        try:
+            self._push(
+                {
+                    "type": "approval",
+                    "id": approval.id,
+                    "tool": approval.tool,
+                    "heading": summary.heading,
+                    "subject": summary.subject,
+                    "details": summary.details,
+                    "footer": summary.footer,
+                    "session": summary.session_allowed,
+                }
+            )
+            while not answered.wait(0.1):
+                if token is not None and token.cancelled:
+                    answer.append("deny")
+                    break
+        finally:
+            with self._lock:
+                self._pending.pop(approval.id, None)
+        choice = answer[0]
+        if choice == "session":
+            self._session_tools.add(approval.tool)
+        self._push({"type": "approval-closed", "id": approval.id, "choice": choice})
+        return choice != "deny"
+
+    def answer(self, approval_id: str, choice: str) -> bool:
+        """Record the user's click; False for an unknown, finished, or invalid answer."""
+        with self._lock:
+            pending = self._pending.get(approval_id)
+            if pending is None or choice not in self.CHOICES:
+                return False
+            answered, answer = pending
+            if answered.is_set():
+                return False
+            answer.append(choice)
+            answered.set()
+            return True
 
 
 class GuiSession:
-    """One conversation in the window: one turn at a time, cancellable, kept in memory.
+    """One conversation in the window: one turn or command at a time, cancellable.
 
-    Page calls arrive on pywebview threads; ``submit`` runs a turn on the runtime loop.
+    It keeps the terminal's ReplState, so slash commands, statistics, and history work
+    the same way. Page calls arrive on pywebview threads; ``submit`` runs work on the
+    runtime loop.
     """
 
     def __init__(
         self,
         application: JamieApplication,
-        tools: ToolExecutor,
+        workspace_tools: WorkspaceTools,
         push: Callable[[Payload], object],
         submit: Submit,
+        *,
+        model: str | None = None,
+        on_quit: Callable[[], object] = lambda: None,
     ) -> None:
-        self._application = application
-        self._tools = tools
         self._push = push
         self._submit = submit
+        self._on_quit = on_quit
+        self._output = io.StringIO()  # what commands print, sent to the page as text
+        console = Console(file=self._output, width=COMMAND_WIDTH, no_color=True)
+        self.state = ReplState(
+            console, application=application, model=model, workspace_tools=workspace_tools
+        )
         self._lock = threading.Lock()
         self._token: CancellationToken | None = None
         self._started: tuple[str, dict[str, Any]] | None = None
-        self.history: list[Message] = []
-        self.conversation_id: str | None = None
 
     def send(self, prompt: str) -> bool:
-        """Start a turn; False when the prompt is blank or a turn is already running."""
+        """Start a turn or command; False when blank or while one is already running."""
         prompt = prompt.strip()
         with self._lock:
             if not prompt or self._token is not None:
                 return False
             token = self._token = CancellationToken()
-        self._submit(self._turn(prompt, token))
+        self._submit(self._run(prompt, token))
         return True
 
     def cancel(self) -> None:
@@ -107,40 +186,76 @@ class GuiSession:
                 self._token.cancel()
 
     def new_conversation(self) -> bool:
+        """The plus button: /new without its message, refused while work is running."""
         with self._lock:
             if self._token is not None:
                 return False
-            self.history = []
-            self.conversation_id = None
+            COMMANDS.dispatch(self.state, "/new")
+            self._take_output()
             return True
 
-    async def _turn(self, prompt: str, token: CancellationToken) -> None:
+    async def _run(self, prompt: str, token: CancellationToken) -> None:
         try:
-            if self.conversation_id is None:
-                self.conversation_id = self._application.start_conversation()
-            result = await self._application.run_turn(
-                prompt,
-                history=self.history,
-                thinking=False,
-                cancel=token,
-                conversation_id=self.conversation_id,
-                event_sink=self._show,
-                tools=self._tools,
-            )
+            if "\n" not in prompt and prompt.startswith("/"):
+                await self._command(prompt)
+            else:
+                await self._turn(prompt, token)
         except TurnCancelled:
+            self.state.cancelled += 1
             self._send({"type": "cancelled"})
         except Exception as exc:  # noqa: BLE001 - the window must return to its prompt
+            self.state.failures += 1
             self._send({"type": "error", "lines": error_lines(str(exc) or type(exc).__name__)})
-        else:
-            if result.compacted_history is not None:
-                self.history = list(result.compacted_history)
-            self.history += [Message("user", prompt), Message("assistant", result.message)]
         finally:
             with self._lock:
                 self._token = None
-            self._send({"type": "idle"})
+            self._send({"type": "idle", "workspace": _home(Path.cwd())})
+
+    async def _turn(self, prompt: str, token: CancellationToken) -> None:
+        state = self.state
+        if state.conversation_id is None:
+            state.conversation_id = state.application.start_conversation()
+        tools = state.workspace_tools.current(state.scope) if state.mode == "task" else None
+        started = time.monotonic()
+        result = await state.application.run_turn(
+            prompt,
+            history=state.history,
+            temperature=state.temperature,
+            max_tokens=state.max_tokens,
+            thinking=state.thinking,
+            cancel=token,
+            conversation_id=state.conversation_id,
+            event_sink=self._show,
+            tools=tools,
+        )
+        state.record_turn(prompt, result, time.monotonic() - started)
+
+    async def _command(self, line: str) -> None:
+        state = self.state
+        if line.split(" ", 1)[0].lower() == "/clear":
+            self._send({"type": "clear"})  # the page clears itself; nothing else changes
+            return
+        conversation = state.conversation_id
+        handled = COMMANDS.dispatch(state, line)
+        if inspect.isawaitable(handled):
+            await handled  # a command that runs the model or a tool, such as /compact
+        text = self._take_output()
+        if state.conversation_id != conversation:  # /new or /resume redraws the window
+            messages = [{"role": m.role, "text": m.content} for m in state.history]
+            self._send({"type": "conversation", "messages": messages, "note": text})
+        elif text:
+            self._send({"type": "command", "text": text})
+        if not state.running:
+            self._on_quit()
+
+    def _take_output(self) -> str:
+        text = self._output.getvalue().rstrip()
+        self._output.seek(0)
+        self._output.truncate()
+        return text
 
     def _show(self, event: AgentEvent) -> None:
+        self.state.count_tool(event)
         if isinstance(event, ToolStarted):
             self._started = (event.tool, event.args)
         tool = getattr(event, "tool", None)
@@ -281,6 +396,7 @@ def run_gui(settings: ProjectConfig) -> None:
         if not closed.is_set():
             window.evaluate_js(f"jamie.receive({json.dumps(payload)})")
 
+    approvals = GuiApprovalProvider(push)  # one per window, so "this session" lasts
     sessions: list[GuiSession] = []  # filled once the model is reachable
 
     def send(prompt: str) -> bool:
@@ -293,7 +409,10 @@ def run_gui(settings: ProjectConfig) -> None:
     def new_conversation() -> bool:
         return bool(sessions) and sessions[0].new_conversation()
 
-    window.expose(send, cancel, new_conversation)
+    def approve(approval_id: str, choice: str) -> bool:
+        return approvals.answer(approval_id, choice)
+
+    window.expose(send, cancel, new_conversation, approve)
     resources = ExitStack()
     application: JamieApplication | None = None
 
@@ -309,9 +428,14 @@ def run_gui(settings: ProjectConfig) -> None:
         application = JamieApplication(settings, backend_factory=lambda: backend)
         await application.start()
         web = resources.enter_context(WebClient())
-        tools = create_agent_registry(Path.cwd(), web=web, backend=backend)
+        tools = WorkspaceTools(
+            lambda: create_agent_registry(Path.cwd(), approvals=approvals, web=web, backend=backend)
+        )
         resources.callback(tools.close)
-        sessions.append(GuiSession(application, tools, push, runtime.submit))
+        session = GuiSession(
+            application, tools, push, runtime.submit, model=info.model, on_quit=window.destroy
+        )
+        sessions.append(session)
         push({"type": "ready", "model": short_model(info.model)})
 
     def startup() -> None:

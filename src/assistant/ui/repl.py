@@ -30,11 +30,11 @@ from assistant.agent.events import (
 )
 from assistant.agent.loop import AgentError, ToolExecutor
 from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
-from assistant.llm.base import LLMError, Message
+from assistant.llm.base import LLMError
 from assistant.memory import MemoryStoreError, default_memory_path
 from assistant.runtime import JamieApplication, JamieApplicationError
 from assistant.runtime.workspaces import WorkspaceTools
-from assistant.ui.commands import ReplState, create_command_registry, refresh_context
+from assistant.ui.commands import ReplState, create_command_registry
 from assistant.ui.prompt import JamieCompleter, command_preview, continuation, input_bindings
 from assistant.ui.renderer import EventRenderer, render_error
 from assistant.ui.status import status_line
@@ -184,9 +184,7 @@ async def _run_repl(
                 activity.update("Jamie is using a tool…")
             elif activity is not None and isinstance(event, ToolFinished | ToolFailed):
                 activity.update("Jamie is thinking…")
-            if isinstance(event, ToolFinished | ToolFailed):
-                state.tool_calls += 1
-                state.tool_seconds += event.duration
+            state.count_tool(event)
             renderer.handle(event)
 
         try:
@@ -222,14 +220,4 @@ async def _run_repl(
         finally:
             if activity is not None:
                 activity.stop()
-        state.turns += 1
-        state.turn_seconds += time.monotonic() - turn_started
-        state.output_tokens += result.output_tokens or 0
-        if result.first_token_seconds is not None:
-            state.first_token_seconds.append(result.first_token_seconds)
-        state.model = result.model or state.model
-        # ponytail: transcript grows unbounded; compaction is a separate task needing evals.
-        if result.compacted_history is not None:
-            state.history = list(result.compacted_history)
-        state.history += [Message("user", prompt), Message("assistant", result.message)]
-        refresh_context(state)  # a failure falls back to the estimate in the status bar
+        state.record_turn(prompt, result, time.monotonic() - turn_started)

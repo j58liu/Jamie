@@ -6,6 +6,7 @@ import json
 import shlex
 import unicodedata
 from collections.abc import Callable
+from typing import NamedTuple
 
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -64,24 +65,44 @@ def visible(value: object) -> str:
     )
 
 
-def approval_panel(approval: ApprovalRequest) -> Panel:
-    """Render every normalized argument; nothing the tool receives is hidden."""
+class ApprovalSummary(NamedTuple):
+    """What an approval prompt shows, for the terminal panel and the window card."""
+
+    heading: str
+    subject: str | None  # the command line or main argument, shown prominently
+    details: list[tuple[str, str]]  # every other normalized argument
+    footer: str
+    session_allowed: bool
+
+
+def summarize_approval(approval: ApprovalRequest) -> ApprovalSummary:
+    """Describe every normalized argument; nothing the tool receives is hidden."""
     arguments = dict(approval.arguments)
     command = COMMANDS.get(approval.tool)
     if command is not None and isinstance(arguments.get(command[0]), str):
         field, command_line = command
-        lines = [Text("Command"), Text(visible(command_line(arguments.pop(field))), style="bold")]
-        footer = Text(f"Classification: {approval.permission.value.lower()}")
+        heading, subject = "Command", visible(command_line(arguments.pop(field)))
+        footer = f"Classification: {approval.permission.value.lower()}"
     else:
         verb, field = ACTIONS.get(approval.tool, (f"use {approval.tool}", None))
-        lines = [Text(f"Jamie wants to {verb}" + (":" if field in arguments else "."))]
-        if field in arguments:
-            lines.append(Text(visible(arguments.pop(field)), style="bold"))
+        heading = f"Jamie wants to {verb}" + (":" if field in arguments else ".")
+        subject = visible(arguments.pop(field)) if field in arguments else None
         risk = RISKS.get(approval.permission, approval.permission.value.lower())
-        footer = Text(f"Risk: {approval.permission.value} — {risk}")
-    for name, value in arguments.items():
-        lines.append(Text(f"{name}: ", style="dim").append(visible(value), style=""))
-    lines += [Text(""), Text(f"Tool: {approval.tool}", style="dim"), footer]
+        footer = f"Risk: {approval.permission.value} — {risk}"
+    details = [(name, visible(value)) for name, value in arguments.items()]
+    return ApprovalSummary(
+        heading, subject, details, footer, approval.permission in SESSION_APPROVABLE
+    )
+
+
+def approval_panel(approval: ApprovalRequest) -> Panel:
+    summary = summarize_approval(approval)
+    lines = [Text(summary.heading)]
+    if summary.subject is not None:
+        lines.append(Text(summary.subject, style="bold"))
+    for name, value in summary.details:
+        lines.append(Text(f"{name}: ", style="dim").append(value, style=""))
+    lines += [Text(""), Text(f"Tool: {approval.tool}", style="dim"), Text(summary.footer)]
     return Panel(
         Group(*lines),
         title="Approval required",

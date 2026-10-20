@@ -183,7 +183,6 @@
       main {
         flex: 1;
         overflow-y: auto;
-        scroll-behavior: smooth;
       }
       .intro {
         padding: 44px 0 40px;
@@ -348,6 +347,93 @@
         color: var(--ink);
         line-height: 1.7;
       }
+      .command-output {
+        margin: 0;
+        padding: 12px 16px;
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--ink);
+        font: 12px/1.7 var(--mono);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .command-output.restored {
+        margin-top: 30px;
+      }
+      .approval {
+        margin: 6px 0 10px;
+        padding: 16px 20px;
+        border: 1px solid var(--card-line);
+        border-left: 3px solid var(--accent);
+        border-radius: 14px;
+        background: var(--card);
+      }
+      .approval-heading {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .approval-subject {
+        margin: 6px 0 2px;
+        color: var(--ink);
+        font: 13px/1.7 var(--mono);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .approval-detail {
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      .approval-detail span,
+      .approval-footer,
+      .approval-result {
+        color: var(--muted);
+      }
+      .approval-footer {
+        margin-top: 8px;
+        font-size: 11px;
+      }
+      .approval-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .approval-actions button {
+        min-height: 32px;
+        padding: 0 14px;
+        border-radius: 8px;
+        font-size: 12px;
+      }
+      .approval-actions .primary {
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: var(--page);
+      }
+      .approval-actions .primary:hover {
+        background: var(--accent-hover);
+      }
+      .approval-actions .secondary {
+        border: 1px solid var(--line);
+        background: var(--page);
+        color: var(--ink);
+      }
+      .approval-actions .secondary:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .approval-actions button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .approval-result {
+        font-size: 12px;
+      }
+      .approval.answered {
+        border-left-color: var(--done);
+      }
+      .approval.deny {
+        border-left-color: var(--danger);
+      }
       .note {
         margin-top: 8px;
         font-size: 12px;
@@ -456,9 +542,6 @@
         }
       }
       @media (prefers-reduced-motion: reduce) {
-        main {
-          scroll-behavior: auto;
-        }
         *,
         *::before,
         *::after {
@@ -527,7 +610,7 @@
           <svg class="icon" aria-hidden="true"><use href="#up"></use></svg>
         </button>
       </form>
-      <p class="hint">Enter to send · Shift+Enter for a new line · Esc to stop</p>
+      <p class="hint">Enter to send · Shift+Enter for a new line · Esc to stop · /help for commands</p>
     </footer>
 
     <script>
@@ -606,7 +689,7 @@
         send.disabled = !busy && (!server.ready || !input.value.trim());
       }
       // The model server's state, shown in the intro and kept for a new conversation.
-      const server = { ready: false, text: "Connecting to the local model…", state: "" };
+      const server = { ready: false, model: "", text: "Connecting to the local model…", state: "" };
       function showServer() {
         const status = $("status");
         if (!status) return;
@@ -618,20 +701,85 @@
         input.style.height = `${Math.min(input.scrollHeight, 220)}px`;
       }
 
-      function startTurn(text) {
-        $("intro")?.remove();
+      function exchange(text) {
         const section = el("section", "turn");
         section.append(el("p", "eyebrow", "You"), el("div", "user", text));
         const reply = el("div", "reply");
         reply.append(el("p", "eyebrow", "Jamie"));
+        section.append(reply);
+        return { section, reply };
+      }
+      function startTurn(text) {
+        $("intro")?.remove();
+        const { section, reply } = exchange(text);
         const tools = el("div", "tools");
         tools.hidden = true;
         const thinking = el("div", "thinking");
         thinking.append(el("span"), el("span"), el("span"));
         reply.append(tools, thinking);
-        section.append(reply);
-        follow(() => thread.append(section));
+        thread.append(section);
+        main.scrollTop = main.scrollHeight; // a new message always brings the view down
         turn = { reply, tools, thinking, answer: null, raw: "", running: null };
+      }
+      function showConversation(messages, text) {
+        if (!messages.length) {
+          thread.replaceChildren(intro.cloneNode(true));
+          showServer();
+          return;
+        }
+        thread.replaceChildren();
+        for (let index = 0; index < messages.length; index += 2) {
+          const { section, reply } = exchange(messages[index].text);
+          const answer = el("div", "answer");
+          format(answer, messages[index + 1]?.text ?? "");
+          reply.append(answer);
+          thread.append(section);
+        }
+        if (text) thread.append(el("pre", "command-output restored", text));
+        main.scrollTop = main.scrollHeight;
+      }
+
+      // A request the user answers with a click. Nothing is focused automatically, so
+      // pressing Enter while typing can never approve an action.
+      const CHOICES = {
+        once: "Allowed once.",
+        session: "Allowed for this session.",
+        deny: "Denied.",
+      };
+      function approvalCard(payload) {
+        const card = el("div", "approval");
+        card.dataset.id = payload.id;
+        card.append(el("p", "approval-heading", payload.heading));
+        if (payload.subject !== null) card.append(el("pre", "approval-subject", payload.subject));
+        for (const [name, value] of payload.details) {
+          const row = el("p", "approval-detail");
+          row.append(el("span", "", `${name}: `), value);
+          card.append(row);
+        }
+        card.append(el("p", "approval-footer", `Tool: ${payload.tool} · ${payload.footer}`));
+        const actions = el("div", "approval-actions");
+        const options = [["once", "Allow once", "primary"]];
+        if (payload.session) options.push(["session", "Allow for this session", "secondary"]);
+        options.push(["deny", "Deny", "secondary"]);
+        for (const [choice, label, kind] of options) {
+          const button = el("button", kind, label);
+          button.type = "button";
+          button.addEventListener("click", async () => {
+            actions.querySelectorAll("button").forEach((b) => (b.disabled = true));
+            await (await api()).approve(payload.id, choice);
+          });
+          actions.append(button);
+        }
+        card.append(actions);
+        return card;
+      }
+      function closeApproval(payload) {
+        const card = thread.querySelector(`.approval[data-id="${CSS.escape(payload.id)}"]`);
+        if (!card) return;
+        card.classList.add("answered", payload.choice);
+        card.querySelector(".approval-actions").replaceChildren(
+          el("p", "approval-result", CHOICES[payload.choice] ?? "Answered."),
+        );
       }
       function answerNode() {
         if (!turn.answer) {
@@ -666,22 +814,42 @@
 
       window.jamie = {
         receive(payload) {
-          if (payload.type === "status" || payload.type === "fatal") {
-            server.text = payload.text ?? payload.lines.join("\n");
-            server.state = payload.type === "fatal" ? "fatal" : "";
-            showServer();
-            return;
-          }
-          if (payload.type === "ready") {
-            Object.assign(server, {
-              ready: true,
-              text: `Running locally · ${payload.model}`,
-              state: "ready",
-            });
-            $("meta").textContent = `${payload.model} · ${$("meta").title}`;
-            showServer();
-            refreshSend();
-            return;
+          switch (payload.type) {
+            case "status":
+            case "fatal":
+              server.text = payload.text ?? payload.lines.join("\n");
+              server.state = payload.type === "fatal" ? "fatal" : "";
+              showServer();
+              return;
+            case "ready":
+              Object.assign(server, {
+                ready: true,
+                model: payload.model,
+                text: `Running locally · ${payload.model}`,
+                state: "ready",
+              });
+              $("meta").textContent = `${payload.model} · ${$("meta").title}`;
+              showServer();
+              refreshSend();
+              return;
+            case "idle":
+              if (payload.workspace) {
+                $("meta").title = payload.workspace;
+                $("meta").textContent = `${server.model} · ${payload.workspace}`;
+              }
+              finishTurn();
+              return;
+            case "clear":
+              thread.replaceChildren();
+              turn = null;
+              return;
+            case "conversation":
+              turn = null;
+              showConversation(payload.messages, payload.note);
+              return;
+            case "approval-closed":
+              closeApproval(payload);
+              return;
           }
           if (!turn) return;
           follow(() => {
@@ -701,6 +869,9 @@
                 }
                 break;
               }
+              case "approval":
+                turn.thinking.before(approvalCard(payload));
+                break;
               case "delta":
                 turn.raw += payload.text;
                 answerNode().textContent = turn.raw;
@@ -709,14 +880,14 @@
                 format(answerNode(), payload.text);
                 if (payload.truncated) note("The response reached the token limit.");
                 break;
+              case "command":
+                turn.thinking.before(el("pre", "command-output", payload.text));
+                break;
               case "error":
                 note(payload.lines.join("\n"), "note error");
                 break;
               case "cancelled":
                 note("Stopped.");
-                break;
-              case "idle":
-                finishTurn();
                 break;
             }
           });
