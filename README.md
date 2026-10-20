@@ -105,8 +105,9 @@ jamie ask "Explain Python generators briefly." --temperature 0.6 --max-tokens 10
 jamie ask "Explain your answer to this puzzle: ..." --max-tokens 4096
 ```
 
-Each invocation sends one user message in a non-streaming HTTP POST to
-`/v1/chat/completions` and prints the answer as plain text. The server chooses
+Each invocation sends one user message to `/v1/chat/completions` and streams
+the visible answer as plain text. Reasoning stays hidden. Cancelled or incomplete
+answers are not saved as completed exchanges. The server chooses
 its loaded model; Jamie does not hardcode a model name or download model files.
 No OpenAI SDK or API key is used. See the
 [llama.cpp server documentation](https://github.com/ggml-org/llama.cpp/tree/master/tools/server)

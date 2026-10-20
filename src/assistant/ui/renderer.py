@@ -16,6 +16,7 @@ from assistant.agent.events import (
     ToolFailed,
     ToolFinished,
     ToolStarted,
+    TurnFailed,
     TurnStarted,
 )
 
@@ -141,11 +142,30 @@ class OneShotRenderer:
     def __init__(self, console: Console, errors: Console) -> None:
         self._console = console
         self._errors = errors
+        self._streaming = False
+        self._streamed = ""
 
     def handle(self, event: AgentEvent) -> None:
+        if isinstance(event, TurnStarted):
+            self._streaming = False
+            self._streamed = ""
+        if isinstance(event, AssistantDelta):
+            self._console.out(event.text, end="", highlight=False)
+            self._streaming = True
+            self._streamed += event.text
+        if isinstance(event, TurnFailed) and self._streaming:
+            self._console.out("")
+            self._streaming = False
         if not isinstance(event, AssistantFinished):
             return
-        self._console.print(event.text, markup=False, highlight=False)
+        if self._streaming:
+            suffix = (
+                event.text[len(self._streamed) :] if event.text.startswith(self._streamed) else ""
+            )
+            self._console.out(suffix, highlight=False)
+            self._streaming = False
+        else:
+            self._console.print(event.text, markup=False, highlight=False)
         if event.finish_reason == "length":
             self._errors.print(
                 "The response reached the token limit; use --max-tokens to allow a longer answer.",
@@ -177,6 +197,10 @@ class EventRenderer:
             case TurnStarted():
                 self._started = None
                 self._streaming = False
+            case TurnFailed():
+                if self._streaming:
+                    self._console.out("")
+                    self._streaming = False
             case ToolStarted(tool=tool, args=args):
                 self._started = (tool, args)
                 label = _label(tool)

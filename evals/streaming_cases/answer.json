@@ -1,0 +1,11 @@
+[
+  {
+    "id": "generator-explanation",
+    "steps": [
+      {
+        "prompt": "Explain Python generators in six short paragraphs. Include what yield does, lazy execution, iteration, memory use, exhaustion, and one simple example. Use fewer than 180 words.",
+        "answer_contains": ["yield"]
+      }
+    ]
+  }
+]

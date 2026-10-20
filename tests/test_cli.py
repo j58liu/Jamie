@@ -313,7 +313,8 @@ def test_ask_prints_literal_answer_and_sends_prompt(chat_http):
         "messages": [{"role": "user", "content": "hello"}],
         "temperature": 0.6,
         "max_tokens": 1024,
-        "stream": False,
+        "stream": True,
+        "stream_options": {"include_usage": True},
     }
 
 

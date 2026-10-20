@@ -40,7 +40,9 @@ def test_chat_posts_messages_and_reads_response():
         ]
     )
 
-    assert result == LLMResponse("Hi, café!\nSecond line.", "local-qwen", "stop", 8)
+    assert result == LLMResponse(
+        "Hi, café!\nSecond line.", "local-qwen", "stop", 8, input_tokens=10
+    )
     assert len(requests) == 1
     request = requests[0]
     assert request.method == "POST"

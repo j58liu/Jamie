@@ -7,9 +7,11 @@ import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from queue import Empty, Queue
 from typing import Self
 
 from assistant.agent.events import (
+    AssistantDelta,
     AssistantFinished,
     EventSink,
     TurnFailed,
@@ -210,9 +212,9 @@ class JamieApplication:
             options = {} if thinking is None else {"thinking": thinking}
             self.model_calls += 1
             with cancellation_scope(cancel):
-                response = await asyncio.to_thread(
-                    self._backend.chat,
+                response = await self._chat(
                     messages,
+                    event_sink,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     **options,
@@ -239,6 +241,32 @@ class JamieApplication:
             )
         )
         return result
+
+    async def _chat(self, messages: list[Message], sink: EventSink, **options) -> LLMResponse:
+        """Drain worker deltas on the caller's event loop, preserving event order."""
+        stream = getattr(self._backend, "stream_chat", None)
+        if stream is None:
+            return await asyncio.to_thread(self._backend.chat, messages, **options)
+        pending: Queue[str] = Queue()
+        task = asyncio.create_task(
+            asyncio.to_thread(stream, messages, on_delta=pending.put, **options)
+        )
+
+        def drain():
+            while True:
+                try:
+                    text = pending.get_nowait()
+                except Empty:
+                    return
+                sink(AssistantDelta(text))
+
+        try:
+            while not task.done():
+                drain()
+                await asyncio.wait({task}, timeout=0.01)
+        finally:
+            drain()
+        return await task
 
     async def _run_agent_turn(
         self,

@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
@@ -11,6 +12,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from assistant.cancellation import CancellationToken, TurnCancelled, current_token
+from assistant.llm.answer import AnswerStream, answer_text
 from assistant.llm.base import (
     ContextUsage,
     LLMError,
@@ -42,6 +44,7 @@ class _Usage(BaseModel):
     model_config = ConfigDict(strict=True)
 
     completion_tokens: int | None = Field(default=None, ge=0)
+    prompt_tokens: int | None = Field(default=None, ge=0)
 
 
 class _ChatCompletion(BaseModel):
@@ -131,6 +134,37 @@ class LlamaCppBackend:
         max_tokens: int = 1024,
         thinking: bool | None = None,
     ) -> LLMResponse:
+        return self._chat(
+            messages, temperature=temperature, max_tokens=max_tokens, thinking=thinking
+        )
+
+    def stream_chat(
+        self,
+        messages: list[Message],
+        *,
+        on_delta: Callable[[str], None],
+        temperature: float = 0.6,
+        max_tokens: int = 1024,
+        thinking: bool | None = None,
+    ) -> LLMResponse:
+        """Stream visible direct-chat text; action callers continue using buffered chat."""
+        return self._chat(
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            thinking=thinking,
+            on_delta=on_delta,
+        )
+
+    def _chat(
+        self,
+        messages: list[Message],
+        *,
+        temperature: float,
+        max_tokens: int,
+        thinking: bool | None,
+        on_delta: Callable[[str], None] | None = None,
+    ) -> LLMResponse:
         """POST one request; raise LLMError on transport failures.
 
         ``thinking`` toggles the chat template's reasoning; None keeps the server default.
@@ -154,10 +188,12 @@ class LlamaCppBackend:
 
         token = current_token()
         try:
-            if token is None:
+            if token is None and on_delta is None:
                 result = self._complete(payload)
             else:
-                result = asyncio.run(self._stream_until_cancelled(payload, token))
+                result = asyncio.run(
+                    self._stream_until_cancelled(payload, token or CancellationToken(), on_delta)
+                )
         except httpx.TimeoutException as exc:
             raise LLMError(f"Request to llama.cpp timed out at {self._url}.") from exc
         except httpx.HTTPStatusError as exc:
@@ -247,13 +283,16 @@ class LlamaCppBackend:
             model=completion.model,
             finish_reason=choice.finish_reason,
             output_tokens=completion.usage.completion_tokens if completion.usage else None,
+            input_tokens=completion.usage.prompt_tokens if completion.usage else None,
         )
 
-    async def _stream_until_cancelled(self, payload: dict, token: CancellationToken) -> LLMResponse:
+    async def _stream_until_cancelled(
+        self, payload: dict, token: CancellationToken, on_delta: Callable[[str], None] | None = None
+    ) -> LLMResponse:
         """Cancelling the task closes the socket, even while the prompt is processed."""
         token.raise_if_cancelled()
         async with httpx.AsyncClient(**self._client_options()) as client:
-            request = asyncio.ensure_future(self._stream(client, payload))
+            request = asyncio.ensure_future(self._stream(client, payload, on_delta))
             while not request.done():
                 await asyncio.wait({request}, timeout=CANCEL_POLL_SECONDS)
                 if token.cancelled and not request.done():
@@ -263,32 +302,64 @@ class LlamaCppBackend:
                     raise TurnCancelled
             return request.result()
 
-    async def _stream(self, client: httpx.AsyncClient, payload: dict) -> LLMResponse:
+    async def _stream(
+        self,
+        client: httpx.AsyncClient,
+        payload: dict,
+        on_delta: Callable[[str], None] | None = None,
+    ) -> LLMResponse:
         streamed = {**payload, "stream": True, "stream_options": {"include_usage": True}}
         parts: list[str] = []
         model = finish_reason = None
         output_tokens = None
+        input_tokens = None
         first_token = None
         started = time.perf_counter()
+        visible = AnswerStream()
+        complete = False
         async with client.stream("POST", self._url, json=streamed) as response:
             if response.is_error:
                 await response.aread()  # keep llama.cpp's reason for the error message
             response.raise_for_status()
+            if response.headers.get("content-type", "").startswith("application/json"):
+                # Some compatible servers return a complete response even when asked to stream.
+                await response.aread()
+                completion = _ChatCompletion.model_validate_json(response.content)
+                choice = completion.choices[0]
+                if on_delta is not None:
+                    on_delta(answer_text(choice.message.content))
+                return LLMResponse(
+                    choice.message.content,
+                    completion.model,
+                    choice.finish_reason,
+                    completion.usage.completion_tokens if completion.usage else None,
+                    input_tokens=completion.usage.prompt_tokens if completion.usage else None,
+                )
             async for line in response.aiter_lines():
                 data = line.removeprefix("data:").strip()
                 if not line.startswith("data:") or not data:
                     continue
                 if data == "[DONE]":
+                    complete = True
                     break
                 chunk = _Chunk.model_validate_json(data)
                 model = chunk.model or model
                 if chunk.usage is not None:
                     output_tokens = chunk.usage.completion_tokens
+                    input_tokens = chunk.usage.prompt_tokens
                 for choice in chunk.choices:
                     if first_token is None and (
                         choice.delta.content or choice.delta.reasoning_content
                     ):
                         first_token = time.perf_counter() - started  # reasoning counts
                     parts.append(choice.delta.content or "")
+                    if on_delta is not None and (text := visible.feed(choice.delta.content or "")):
+                        on_delta(text)
                     finish_reason = choice.finish_reason or finish_reason
-        return LLMResponse("".join(parts), model, finish_reason, output_tokens, first_token)
+        if not complete or finish_reason is None:
+            raise LLMError("llama.cpp returned an incomplete streamed answer.")
+        if on_delta is not None and (text := visible.finish()):
+            on_delta(text)
+        return LLMResponse(
+            "".join(parts), model, finish_reason, output_tokens, first_token, input_tokens
+        )
