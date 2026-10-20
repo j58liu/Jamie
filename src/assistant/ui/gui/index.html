@@ -825,7 +825,9 @@
               Object.assign(server, {
                 ready: true,
                 model: payload.model,
-                text: `Running locally · ${payload.model}`,
+                text: `Running locally · ${payload.model}${
+                  payload.shortcut ? ` · ${payload.shortcut} brings Jamie back from anywhere` : ""
+                }`,
                 state: "ready",
               });
               $("meta").textContent = `${payload.model} · ${$("meta").title}`;
@@ -935,6 +937,7 @@
         applyTheme();
       });
       system.addEventListener("change", applyTheme);
+      window.addEventListener("focus", () => input.focus()); // after the shortcut or Dock
       applyTheme();
       input.focus();
     </script>

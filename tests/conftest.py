@@ -28,3 +28,14 @@ def confirm_every_tool(monkeypatch: pytest.MonkeyPatch):
         if level is not policy.PermissionLevel.READ and tool != "web_search"
     }
     monkeypatch.setattr(policy, "CONFIRM_REQUIRED", frozenset(confirmed))
+
+
+@pytest.fixture(autouse=True)
+def isolated_app_install(monkeypatch: pytest.MonkeyPatch, tmp_path_factory):
+    """Tests never read the real Jamie.app or write a real login item."""
+    from assistant.ui import login_item
+
+    root = tmp_path_factory.mktemp("home")
+    monkeypatch.setattr(login_item, "APP_LOCATIONS", (root / "Applications" / "Jamie.app",))
+    monkeypatch.setattr(login_item, "LOGIN_AGENT", root / "LaunchAgents" / "jamie.plist")
+    return root

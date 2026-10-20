@@ -56,6 +56,8 @@ clang -O2 -Wall -o "$app/Contents/MacOS/Jamie" "$root/macos/launcher.c" \
   $("$config" --cflags) $("$config" --embed --ldflags)
 
 sed "s/@VERSION@/$version/g" "$root/macos/Info.plist" > "$app/Contents/Info.plist"
+# jamie doctor compares this with its own environment to spot a stale build.
+/usr/libexec/PlistBuddy -c "Add :JamiePython string $python" "$app/Contents/Info.plist"
 
 icons=()
 for size in 16 32 128 256 512; do

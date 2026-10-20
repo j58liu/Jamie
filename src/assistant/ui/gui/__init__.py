@@ -10,6 +10,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable, Coroutine
@@ -370,15 +371,21 @@ class _RuntimeThread:
         self._thread.join(timeout=5)
 
 
-def run_gui(settings: ProjectConfig) -> None:
-    """Show the window until it closes, working in the current directory."""
+def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
+    """Run until Jamie quits, working in the current directory.
+
+    Closing the window hides it; the Dock icon or the shortcut brings it back.
+    ``hidden`` starts without showing the window, as at login.
+    """
     from Foundation import NSBundle
 
     # Outside Jamie.app the process is Python; name the menu before AppKit reads it.
     NSBundle.mainBundle().infoDictionary()["CFBundleName"] = "Jamie"
     import webview  # loaded only here, so the terminal never pays for AppKit
+    from PyObjCTools import AppHelper
 
     from assistant.tools import WebClient, create_agent_registry
+    from assistant.ui.gui import background, hotkey
 
     runtime = _RuntimeThread()
     window = webview.create_window(
@@ -388,7 +395,16 @@ def run_gui(settings: ProjectConfig) -> None:
         height=820,
         min_size=(420, 480),
         text_select=True,
+        hidden=hidden,
     )
+    quitting = threading.Event()
+    background.hide_instead_of_closing(window, quitting)
+    background.handle_reopen_and_quit(window, quitting)
+
+    def quit_jamie() -> None:
+        quitting.set()
+        window.destroy()
+
     closed = threading.Event()  # evaluate_js on a destroyed window can block the loop
     window.events.closed += closed.set
 
@@ -433,13 +449,29 @@ def run_gui(settings: ProjectConfig) -> None:
         )
         resources.callback(tools.close)
         session = GuiSession(
-            application, tools, push, runtime.submit, model=info.model, on_quit=window.destroy
+            application, tools, push, runtime.submit, model=info.model, on_quit=quit_jamie
         )
         sessions.append(session)
-        push({"type": "ready", "model": short_model(info.model)})
+        push({"type": "ready", "model": short_model(info.model), "shortcut": shortcut_label})
+
+    shortcuts: list[hotkey.HotKey] = []  # keeps the registration alive
+    shortcut_label: str | None = None
+
+    def register_shortcut(done: threading.Event) -> None:
+        nonlocal shortcut_label
+        try:
+            shortcuts.append(hotkey.register(lambda: background.toggle_window(window)))
+            shortcut_label = hotkey.SHORTCUT_LABEL
+        except OSError as exc:
+            print(f"Jamie: {exc}", file=sys.stderr)  # the app log; the window still works
+        finally:
+            done.set()
 
     def startup() -> None:
         window.events.loaded.wait()
+        registered = threading.Event()
+        AppHelper.callAfter(register_shortcut, registered)  # Carbon wants the main thread
+        registered.wait(5)
         try:
             runtime.run(start())
         except Exception as exc:  # noqa: BLE001 - shown in the window, which stays open

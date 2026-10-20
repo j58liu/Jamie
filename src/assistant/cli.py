@@ -343,6 +343,9 @@ def gui(
         Path | None,
         typer.Option("--config", help="Read a specific TOML configuration file."),
     ] = None,
+    hidden: Annotated[
+        bool, typer.Option("--hidden", help="Start in the background without the window.")
+    ] = False,
 ) -> None:
     """Open Jamie in a window; Jamie.app runs this command."""
     try:
@@ -350,7 +353,7 @@ def gui(
     except ConfigurationError as exc:
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
-    run_gui(settings)
+    run_gui(settings, hidden=hidden)
 
 
 SYMBOLS = {

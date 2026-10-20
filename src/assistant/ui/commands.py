@@ -27,6 +27,7 @@ from assistant.tools.base import ToolError
 from assistant.tools.registry import create_agent_registry
 from assistant.tools.scopes import ToolScope
 from assistant.tools.web import WebClient
+from assistant.ui import login_item
 from assistant.ui.renderer import EventRenderer, render_error
 
 if TYPE_CHECKING:
@@ -490,6 +491,25 @@ def _cwd(state: ReplState, argument: str) -> None:
     state.say(str(Path.cwd()))
 
 
+def _startup(state: ReplState, argument: str) -> None:
+    argument = argument.lower()
+    if argument not in {"", "on", "off"}:
+        state.say("Usage: /startup on|off")
+        return
+    app = login_item.installed_app()
+    if argument == "on":
+        if app is None:
+            state.say("Build Jamie.app first with macos/build-app.sh.")
+            return
+        login_item.open_at_login(app)
+    elif argument == "off":
+        login_item.stop_opening_at_login()
+    if login_item.opens_at_login():
+        state.say("Open at login: on. Jamie starts in the background when you log in.")
+    else:
+        state.say("Open at login: off. Turn it on with /startup on.")
+
+
 def duration(seconds: float) -> str:
     if seconds < 60:
         return f"{seconds:.1f} s"
@@ -602,6 +622,13 @@ def create_command_registry() -> CommandRegistry:
         SlashCommand("/permissions", "Show which tools ask for approval.", _permissions),
         SlashCommand("/cwd", "Show or change the working directory.", _cwd, "[path]"),
         SlashCommand("/stats", "Show turn, token, and timing totals.", _stats),
+        SlashCommand(
+            "/startup",
+            "Open Jamie.app in the background when you log in.",
+            _startup,
+            "[on|off]",
+            completions=("on", "off"),
+        ),
         SlashCommand("/quit", "Leave Jamie (also Ctrl+D).", _quit, aliases=("/exit",)),
     ):
         registry.register(command)

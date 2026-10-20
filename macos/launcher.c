@@ -6,6 +6,7 @@
 #include <Python.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -25,10 +26,21 @@ static void log_to_file(const char *home) {
 int main(int argc, char **argv) {
     PyStatus status;
     PyConfig config;
-    char *arguments[] = {argv[0], "gui"};
+    /* `jamie gui` plus the app's own arguments, such as --hidden from the login item. */
+    char **arguments = calloc((size_t)argc + 2, sizeof *arguments);
+    int count = 0;
     const char *home = getenv("HOME");
 
-    (void)argc;
+    if (arguments == NULL) {
+        return 1;
+    }
+    arguments[count++] = argv[0];
+    arguments[count++] = "gui";
+    for (int index = 1; index < argc; index++) {
+        if (strncmp(argv[index], "-psn_", 5) != 0) {  /* older macOS adds a process serial */
+            arguments[count++] = argv[index];
+        }
+    }
     log_to_file(home);
     /* Finder starts apps in /; work from the home folder, as a new terminal does. */
     if (home != NULL && chdir(home) != 0) {
@@ -42,7 +54,7 @@ int main(int argc, char **argv) {
     if (PyStatus_Exception(status)) goto fail;
     status = PyConfig_SetString(&config, &config.run_module, L"assistant");
     if (PyStatus_Exception(status)) goto fail;
-    status = PyConfig_SetBytesArgv(&config, 2, arguments);
+    status = PyConfig_SetBytesArgv(&config, count, arguments);
     if (PyStatus_Exception(status)) goto fail;
     status = Py_InitializeFromConfig(&config);
     if (PyStatus_Exception(status)) goto fail;

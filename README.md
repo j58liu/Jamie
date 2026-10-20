@@ -201,8 +201,23 @@ is loading, and leaves the server running after the window closes. Startup
 failures appear in the window. Logs are in `~/Library/Logs/Jamie/`.
 
 On first launch macOS asks whether Jamie may access the Documents folder, because
-the checkout lives there; Jamie opens once you answer. Later,
-macOS also asks before Jamie first controls another app.
+the checkout lives there; Jamie opens once you answer. Each rebuild is a new
+signature to macOS, so it asks again after `macos/build-app.sh`. Later, macOS
+also asks before Jamie first controls another app.
+
+Jamie keeps running when you close its window, like Messages or Mail: the model
+and the conversation stay loaded. Click the Dock icon or press ⌃⌥J anywhere to
+bring the window back; ⌃⌥J again hides Jamie. The shortcut uses macOS's hot key
+registration, so it needs no Accessibility permission. Quit with ⌘Q, the Dock
+menu, or `/quit`.
+
+`/startup on` opens Jamie in the background each time you log in (with the
+window hidden, and the model server started if needed); `/startup off` stops it.
+It writes a user LaunchAgent, `~/Library/LaunchAgents/me.jameshliu.jamie.plist`,
+which launchd reads at your next login, so turning it on starts nothing right
+away. `jamie gui --hidden` starts the same way by hand. `jamie doctor` reports
+whether Jamie.app is installed, whether it was built for this checkout, and
+whether it opens at login.
 
 The window uses the same runtime, tools, permission policy, and memory as the
 terminal. Enter sends, Shift+Enter adds a line, Escape stops a running turn, and
@@ -211,7 +226,7 @@ as HTML, and the page loads nothing from the network.
 
 Slash commands work as in the terminal and print into the window: `/help`,
 `/history`, `/resume`, `/diff`, `/undo`, `/mode`, `/scope`, `/compact`, `/stats`,
-and the rest. `/new` and `/resume` redraw the conversation, `/clear` empties the
+`/startup`, and the rest. `/new` and `/resume` redraw the conversation, `/clear` empties the
 window, and `/quit` closes it.
 
 When the permission policy requires approval, the window shows the exact action
