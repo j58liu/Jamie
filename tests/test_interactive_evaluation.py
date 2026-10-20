@@ -154,10 +154,10 @@ def test_every_shipped_scenario_passes_against_a_model_that_behaves(tmp_path: Pa
         r.case_id: (r.failed_step, r.failure_reason) for r in report.results if not r.success
     }
     assert failures == {}
-    assert len(cases) == 12
+    assert len(cases) == 11
     assert report.summary()["success"] is True
     saved = json.loads(path.read_text())
-    assert saved["summary"]["passes"] == 12
+    assert saved["summary"]["passes"] == 11
     growth = next(r for r in report.results if r.case_id == "interactive-context-growth")
     tokens = [step.context_tokens for step in growth.steps]
     assert tokens == sorted(tokens) and len(set(tokens)) == len(tokens)

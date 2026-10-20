@@ -291,10 +291,14 @@ Tool permissions come from a fixed application policy:
 | Permission | Policy decision |
 | --- | --- |
 | `READ` | Allow |
-| `SAFE_WRITE` | Confirm |
-| `SENSITIVE` | Confirm |
+| `SAFE_WRITE` | Allow |
+| `SENSITIVE` | Allow |
 | `DESTRUCTIVE` | Confirm |
-| `EXTERNAL` | Confirm |
+| `EXTERNAL` | Allow, except `send_email` |
+
+Only actions that cannot be taken back ask first: `DESTRUCTIVE` tools,
+`send_email`, and `shell`. None of these is registered today, so Jamie currently
+runs every tool without a prompt. File edits remain reversible with `/undo`.
 
 The default policy assigns filesystem reads and cached page extraction to
 `READ`; the five reversible editing tools, application opening, Finder reveal,
@@ -332,9 +336,8 @@ tools to the four read tools:
 - `create_directory` creates one directory, with optional parent creation.
 - `trash_file` removes a file or directory while retaining its turn snapshot.
 
-All five tools are classified as `SAFE_WRITE`, so the default approval provider
-denies them. A trusted user interface must approve the exact normalized
-arguments before snapshots or filesystem changes occur. Paths stay within the
+All five tools are classified as `SAFE_WRITE` and run without approval; `/undo`
+restores the turn's snapshots. Paths stay within the
 workspace, editing through symbolic links is rejected, and no shell command is
 used.
 
@@ -390,11 +393,9 @@ workspace registry:
 
 The tools pass fixed argument lists directly to the macOS commands without a
 command shell. Finder paths must remain inside the configured workspace.
-Application opening, Finder reveal, and clipboard writing require
-`SAFE_WRITE` approval. Clipboard reading, Shortcuts, and AppleScript require
-`SENSITIVE` approval because they can expose data or perform broader
-automation. The terminal shows the exact tool, permission, and arguments and
-defaults to denying the request.
+Application opening, Finder reveal, and clipboard writing are `SAFE_WRITE`.
+Clipboard reading, Shortcuts, and AppleScript are `SENSITIVE` because they can
+expose data or perform broader automation. All of them run without approval.
 
 Use the agent command for model-directed tools:
 
@@ -403,7 +404,7 @@ jamie "open Safari"
 ```
 
 Jamie sends the task to Qwen, validates its action, applies the permission
-policy, and asks for approval before running the macOS command. `jamie ask`
+policy, and runs the macOS command. `jamie ask`
 continues to send a prompt directly to the model without tools. The explicit
 form `jamie agent "open Safari"` is also available. No screenshot or
 screen-capture tool is included.
@@ -425,11 +426,11 @@ Jamie provides these web tools without browser automation:
   returns its cited report, which ends the turn. It is available where Jamie
   has a model backend: the interactive terminal and `jamie agent`.
 
-Search, retrieval, and research are `EXTERNAL` operations. `web_search` runs
-without asking: it sends only the model-written query to DuckDuckGo, which can
-include text from the conversation or from files Jamie read. `fetch_url` and
-`research` require approval, and approving `research` covers the searches and
-page reads inside it. Extraction reads only the session cache and is classified
+Search, retrieval, and research are `EXTERNAL` operations and run without
+asking. A search sends only the model-written query to DuckDuckGo, and a fetch
+sends the model-written URL; both can include text from the conversation or from
+files Jamie read. Searches are sent one at a time, at least a second apart,
+because DuckDuckGo answers bursts with a bot check. Extraction reads only the session cache and is classified
 as `READ`.
 Retrieval does not use environment proxies or automatic redirects. It validates
 every redirect, rejects credentials and private, loopback, link-local, or

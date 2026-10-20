@@ -46,6 +46,7 @@ def test_macos_registry_exposes_six_classified_tools(tmp_path: Path):
     assert risks["run_applescript"] == PermissionLevel.SENSITIVE.value
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_open_application_uses_fixed_argument_array_after_approval(tmp_path: Path):
     runner = FakeRunner()
     registry, requests = approved_registry(tmp_path, runner)
@@ -69,6 +70,7 @@ def test_reveal_in_finder_resolves_only_workspace_paths(tmp_path: Path):
     assert not escaped.success
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_clipboard_read_and_write_use_pbpaste_and_pbcopy(tmp_path: Path):
     runner = FakeRunner(["copied text", ""])
     registry, requests = approved_registry(tmp_path, runner)
@@ -102,6 +104,7 @@ def test_shortcut_and_applescript_use_fixed_commands(tmp_path: Path):
     ]
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_default_denial_prevents_macos_command(tmp_path: Path):
     runner = FakeRunner()
     registry = create_macos_registry(tmp_path, runner=runner)

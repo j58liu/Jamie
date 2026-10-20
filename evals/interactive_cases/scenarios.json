@@ -49,27 +49,12 @@
     ]
   },
   {
-    "id": "interactive-approval-denied",
+    "id": "interactive-write-without-approval",
     "steps": [
       {
         "prompt": "Create a file named hello.txt containing the text hi.",
         "tools": true,
-        "approve": false,
-        "approval_requested": true,
-        "files_absent": ["hello.txt"],
-        "answer_contains": ["not approved"]
-      },
-      {"prompt": "Reply with the word ready.", "answer_contains": ["ready"]}
-    ]
-  },
-  {
-    "id": "interactive-approval-accepted",
-    "steps": [
-      {
-        "prompt": "Create a file named hello.txt containing the text hi.",
-        "tools": true,
-        "approve": true,
-        "approval_requested": true,
+        "approval_requested": false,
         "tool_called": "write_file",
         "files_after": {"hello.txt": "hi"}
       }
@@ -121,7 +106,7 @@
         "prompt": "Research the boiling point of water at standard pressure and how lower pressure changes it.",
         "tools": true,
         "approve": true,
-        "approval_requested": true,
+        "approval_requested": false,
         "tool_called": "research",
         "answer_contains": ["100"]
       },

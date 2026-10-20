@@ -50,6 +50,7 @@ def agent_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return backend, command_runner
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_agent_cli_asks_user_before_opening_application(agent_cli):
     backend, command_runner = agent_cli
     result = runner.invoke(cli.app, ["agent", "open Safari"], input="y\n")
@@ -70,14 +71,15 @@ def test_agent_cli_asks_user_before_opening_application(agent_cli):
 
 def test_prompt_without_command_runs_agent(agent_cli):
     backend, command_runner = agent_cli
-    result = runner.invoke(cli.app, ["open Safari"], input="y\n")
+    result = runner.invoke(cli.app, ["open Safari"])
     assert result.exit_code == 0, result.output
-    assert "Approval required" in result.output
+    assert "Approval required" not in result.output  # reversible actions run without asking
     assert "Safari was opened." in result.output
     assert command_runner.calls == [(["open", "-g", "-j", "-a", "Safari"], None, 30)]
     assert backend.calls == 2
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_agent_cli_denial_prevents_application_launch(agent_cli):
     backend, command_runner = agent_cli
     result = runner.invoke(cli.app, ["agent", "open Safari"], input="n\n")

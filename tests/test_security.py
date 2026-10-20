@@ -74,15 +74,17 @@ def test_default_policy_classifies_named_tools():
     [
         ("read_file", PolicyAction.ALLOW),
         ("web_search", PolicyAction.ALLOW),
-        ("fetch_url", PolicyAction.CONFIRM),
-        ("research", PolicyAction.CONFIRM),
-        ("write_file", PolicyAction.CONFIRM),
+        ("fetch_url", PolicyAction.ALLOW),
+        ("research", PolicyAction.ALLOW),
+        ("write_file", PolicyAction.ALLOW),
+        ("clipboard_read", PolicyAction.ALLOW),
+        ("run_applescript", PolicyAction.ALLOW),
         ("shell", PolicyAction.CONFIRM),
         ("send_email", PolicyAction.CONFIRM),
         ("delete_file", PolicyAction.CONFIRM),
     ],
 )
-def test_policy_allows_reads_and_web_search_without_confirmation(tool: str, expected: PolicyAction):
+def test_policy_confirms_only_irreversible_actions(tool: str, expected: PolicyAction):
     assert PermissionPolicy().decide(tool).action is expected
 
 

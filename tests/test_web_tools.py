@@ -123,6 +123,7 @@ def test_public_url_validation_rejects_unsafe_targets(url: str):
         validate_public_url(url, public_resolver)
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_registry_requires_approval_for_network_then_extracts_without_another_prompt():
     search_html = '<a class="result__a" href="https://example.com/page">Example</a>'
     page_html = "<html><head><title>Example</title></head><body><p>Evidence.</p></body></html>"
@@ -205,6 +206,7 @@ def test_page_tools_cut_long_pages_to_fit_the_model_context():
     assert len(output["markdown"]) == MAX_TOOL_PAGE_CHARACTERS
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_default_denial_prevents_web_request():
     requests = []
 

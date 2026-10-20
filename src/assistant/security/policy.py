@@ -63,13 +63,15 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
     }
 )
 
-# Contacts the network but runs without asking. Only the model-written query is sent,
-# to DuckDuckGo; it can contain text from the conversation or files the model read.
-ALLOWED_WITHOUT_APPROVAL = frozenset({"web_search"})
+# The user chose to confirm only actions that cannot be taken back: destructive ones,
+# email that reaches other people, and arbitrary shell commands (not registered today).
+# Everything else, including AppleScript, clipboard reads, and network requests carrying
+# model-written text, runs without asking; edits stay reversible with /undo.
+CONFIRM_REQUIRED = frozenset({"send_email", "shell"})
 
 
 class PermissionPolicy:
-    """Classify tools and require confirmation for every non-read action but web search."""
+    """Classify tools and require confirmation only for irreversible actions."""
 
     def __init__(self, permissions: Mapping[str, PermissionLevel] | None = None) -> None:
         source = DEFAULT_TOOL_PERMISSIONS if permissions is None else permissions
@@ -94,6 +96,6 @@ class PermissionPolicy:
 
     def decide(self, tool: str) -> PolicyDecision:
         permission = self.permission_for(tool)
-        allowed = permission is PermissionLevel.READ or tool in ALLOWED_WITHOUT_APPROVAL
-        action = PolicyAction.ALLOW if allowed else PolicyAction.CONFIRM
+        confirm = permission is PermissionLevel.DESTRUCTIVE or tool in CONFIRM_REQUIRED
+        action = PolicyAction.CONFIRM if confirm else PolicyAction.ALLOW
         return PolicyDecision(tool=tool, permission=permission, action=action)

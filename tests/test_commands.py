@@ -110,8 +110,8 @@ def test_tools_and_permissions_come_from_the_policy():
 
     assert "read_file" in output and "READ" in output
     assert "READ (runs without asking)" in output
-    assert "EXTERNAL (runs without asking): web_search" in output
-    assert "EXTERNAL (asks for approval): fetch_url, research" in output
+    assert "EXTERNAL (runs without asking): fetch_url, research, web_search" in output
+    assert "asks for approval" not in output  # no registered tool is irreversible
 
 
 def test_thinking_and_model_report_settings():

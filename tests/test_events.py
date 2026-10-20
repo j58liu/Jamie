@@ -100,6 +100,7 @@ def test_failed_tools_emit_failure_instead_of_finished(raises):
     assert events[2].duration >= 0
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 @pytest.mark.parametrize("approved", [True, False])
 def test_approval_event_keeps_existing_authorization(tmp_path: Path, approved):
     events = []

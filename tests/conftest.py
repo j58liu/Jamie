@@ -15,3 +15,16 @@ def no_network(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(socket.socket, "connect", guarded_connect)
     monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect)
+
+
+@pytest.fixture
+def confirm_every_tool(monkeypatch: pytest.MonkeyPatch):
+    """Exercise the approval path: confirm every non-read tool but web search."""
+    from assistant.security import policy
+
+    confirmed = {
+        tool
+        for tool, level in policy.DEFAULT_TOOL_PERMISSIONS.items()
+        if level is not policy.PermissionLevel.READ and tool != "web_search"
+    }
+    monkeypatch.setattr(policy, "CONFIRM_REQUIRED", frozenset(confirmed))

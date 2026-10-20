@@ -47,6 +47,7 @@ def test_workspace_registry_exposes_read_and_editing_tools(tmp_path: Path):
     assert risks["trash_file"] == PermissionLevel.SAFE_WRITE.value
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_write_is_denied_by_default_before_snapshot_or_mutation(tmp_path: Path):
     registry = create_workspace_registry(tmp_path)
     result = registry.execute("write_file", {"path": "new.txt", "content": "new"})
@@ -55,6 +56,7 @@ def test_write_is_denied_by_default_before_snapshot_or_mutation(tmp_path: Path):
     assert registry.handle_command("/undo") == "Nothing to undo."
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_edit_diff_verification_and_undo(tmp_path: Path):
     source = tmp_path / "math.py"
     source.write_text("def add(a, b):\n    return a - b\n")
@@ -131,6 +133,7 @@ def test_empty_file_creation_has_diff_and_can_be_undone(tmp_path: Path):
     assert not (tmp_path / "empty.txt").exists()
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_move_create_and_trash_are_undone_as_one_turn(tmp_path: Path):
     (tmp_path / "source.txt").write_text("source")
     (tmp_path / "trash.txt").write_text("trash")

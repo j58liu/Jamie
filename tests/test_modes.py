@@ -2,6 +2,7 @@ import asyncio
 import io
 import json
 
+import pytest
 from prompt_toolkit import PromptSession
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
@@ -69,6 +70,7 @@ def test_modes_and_local_commands_reduce_model_work_without_bypassing_tools(tmp_
     )
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_smaller_tool_sets_keep_policy_and_undo_state(tmp_path):
     registry = create_workspace_registry(tmp_path)
     read = select_tools(registry, ToolScope.READ)

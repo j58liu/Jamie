@@ -2,6 +2,7 @@ import io
 import shlex
 from pathlib import Path
 
+import pytest
 from rich.console import Console
 
 from assistant.security.approvals import ApprovalRequest, ApprovalStatus
@@ -95,6 +96,7 @@ def test_sensitive_actions_cannot_be_allowed_for_the_session():
     assert len(asked) == 3  # "a" rejected, then asked again for the second request
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 def test_policy_decides_and_denial_blocks_execution(tmp_path: Path):
     (tmp_path / "keep.txt").write_text("original")
     provider, console, asked = _provider("n", "a")

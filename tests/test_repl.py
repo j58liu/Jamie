@@ -228,6 +228,7 @@ def test_multiline_prompt_reaches_the_model_as_one_turn(tmp_path: Path):
     assert backend.requests == [[Message("user", "first line\n    second line")]]
 
 
+@pytest.mark.usefixtures("confirm_every_tool")
 @pytest.mark.parametrize("approved", [True, False])
 def test_interactive_agent_uses_approval_before_opening_safari(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, approved: bool
