@@ -418,6 +418,19 @@ retrieved URLs. A missing, unknown, or invented citation fails validation, with
 one correction attempt. A successful answer cites at least two retrieved
 sources. Use `--max-sources` to select a limit from two through eight.
 
+## Everyday performance benchmarks
+
+```sh
+jamie eval benchmark --runs 3
+```
+
+The fixed everyday suite covers file discovery, document questions, verified edits,
+remembered decisions, failed-file recovery, and declined approval. Reports record
+task success, median and p95 completion time, time to visible text, model calls,
+retries, approvals, token usage, fixture hashes, model identity, server settings,
+and hardware. Failed trials remain in the results. Timing covers warm-server use;
+each trial gets a fresh temporary workspace and SQLite database.
+
 ## Persistent memory
 
 Jamie stores completed local conversations in SQLite. On macOS the default

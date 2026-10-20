@@ -8,6 +8,7 @@ display code cannot influence what the model sees.
 """
 
 import asyncio
+import math
 import statistics
 import tempfile
 from collections.abc import Callable
@@ -19,8 +20,14 @@ from typing import Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from assistant import __version__
-from assistant.agent.events import AgentEvent, AssistantFinished, TurnFailed, TurnStarted
-from assistant.agent.loop import AgentError
+from assistant.agent.events import (
+    AgentEvent,
+    AssistantDelta,
+    AssistantFinished,
+    TurnFailed,
+    TurnStarted,
+)
+from assistant.agent.loop import INVALID_OUTPUT_MESSAGE, AgentError
 from assistant.agent_evaluation import ToolCall, _RecordingBackend, _RecordingTools
 from assistant.cancellation import CancellationToken, TurnCancelled
 from assistant.config import ProjectConfig
@@ -33,11 +40,20 @@ from assistant.llm.base import LLMBackend, LLMError, LLMResponse, Message
 from assistant.research_evaluation import _FixtureWeb
 from assistant.runtime import JamieApplication
 from assistant.security.approvals import CallbackApprovalProvider
-from assistant.tools.registry import create_workspace_registry, register_web_tools
+from assistant.tools.registry import (
+    create_agent_registry,
+    create_workspace_registry,
+    register_web_tools,
+)
 from assistant.tools.web import SearchResult
 
 CANCEL_AFTER_SECONDS = 1.0
 MALFORMED_ACTION = "Sure, I will read the file now."
+
+
+def _total_usage(responses: list[LLMResponse], field: str) -> int | None:
+    counts = [getattr(response, field) for response in responses]
+    return sum(counts) if counts and all(count is not None for count in counts) else None
 
 
 class InteractiveStep(BaseModel):
@@ -94,6 +110,8 @@ class InteractiveEvalCase(BaseModel):
     web: WebFixture | None = None  # adds web_search, fetch_url, and research to tool steps
     steps: list[InteractiveStep] = Field(min_length=1)
     context_grows: bool = False  # the measured context must grow on every turn
+    all_tools: bool = False
+    tool_scope: Literal["all", "files", "read", "web", "macos"] = "all"
 
     @model_validator(mode="after")
     def validate_case(self) -> Self:
@@ -115,6 +133,14 @@ class StepResult(BaseModel):
     context_tokens: int | None
     passed: bool
     failure_reason: str | None
+    latency_seconds: float = 0.0
+    first_visible_seconds: float | None = None
+    model_calls: int = 0
+    parse_retries: int = 0
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    compactions: int = 0
+    initial_input_tokens: int | None = None
 
 
 class InteractiveRunResult(BaseModel):
@@ -127,6 +153,7 @@ class InteractiveRunResult(BaseModel):
     output_tokens: int | None
     latency_seconds: float
     steps: list[StepResult]
+    model_outputs: list[str] = Field(default_factory=list)
 
 
 class InteractiveEvalReport(BaseModel):
@@ -140,12 +167,22 @@ class InteractiveEvalReport(BaseModel):
     timeout_seconds: float
     total_duration_seconds: float = 0.0
     results: list[InteractiveRunResult] = Field(default_factory=list)
+    environment: dict[str, JsonValue] = Field(default_factory=dict)
 
     def summary(self) -> dict[str, JsonValue]:
         planned = len(self.cases) * self.runs_per_case
         completed = len(self.results)
         passes = sum(result.success for result in self.results)
         tokens = [r.output_tokens for r in self.results if r.output_tokens is not None]
+        steps = [step for result in self.results for step in result.steps]
+        latencies = sorted(r.latency_seconds for r in self.results)
+        visible = [
+            step.first_visible_seconds for step in steps if step.first_visible_seconds is not None
+        ]
+        initial = [
+            step.initial_input_tokens for step in steps if step.initial_input_tokens is not None
+        ]
+        input_counts = [step.input_tokens for step in steps if step.input_tokens is not None]
         return {
             "models": sorted({r.model for r in self.results if r.model is not None}),
             "cases": len(self.cases),
@@ -158,6 +195,18 @@ class InteractiveEvalReport(BaseModel):
             "median_latency_seconds": (
                 statistics.median(r.latency_seconds for r in self.results) if self.results else None
             ),
+            "p95_latency_seconds": latencies[max(0, math.ceil(len(latencies) * 0.95) - 1)]
+            if latencies
+            else None,
+            "median_first_visible_seconds": statistics.median(visible) if visible else None,
+            "first_visible_reported_turns": len(visible),
+            "model_calls": sum(step.model_calls for step in steps),
+            "parse_retries": sum(step.parse_retries for step in steps),
+            "compactions": sum(step.compactions for step in steps),
+            "median_initial_input_tokens": statistics.median(initial) if initial else None,
+            "approval_prompts": sum(step.approvals_requested for step in steps),
+            "input_tokens": sum(input_counts) if input_counts else None,
+            "input_usage_reported_turns": sum(step.input_tokens is not None for step in steps),
             "output_tokens": sum(tokens) if tokens else None,
             "total_duration_seconds": self.total_duration_seconds,
             "success": self.status == "completed" and passes == planned,
@@ -220,9 +269,24 @@ def _step_tools(
 ) -> _RecordingTools:
     """The REPL's tools for one step: workspace tools, plus fixture-backed web tools."""
     backend.malform_next = step.malformed_first_action
-    provider = CallbackApprovalProvider(lambda request: approvals.append(request) or step.approve)
-    registry = create_workspace_registry(workspace, approvals=provider)
-    if case.web is not None:
+    writes = {"write_file", "edit_file", "move_file", "create_directory", "trash_file"}
+    provider = CallbackApprovalProvider(
+        lambda request: (
+            approvals.append(request)
+            or (step.approve and request.tool in writes | {"fetch_url", "research"})
+        )
+    )
+    if case.all_tools:
+        fixture = case.web or WebFixture()
+        registry = create_agent_registry(
+            workspace,
+            approvals=provider,
+            web=_FixtureWeb(fixture.search_results, fixture.pages),
+            backend=backend,
+        )
+    else:
+        registry = create_workspace_registry(workspace, approvals=provider)
+    if case.web is not None and not case.all_tools:
         web = _FixtureWeb(case.web.search_results, case.web.pages)
         register_web_tools(registry, web, backend)
     return _RecordingTools(registry)
@@ -234,6 +298,8 @@ async def _run_steps(
     case: InteractiveEvalCase,
     workspace: Path,
     timeout_seconds: float,
+    max_tokens: int = 1024,
+    temperature: float = 0.6,
 ) -> list[StepResult]:
     history: list[Message] = []
     conversation_id: str | None = None
@@ -251,6 +317,17 @@ async def _run_steps(
         answer = error = None
         cancelled = False
         requests_before = len(backend.requests)
+        responses_before = len(backend.responses)
+        started = perf_counter()
+        first_visible = None
+
+        def observe(event: AgentEvent, events=events, started=started) -> None:
+            nonlocal first_visible
+            events.append(event)
+            if first_visible is None and isinstance(event, AssistantDelta | AssistantFinished):
+                if event.text.strip():
+                    first_visible = perf_counter() - started
+
         conversation_id = conversation_id or application.start_conversation()
         token = CancellationToken()
         loop = asyncio.get_running_loop()
@@ -280,8 +357,10 @@ async def _run_steps(
                     history=history,
                     cancel=token,
                     conversation_id=conversation_id,
-                    event_sink=events.append,
+                    event_sink=observe,
                     tools=tools,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
                 )
                 answer = turn.message
         except TurnCancelled:
@@ -318,6 +397,21 @@ async def _run_steps(
             context_tokens=context_tokens,
             passed=False,
             failure_reason=None,
+            latency_seconds=perf_counter() - started,
+            first_visible_seconds=first_visible,
+            model_calls=len(backend.requests) - requests_before,
+            parse_retries=sum(
+                request[-1].content == INVALID_OUTPUT_MESSAGE
+                for request in backend.requests[requests_before:]
+            ),
+            input_tokens=_total_usage(backend.responses[responses_before:], "input_tokens"),
+            output_tokens=_total_usage(backend.responses[responses_before:], "output_tokens"),
+            initial_input_tokens=(
+                backend.responses[responses_before].input_tokens
+                if len(backend.responses) > responses_before
+                else None
+            ),
+            compactions=0,
         )
         reason = (
             "compact_failed" if compact_failed else _step_failure(step, result, events, workspace)
@@ -353,6 +447,19 @@ class _RequestRecorder(_RecordingBackend):
         self.requests: list[list[Message]] = []
         self.malform_next = False  # replace the next reply with prose, as models sometimes do
 
+    def __getattr__(self, name):
+        if name != "stream_chat":
+            raise AttributeError(name)
+        stream = getattr(self.backend, name)
+
+        def record(messages, **options):
+            self.requests.append(list(messages))
+            response = stream(messages, **options)
+            self.responses.append(response)
+            return response
+
+        return record
+
     def chat(self, messages: list[Message], **options) -> LLMResponse:
         self.requests.append(list(messages))
         response = super().chat(messages, **options)
@@ -367,7 +474,12 @@ class _RequestRecorder(_RecordingBackend):
 
 
 def _run_case(
-    backend: LLMBackend, case: InteractiveEvalCase, run: int, timeout_seconds: float
+    backend: LLMBackend,
+    case: InteractiveEvalCase,
+    run: int,
+    timeout_seconds: float,
+    max_tokens: int = 1024,
+    temperature: float = 0.6,
 ) -> InteractiveRunResult:
     started = perf_counter()
     recorder = _RequestRecorder(backend)
@@ -384,7 +496,9 @@ def _run_case(
 
         async def drive() -> list[StepResult]:
             async with application:
-                return await _run_steps(application, recorder, case, workspace, timeout_seconds)
+                return await _run_steps(
+                    application, recorder, case, workspace, timeout_seconds, max_tokens, temperature
+                )
 
         steps = asyncio.run(drive())
 
@@ -400,6 +514,7 @@ def _run_case(
         output_tokens=sum(tokens) if tokens else None,
         latency_seconds=perf_counter() - started,
         steps=steps,
+        model_outputs=[response.content for response in recorder.responses],
     )
 
 
@@ -411,6 +526,10 @@ def run_interactive_evaluation(
     timeout_seconds: float,
     output_dir: Path,
     on_result: Callable[[InteractiveRunResult, int], None] | None = None,
+    environment: dict[str, JsonValue] | None = None,
+    report_prefix: str = "interactive",
+    max_tokens: int = 1024,
+    temperature: float = 0.6,
 ) -> tuple[InteractiveEvalReport, Path]:
     started = datetime.now(UTC)
     report = InteractiveEvalReport(
@@ -418,14 +537,15 @@ def run_interactive_evaluation(
         cases=cases,
         runs_per_case=runs,
         timeout_seconds=timeout_seconds,
+        environment=environment or {},
     )
-    path = new_report_path(output_dir, "interactive", started)
+    path = new_report_path(output_dir, report_prefix, started)
     run_rounds(
         report,
         path,
         cases,
         runs,
-        lambda case, run: _run_case(backend, case, run, timeout_seconds),
+        lambda case, run: _run_case(backend, case, run, timeout_seconds, max_tokens, temperature),
         on_result,
     )
     return report, path

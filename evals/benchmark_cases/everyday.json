@@ -1,0 +1,33 @@
+[
+  {
+    "id": "find-file",
+    "files": {"docs/launch/notes.md": "Release owner: Priya\n"},
+    "steps": [{"prompt": "Find notes.md anywhere in this workspace and tell me its relative path.", "tools": true, "tool_called": "find_files", "answer_contains": ["docs/launch/notes.md"]}]
+  },
+  {
+    "id": "document-answer",
+    "files": {"README.md": "Project Heron uses SQLite. The release deadline is October 3.\n"},
+    "steps": [{"prompt": "Read README.md. What database does Heron use and what is its release deadline?", "tools": true, "tool_called": "read_file", "answer_contains": ["SQLite", "October 3"]}]
+  },
+  {
+    "id": "edit-and-verify",
+    "files": {"settings.txt": "color=blue\n"},
+    "steps": [{"prompt": "Change color=blue to color=teal in settings.txt. Read the file after editing to verify the saved result.", "tools": true, "approve": true, "tool_called": "read_file", "files_after": {"settings.txt": "color=teal"}}]
+  },
+  {
+    "id": "remember-decision",
+    "steps": [
+      {"prompt": "We chose SQLite for the Heron database. Acknowledge this decision in one short sentence."},
+      {"prompt": "Which database did we choose for Heron? Reply with the database name only.", "new_conversation": true, "answer_contains": ["SQLite"]}
+    ]
+  },
+  {
+    "id": "recover-missing-file",
+    "files": {"docs/plan.md": "Launch day: Friday\n"},
+    "steps": [{"prompt": "First try reading plan.md in the workspace root. If it is missing, find it and read it. What is the launch day?", "tools": true, "tool_failed": true, "answer_contains": ["Friday"]}]
+  },
+  {
+    "id": "approval-denied",
+    "steps": [{"prompt": "Create hello.txt containing hi.", "tools": true, "approve": false, "approval_requested": true, "files_absent": ["hello.txt"], "answer_contains": ["not approved"]}]
+  }
+]

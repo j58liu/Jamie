@@ -24,6 +24,7 @@ class LLMResponse:
     finish_reason: str | None = None
     output_tokens: int | None = None
     first_token_seconds: float | None = None  # known only for streamed requests
+    input_tokens: int | None = None
 
 
 @dataclass(frozen=True)

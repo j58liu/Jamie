@@ -120,6 +120,11 @@ class _RecordingBackend:
         self.backend = backend
         self.responses: list[LLMResponse] = []
 
+    def __getattr__(self, name):
+        if name != "context_usage":
+            raise AttributeError(name)
+        return getattr(self.backend, name)
+
     def chat(
         self,
         messages: list[Message],
@@ -145,6 +150,9 @@ class _RecordingTools:
     def __init__(self, registry: ToolRegistry) -> None:
         self.registry = registry
         self.calls: list[ToolCall] = []
+
+    def __getattr__(self, name: str):
+        return getattr(self.registry, name)
 
     def instructions(self) -> str:
         return self.registry.instructions()

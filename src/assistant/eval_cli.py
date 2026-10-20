@@ -1,5 +1,6 @@
 """CLI commands for fixed model evaluations."""
 
+import json
 import math
 from pathlib import Path
 from typing import Annotated
@@ -36,6 +37,63 @@ from assistant.research_evaluation import (
 )
 
 app = typer.Typer(help="Evaluate the local model with fixed prompts.", no_args_is_help=True)
+
+
+@app.command("benchmark")
+def benchmark(
+    runs: Annotated[int, typer.Option(min=1)] = 3,
+    cases: Annotated[Path | None, typer.Option()] = None,
+    output_dir: Annotated[Path, typer.Option()] = Path("evals/results"),
+    max_tokens: Annotated[int, typer.Option(min=1)] = 1024,
+    temperature: Annotated[float, typer.Option(min=0, max=2)] = 0.6,
+    timeout: Annotated[float, typer.Option(min=0.001)] = 300,
+    server: Annotated[str, typer.Option(help="llama.cpp server URL.")] = "http://127.0.0.1:8080",
+    stream: Annotated[
+        bool,
+        typer.Option("--stream/--no-stream", help="Display direct-chat fragments as they arrive."),
+    ] = True,
+) -> None:
+    """Measure everyday task success, latency, model calls, retries, and approvals."""
+    from assistant.benchmark import run_benchmark
+
+    if not math.isfinite(timeout) or not math.isfinite(temperature):
+        raise typer.BadParameter("Generation settings and timeout must be finite.")
+    console = Console()
+    progress = Console(stderr=True)
+
+    def completed(result, count):
+        outcome = "PASS" if result.success else f"FAIL ({result.failure_reason})"
+        progress.print(
+            f"[{count}] {result.case_id} run {result.run}: {outcome}, {result.latency_seconds:.2f}s"
+        )
+
+    backend = LlamaCppBackend(server)
+    try:
+        report, path = run_benchmark(
+            backend,
+            runs=runs,
+            cases=cases,
+            output_dir=output_dir,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout_seconds=timeout,
+            on_result=completed,
+            visible_streaming=stream,
+        )
+    except (EvaluationError, OSError, ValueError, RuntimeError) as exc:
+        console.print(f"Error: {exc}", markup=False)
+        raise typer.Exit(1) from exc
+    finally:
+        close = getattr(backend, "close", None)
+        if close is not None:
+            close()
+    summary = report.summary()
+    console.print(json.dumps(summary, indent=2), markup=False)
+    console.print(f"Report: {path}", markup=False)
+    if report.status == "interrupted":
+        raise typer.Exit(130)
+    if not summary["success"]:
+        raise typer.Exit(1)
 
 
 def print_summary(console: Console, report: EvalReport, path: Path) -> None:

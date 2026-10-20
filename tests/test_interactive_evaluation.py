@@ -79,6 +79,8 @@ class ScriptedModel:
 
     def _action(self, messages: list[Message]) -> str:
         last = messages[-1].content
+        if last.startswith("You changed the workspace"):
+            return _tool("read_file", path="hello.txt")
         task = next(
             m.content
             for m in reversed(messages)
