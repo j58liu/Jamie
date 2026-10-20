@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from assistant import cli, eval_cli
 from assistant.evaluation import EvaluationError
 from assistant.llm.base import LLMResponse
+from assistant.research import VERIFICATION_INSTRUCTIONS
 from assistant.research_evaluation import (
     ClaimExpectation,
     ResearchEvalCase,
@@ -31,6 +32,22 @@ class ResearchBackend:
         )
 
     def chat(self, messages, *, temperature=0.6, max_tokens=1024):
+        if messages[0].content == VERIFICATION_INSTRUCTIONS:
+            data = json.loads(messages[-1].content)
+            sources = {s["id"]: s["text"] for s in data["sources"]}
+            review = {
+                "claims": [
+                    {
+                        "index": p["index"],
+                        "supported": True,
+                        "evidence": [
+                            {"source_id": s, "quote": sources[s][:800]} for s in p["source_ids"]
+                        ],
+                    }
+                    for p in data["passages"]
+                ]
+            }
+            return LLMResponse(json.dumps(review), model="test-model", output_tokens=5)
         return LLMResponse(self.responses.popleft(), model="test-model", output_tokens=5)
 
 
@@ -95,7 +112,7 @@ def test_research_evaluation_measures_citations_sources_and_claim_support(tmp_pa
     summary = report.summary()
     assert summary["passes"] == 1
     assert summary["median_source_count"] == 2
-    assert summary["output_tokens"] == 15
+    assert summary["output_tokens"] == 20
     assert json.loads(path.read_text())["summary"]["success"] is True
 
 

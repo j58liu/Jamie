@@ -23,6 +23,7 @@ from assistant.interactive_evaluation import (
     load_interactive_cases,
     run_interactive_evaluation,
 )
+from assistant.llm.base import LLMError
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory_evaluation import (
     MemoryEvalReport,
@@ -442,6 +443,10 @@ def evaluate_interactive(
 @app.command("research")
 def evaluate_research(
     runs: Annotated[int, typer.Option(min=1, help="Number of runs per case.")] = 5,
+    workers: Annotated[int, typer.Option(min=1, max=8)] = 3,
+    fixture_delay: Annotated[
+        float, typer.Option(min=0, max=10, help="Simulated seconds per fixture network call.")
+    ] = 0,
     cases: Annotated[
         Path | None, typer.Option(help="A JSON case file or directory of case files.")
     ] = None,
@@ -453,6 +458,8 @@ def evaluate_research(
     ] = None,
 ) -> None:
     """Evaluate source retrieval, citations, and supported claims."""
+    if not math.isfinite(fixture_delay):
+        raise typer.BadParameter("Fixture delay must be finite.")
     try:
         settings = load_config(config)
         loaded = load_research_cases(cases)
@@ -470,14 +477,25 @@ def evaluate_research(
             )
 
         progress.print(f"Running {len(loaded)} research cases, {runs} runs per case.")
+        from assistant.benchmark import capture_environment
+
+        backend = LlamaCppBackend()
+        environment = (
+            capture_environment(backend, {"workflow": "research"})
+            if hasattr(backend, "server_info")
+            else {}
+        )
         report, path = run_research_evaluation(
-            LlamaCppBackend(),
+            backend,
             loaded,
             runs=runs,
             output_dir=output_dir,
             on_result=on_result,
+            max_workers=workers,
+            fixture_delay_seconds=fixture_delay,
+            environment=environment,
         )
-    except (ConfigurationError, EvaluationError) as exc:
+    except (ConfigurationError, EvaluationError, LLMError) as exc:
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
 

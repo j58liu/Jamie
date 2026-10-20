@@ -1,0 +1,301 @@
+{
+  "schema_version": 1,
+  "package_version": "0.1.0",
+  "started_at": "2026-10-19T15:14:11.165387+00:00",
+  "finished_at": "2026-10-19T15:14:37.944294+00:00",
+  "status": "completed",
+  "cases": [
+    {
+      "id": "research-honey-001",
+      "question": "Why can properly stored honey remain edible for a long time?",
+      "search_results": [
+        {
+          "title": "Honey and water activity",
+          "url": "https://foodscience.example/honey-storage",
+          "snippet": "Water activity and microbial growth in honey."
+        },
+        {
+          "title": "Honey acidity",
+          "url": "https://beekeeping.test/honey-acidity",
+          "snippet": "Acidity contributes to honey preservation."
+        }
+      ],
+      "pages": {
+        "https://foodscience.example/honey-storage": "<html><head><title>Honey and water activity</title></head><body><article><p>Honey has low water activity, which limits the growth of many microorganisms.</p></article></body></html>",
+        "https://beekeeping.test/honey-acidity": "<html><head><title>Honey acidity</title></head><body><article><p>Honey is acidic, and that acidity helps inhibit microbial growth during storage.</p></article></body></html>"
+      },
+      "expected_claims": [
+        {
+          "answer_contains": "water",
+          "evidence_contains": "low water activity",
+          "supported_by": [
+            "https://foodscience.example/honey-storage"
+          ]
+        },
+        {
+          "answer_contains": "acid",
+          "evidence_contains": "acidity helps inhibit",
+          "supported_by": [
+            "https://beekeeping.test/honey-acidity"
+          ]
+        }
+      ],
+      "min_sources": 2
+    },
+    {
+      "id": "research-water-001",
+      "question": "At standard atmospheric pressure, what is the boiling point of water, and how does lower pressure affect it?",
+      "search_results": [
+        {
+          "title": "Water boiling point reference",
+          "url": "https://chemistry.example/water-boiling",
+          "snippet": "Reference values for water at standard pressure."
+        },
+        {
+          "title": "Pressure and boiling",
+          "url": "https://physics.test/pressure-boiling",
+          "snippet": "How atmospheric pressure changes boiling temperature."
+        }
+      ],
+      "pages": {
+        "https://chemistry.example/water-boiling": "<html><head><title>Water boiling point reference</title></head><body><main><p>At standard atmospheric pressure, pure water boils at 100 °C.</p></main></body></html>",
+        "https://physics.test/pressure-boiling": "<html><head><title>Pressure and boiling</title></head><body><main><p>Reducing atmospheric pressure lowers the temperature at which water boils.</p></main></body></html>"
+      },
+      "expected_claims": [
+        {
+          "answer_contains": "100",
+          "evidence_contains": "100 °C",
+          "supported_by": [
+            "https://chemistry.example/water-boiling"
+          ]
+        },
+        {
+          "answer_contains": "lower",
+          "evidence_contains": "lowers the temperature",
+          "supported_by": [
+            "https://physics.test/pressure-boiling"
+          ]
+        }
+      ],
+      "min_sources": 2
+    }
+  ],
+  "runs_per_case": 1,
+  "total_duration_seconds": 26.777830375009216,
+  "results": [
+    {
+      "case_id": "research-honey-001",
+      "run": 1,
+      "answer": "Properly stored honey remains edible for a long time primarily because it inhibits the growth of microorganisms. According to Source S1, this preservation is due to honey's low water activity, which limits microbial growth [Honey and water activity](<https://foodscience.example/honey-storage>). Additionally, Source S2 notes that the acidity of honey helps inhibit microbial growth during storage [Honey acidity](<https://beekeeping.test/honey-acidity>). While both sources agree on the outcome and the general role of microbial inhibition, they attribute the specific mechanism to different factors: low water activity versus acidity [S1, S2].",
+      "model": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+      "output_tokens": 544,
+      "latency_seconds": 13.501692124991678,
+      "queries": [
+        "Why does honey stay edible for years without spoiling",
+        "Chemical properties of honey that prevent bacterial growth"
+      ],
+      "source_urls": [
+        "https://foodscience.example/honey-storage",
+        "https://beekeeping.test/honey-acidity"
+      ],
+      "model_outputs": [
+        "{\n  \"queries\": [\n    \"Why does honey stay edible for years without spoiling\",\n    \"Chemical properties of honey that prevent bacterial growth\"\n  ]\n}",
+        "Based on the provided sources, here is an analysis of the question and the sources:\n\n**Question:** Why can properly stored honey remain edible for a long time?\n\n**Analysis of Sources:**\n*   **Source S1** states that honey has low water activity, which limits the growth of many microorganisms.\n*   **Source S2** states that honey is acidic, and that acidity helps inhibit microbial growth during storage.\n\n**Agreement:**\nBoth sources agree that the primary reason honey remains edible for a long time is the inhibition of microbial growth. Source S1 attributes this to low water activity, while Source S2 attributes it to acidity.\n\n**Differences:**\nThe sources attribute the mechanism of microbial inhibition to two different factors:\n*   **Source S1** identifies **low water activity** as the cause.\n*   **Source S2** identifies **acidity** as the cause.\n\n**Unsupported Statements:**\n*   **Source S1** does not mention acidity; it only mentions water activity.\n*   **Source S2** does not mention water activity; it only mentions acidity.\n\n**Conclusion:**\nThe sources provide conflicting explanations for the same phenomenon. One cites low water activity, while the other cites acidity, suggesting that while both factors contribute to the preservation of honey, they are described as distinct mechanisms in the provided text.",
+        "Properly stored honey remains edible for a long time primarily because it inhibits the growth of microorganisms. According to Source S1, this preservation is due to honey's low water activity, which limits microbial growth [S1]. Additionally, Source S2 notes that the acidity of honey helps inhibit microbial growth during storage [S2]. While both sources agree on the outcome and the general role of microbial inhibition, they attribute the specific mechanism to different factors: low water activity versus acidity [S1, S2].",
+        "{\n\"claims\": [\n  {\n    \"index\": 1,\n    \"supported\": true,\n    \"evidence\": [\n      {\n        \"source_id\": \"S1\",\n        \"quote\": \"Honey has low water activity, which limits the growth of many microorganisms.\"\n      },\n      {\n        \"source_id\": \"S2\",\n        \"quote\": \"Honey is acidic, and that acidity helps inhibit microbial growth during storage.\"\n      }\n    ]\n  }\n]\n}"
+      ],
+      "cross_check": "Based on the provided sources, here is an analysis of the question and the sources:\n\n**Question:** Why can properly stored honey remain edible for a long time?\n\n**Analysis of Sources:**\n*   **Source S1** states that honey has low water activity, which limits the growth of many microorganisms.\n*   **Source S2** states that honey is acidic, and that acidity helps inhibit microbial growth during storage.\n\n**Agreement:**\nBoth sources agree that the primary reason honey remains edible for a long time is the inhibition of microbial growth. Source S1 attributes this to low water activity, while Source S2 attributes it to acidity.\n\n**Differences:**\nThe sources attribute the mechanism of microbial inhibition to two different factors:\n*   **Source S1** identifies **low water activity** as the cause.\n*   **Source S2** identifies **acidity** as the cause.\n\n**Unsupported Statements:**\n*   **Source S1** does not mention acidity; it only mentions water activity.\n*   **Source S2** does not mention water activity; it only mentions acidity.\n\n**Conclusion:**\nThe sources provide conflicting explanations for the same phenomenon. One cites low water activity, while the other cites acidity, suggesting that while both factors contribute to the preservation of honey, they are described as distinct mechanisms in the provided text.",
+      "source_count": 2,
+      "citations_exist": true,
+      "citations_resolve": true,
+      "claims_supported": true,
+      "no_fake_urls": true,
+      "multiple_source_coverage": true,
+      "cited_urls": [
+        "https://foodscience.example/honey-storage",
+        "https://beekeeping.test/honey-acidity"
+      ],
+      "success": true,
+      "failure_reason": null,
+      "error": null,
+      "timings": {
+        "search_seconds": 0.25536100001772866,
+        "retrieval_seconds": 0.2548513330402784,
+        "model_seconds": 12.731035959033761,
+        "total_seconds": 13.50135858397698
+      },
+      "evidence_checks": 1
+    },
+    {
+      "case_id": "research-water-001",
+      "run": 1,
+      "answer": null,
+      "model": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+      "output_tokens": 535,
+      "latency_seconds": 13.266510499990545,
+      "queries": [],
+      "source_urls": [],
+      "model_outputs": [
+        "{\n  \"queries\": [\n    \"boiling point of water at standard atmospheric pressure\",\n    \"effect of atmospheric pressure on boiling point of water\",\n    \"boiling point of water at 1 atmosphere vs 0.5 atmosphere\"\n  ]\n}",
+        "Based on the provided sources, here is the analysis of the question regarding the boiling point of water and the effect of pressure:\n\n**Agreement**\n*   **Source S1** explicitly states that at standard atmospheric pressure, pure water boils at 100 °C.\n*   **Source S2** confirms that reducing atmospheric pressure lowers the temperature at which water boils.\n\n**Difference**\n*   **Source S1** specifies that the boiling point applies to **pure** water.\n*   **Source S2** does not specify whether the substance is pure or impure; it only addresses the general principle of pressure and boiling temperature.\n\n**Unsupported Statement**\n*   **Source S1** makes a specific claim about the boiling point of **pure** water at 100 °C. However, the question asks for the boiling point of water generally. While S1 provides the correct standard value for pure water, it does not address the behavior of water in impure solutions (e.g., saltwater), which is a common context for such questions. Therefore, S1 does not fully support the general statement that \"water\" boils at 100 °C without qualification.\n\n**Summary**\nThe sources agree on the standard boiling point of pure water (100 °C) and the inverse relationship between pressure and boiling temperature. The only difference lies in the specific qualifier regarding purity found in S1, which is not present in S2.",
+        "At standard atmospheric pressure, pure water boils at 100 °C [S1].\n\nLowering the atmospheric pressure causes water to boil at a lower temperature [S2].\n\nHowever, the provided sources do not agree on the specific conditions for the boiling point. Source S1 explicitly states that the boiling point applies to **pure** water, whereas Source S2 does not specify whether the substance is pure or impure [S1, S2]. Therefore, it is uncertain whether the general statement that water boils at 100 °C applies to all water or only pure water based solely on the provided text.",
+        "At standard atmospheric pressure, pure water boils at 100 °C, as confirmed by Source S1. Additionally, reducing atmospheric pressure lowers the temperature at which water boils, a principle supported by Source S2."
+      ],
+      "cross_check": null,
+      "source_count": 0,
+      "citations_exist": false,
+      "citations_resolve": false,
+      "claims_supported": false,
+      "no_fake_urls": false,
+      "multiple_source_coverage": false,
+      "cited_urls": [],
+      "success": false,
+      "failure_reason": "research_error",
+      "error": "Model synthesis contains no source citations.",
+      "timings": {},
+      "evidence_checks": 0
+    }
+  ],
+  "max_workers": 3,
+  "fixture_delay_seconds": 0.25,
+  "environment": {
+    "model": {
+      "model": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+      "model_path": "/Users/james/.cache/huggingface/hub/models--unsloth--Qwen3.5-2B-GGUF/snapshots/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_K_M.gguf",
+      "context": 32768,
+      "file_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223"
+    },
+    "server_settings": {
+      "default_generation_settings": {
+        "params": {
+          "seed": 4294967295,
+          "temperature": 0.6000000238418579,
+          "dynatemp_range": 0.0,
+          "dynatemp_exponent": 1.0,
+          "top_k": 20,
+          "top_p": 0.949999988079071,
+          "min_p": 0.05000000074505806,
+          "top_n_sigma": -1.0,
+          "xtc_probability": 0.0,
+          "xtc_threshold": 0.10000000149011612,
+          "typical_p": 1.0,
+          "repeat_last_n": 64,
+          "repeat_penalty": 1.0,
+          "presence_penalty": 0.0,
+          "frequency_penalty": 0.0,
+          "dry_multiplier": 0.0,
+          "dry_base": 1.75,
+          "dry_allowed_length": 2,
+          "dry_penalty_last_n": 64,
+          "mirostat": 0,
+          "mirostat_tau": 5.0,
+          "mirostat_eta": 0.10000000149011612,
+          "adaptive_target": -1.0,
+          "adaptive_decay": 0.8999999761581421,
+          "max_tokens": -1,
+          "n_predict": -1,
+          "n_keep": 0,
+          "n_discard": 0,
+          "ignore_eos": false,
+          "stream": false,
+          "n_probs": 0,
+          "min_keep": 0,
+          "chat_format": "Content-only",
+          "reasoning_format": "none",
+          "reasoning_in_content": false,
+          "generation_prompt": "",
+          "samplers": [
+            "penalties",
+            "dry",
+            "top_n_sigma",
+            "top_k",
+            "typ_p",
+            "top_p",
+            "min_p",
+            "xtc",
+            "temperature"
+          ],
+          "speculative.types": "none",
+          "timings_per_token": false,
+          "post_sampling_probs": false,
+          "backend_sampling": false,
+          "lora": []
+        },
+        "n_ctx": 32768
+      },
+      "total_slots": 1,
+      "model_alias": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+      "model_ftype": "Q4_K - Medium",
+      "model_path": "/Users/james/.cache/huggingface/hub/models--unsloth--Qwen3.5-2B-GGUF/snapshots/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_K_M.gguf",
+      "modalities": {
+        "vision": false,
+        "video": false,
+        "audio": false
+      },
+      "media_marker": "<__media_4T0beSRU4BRqmBebMX65REk3Eg7ccshV__>",
+      "endpoint_slots": true,
+      "endpoint_props": false,
+      "endpoint_metrics": false,
+      "ui": true,
+      "ui_settings": {},
+      "chat_template": "{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- macro render_content(content, do_vision_count, is_system_content=false) %}\n    {%- if content is string %}\n        {{- content }}\n    {%- elif content is iterable and content is not mapping %}\n        {%- for item in content %}\n            {%- if 'image' in item or 'image_url' in item or item.type == 'image' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain images.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Picture ' ~ image_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|image_pad|><|vision_end|>' }}\n            {%- elif 'video' in item or item.type == 'video' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain videos.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Video ' ~ video_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|video_pad|><|vision_end|>' }}\n            {%- elif 'text' in item %}\n                {{- item.text }}\n            {%- else %}\n                {{- raise_exception('Unexpected item type in content.') }}\n            {%- endif %}\n        {%- endfor %}\n    {%- elif content is none or content is undefined %}\n        {{- '' }}\n    {%- else %}\n        {{- raise_exception('Unexpected content type.') }}\n    {%- endif %}\n{%- endmacro %}\n{%- if not messages %}\n    {{- raise_exception('No messages provided.') }}\n{%- endif %}\n{%- if tools and tools is iterable and tools is not mapping %}\n    {{- '<|im_start|>system\\n' }}\n    {{- \"# Tools\\n\\nYou have access to the following functions:\\n\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\" }}\n    {{- '\\n\\nIf you choose to call a function ONLY reply in the following format with NO suffix:\\n\\n<tool_call>\\n<function=example_function_name>\\n<parameter=example_parameter_1>\\nvalue_1\\n</parameter>\\n<parameter=example_parameter_2>\\nThis is the value for the second parameter\\nthat can span\\nmultiple lines\\n</parameter>\\n</function>\\n</tool_call>\\n\\n<IMPORTANT>\\nReminder:\\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\\n- Required parameters MUST be specified\\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\\n</IMPORTANT>' }}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '\\n\\n' + content }}\n        {%- endif %}\n    {%- endif %}\n    {{- '<|im_end|>\\n' }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {{- '<|im_start|>system\\n' + content + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" %}\n        {%- set content = render_content(message.content, false)|trim %}\n        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}\n            {%- set ns.multi_step_tool = false %}\n            {%- set ns.last_query_index = index %}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if ns.multi_step_tool %}\n    {{- raise_exception('No user query found in messages.') }}\n{%- endif %}\n{%- for message in messages %}\n    {%- set content = render_content(message.content, true)|trim %}\n    {%- if message.role == \"system\" %}\n        {%- if not loop.first %}\n            {{- raise_exception('System message must be at the beginning.') }}\n        {%- endif %}\n    {%- elif message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if '</think>' in content %}\n                {%- set reasoning_content = content.split('</think>')[0].rstrip('\\n').split('<think>')[-1].lstrip('\\n') %}\n                {%- set content = content.split('</think>')[-1].lstrip('\\n') %}\n            {%- endif %}\n        {%- endif %}\n        {%- set reasoning_content = reasoning_content|trim %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content + '\\n</think>\\n\\n' + content }}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls and message.tool_calls is iterable and message.tool_calls is not mapping %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if tool_call.function is defined %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {%- if loop.first %}\n                    {%- if content|trim %}\n                        {{- '\\n\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- else %}\n                        {{- '<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- endif %}\n                {%- else %}\n                    {{- '\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                {%- endif %}\n                {%- if tool_call.arguments is mapping %}\n                    {%- for args_name in tool_call.arguments %}\n                        {%- set args_value = tool_call.arguments[args_name] %}\n                        {{- '<parameter=' + args_name + '>\\n' }}\n                        {%- set args_value = args_value | tojson | safe if args_value is mapping or (args_value is sequence and args_value is not string) else args_value | string %}\n                        {{- args_value }}\n                        {{- '\\n</parameter>\\n' }}\n                    {%- endfor %}\n                {%- endif %}\n                {{- '</function>\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.previtem and loop.previtem.role != \"tool\" %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if not loop.last and loop.nextitem.role != \"tool\" %}\n            {{- '<|im_end|>\\n' }}\n        {%- elif loop.last %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- else %}\n        {{- raise_exception('Unexpected message role.') }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is true %}\n        {{- '<think>\\n' }}\n    {%- else %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- endif %}\n{%- endif %}",
+      "chat_template_caps": {
+        "supports_object_arguments": true,
+        "supports_parallel_tool_calls": true,
+        "supports_preserve_reasoning": false,
+        "supports_reasoning_effort": false,
+        "supports_string_content": true,
+        "supports_system_role": true,
+        "supports_tool_calls": true,
+        "supports_tools": true,
+        "supports_typed_content": true
+      },
+      "bos_token": ",",
+      "eos_token": "<|im_end|>",
+      "build_info": "b10964-b29c606e2",
+      "is_sleeping": false,
+      "cors_proxy_enabled": false
+    },
+    "server_build": "b10964-b29c606e2",
+    "local_server_binary_version": null,
+    "server_version_note": "Local binary version; verify it matches the running server.",
+    "generation": {
+      "workflow": "research"
+    },
+    "hardware": {
+      "system": "Darwin",
+      "release": "24.0.0",
+      "architecture": "arm64",
+      "logical_cpus": 8,
+      "chip": "Apple M2",
+      "memory_bytes": "17179869184"
+    },
+    "python_version": "3.13.2",
+    "git_revision": "1e2b4818679fd57611631de7dd3bc6bbef684039",
+    "git_dirty": true,
+    "tracked_diff_sha256": "863cf7cebb9baeb72be1da32330cd47cf0ce9838769152272dabbbb3503e8df1",
+    "timing": "End-to-end task latency includes setup and failed attempts. First visible text is measured at the event sink, not the first reasoning token.",
+    "cache": "Server remains warm between trials; each task gets a fresh workspace and database."
+  },
+  "summary": {
+    "models": [
+      "unsloth/Qwen3.5-2B-GGUF:Q4_K_M"
+    ],
+    "cases": 2,
+    "runs_per_case": 1,
+    "planned_runs": 2,
+    "completed_runs": 2,
+    "passes": 1,
+    "failures": 1,
+    "median_source_count": 1.0,
+    "citations_exist": 1,
+    "citations_resolve": 1,
+    "claims_supported": 1,
+    "no_fake_urls": 1,
+    "multiple_source_coverage": 1,
+    "median_latency_seconds": 13.384101312491111,
+    "output_tokens": 1079,
+    "total_duration_seconds": 26.777830375009216,
+    "success": false
+  }
+}

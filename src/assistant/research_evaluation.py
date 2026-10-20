@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import statistics
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from assistant import __version__
+from assistant.agent_evaluation import _RecordingBackend
 from assistant.evaluation import (
     load_case_files,
     new_report_path,
@@ -79,6 +81,8 @@ class ResearchRunResult(BaseModel):
     success: bool
     failure_reason: str | None
     error: str | None
+    timings: dict[str, float] = Field(default_factory=dict)
+    evidence_checks: int = 0
 
 
 class ResearchEvalReport(BaseModel):
@@ -91,6 +95,9 @@ class ResearchEvalReport(BaseModel):
     runs_per_case: int
     total_duration_seconds: float = 0.0
     results: list[ResearchRunResult] = Field(default_factory=list)
+    max_workers: int = 3
+    fixture_delay_seconds: float = 0
+    environment: dict[str, JsonValue] = Field(default_factory=dict)
 
     def summary(self) -> dict[str, JsonValue]:
         planned = len(self.cases) * self.runs_per_case
@@ -138,15 +145,20 @@ class ResearchEvalReport(BaseModel):
 class _FixtureWeb:
     """Serve fixed search results and pages instead of the network."""
 
-    def __init__(self, search_results: list[SearchResult], pages: dict[str, str]) -> None:
+    def __init__(
+        self, search_results: list[SearchResult], pages: dict[str, str], delay_seconds: float = 0
+    ) -> None:
         self.search_results = search_results
         self.pages = pages
         self.fetched: dict[str, FetchedPage] = {}
+        self.delay_seconds = delay_seconds
 
     def search(self, query: str, *, limit: int = 5) -> list[SearchResult]:
+        time.sleep(self.delay_seconds)
         return self.search_results[:limit]
 
     def fetch(self, url: str) -> FetchedPage:
+        time.sleep(self.delay_seconds)
         try:
             content = self.pages[url]
         except KeyError as exc:
@@ -199,13 +211,20 @@ def _run_case(
     backend: LLMBackend,
     case: ResearchEvalCase,
     run: int,
+    max_workers: int = 3,
+    fixture_delay_seconds: float = 0,
 ) -> ResearchRunResult:
     started = perf_counter()
     answer = None
     result = None
     error = None
+    recorder = _RecordingBackend(backend)
     try:
-        result = ResearchWorkflow(backend, _FixtureWeb(case.search_results, case.pages)).run(
+        result = ResearchWorkflow(
+            recorder,
+            _FixtureWeb(case.search_results, case.pages, fixture_delay_seconds),
+            max_workers=max_workers,
+        ).run(
             case.question,
             max_sources=len(case.search_results),
             min_sources=case.min_sources,
@@ -252,12 +271,14 @@ def _run_case(
         case_id=case.id,
         run=run,
         answer=answer,
-        model=result.model if result else None,
-        output_tokens=result.output_tokens if result else None,
+        model=result.model
+        if result
+        else next((r.model for r in recorder.responses if r.model), None),
+        output_tokens=sum(r.output_tokens or 0 for r in recorder.responses) or None,
         latency_seconds=perf_counter() - started,
         queries=result.queries if result else [],
         source_urls=[source.url for source in result.sources] if result else [],
-        model_outputs=result.model_outputs if result else [],
+        model_outputs=[response.content for response in recorder.responses],
         cross_check=result.cross_check if result else None,
         source_count=len(unique_cited),
         citations_exist=citations_exist,
@@ -269,6 +290,8 @@ def _run_case(
         success=success,
         failure_reason=reason,
         error=error,
+        timings=result.timings if result else {},
+        evidence_checks=len(result.evidence_checks) if result else 0,
     )
 
 
@@ -279,15 +302,26 @@ def run_research_evaluation(
     runs: int,
     output_dir: Path,
     on_result: Callable[[ResearchRunResult, int], None] | None = None,
+    max_workers: int = 3,
+    fixture_delay_seconds: float = 0,
+    environment: dict[str, JsonValue] | None = None,
 ) -> tuple[ResearchEvalReport, Path]:
     started = datetime.now(UTC)
     report = ResearchEvalReport(
         started_at=started.isoformat(),
         cases=cases,
         runs_per_case=runs,
+        max_workers=max_workers,
+        fixture_delay_seconds=fixture_delay_seconds,
+        environment=environment or {},
     )
     path = new_report_path(output_dir, "research", started)
     run_rounds(
-        report, path, cases, runs, lambda case, run: _run_case(backend, case, run), on_result
+        report,
+        path,
+        cases,
+        runs,
+        lambda case, run: _run_case(backend, case, run, max_workers, fixture_delay_seconds),
+        on_result,
     )
     return report, path

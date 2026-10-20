@@ -434,13 +434,25 @@ The higher-level command performs the complete sequence directly:
 jamie research "What evidence supports this claim?"
 ```
 
-Qwen first generates up to three searches. Jamie searches, retrieves and
-extracts up to five distinct pages, then asks Qwen to cross-check their
-agreements and differences before synthesizing the answer. The model cites
-source IDs such as `[S1]`; Jamie validates those IDs and replaces them with the
-retrieved URLs. A missing, unknown, or invented citation fails validation, with
-one correction attempt. A successful answer cites at least two retrieved
-sources. Use `--max-sources` to select a limit from two through eight.
+Qwen first generates up to three searches. Jamie runs independent searches and
+page retrievals with up to three workers, retaining search order for source IDs
+and retrieving up to five distinct pages. It then cross-checks the evidence and
+produces structured answer paragraphs. Python renders their source IDs as links.
+A separate model review checks that the cited excerpts support each paragraph;
+Python requires exact supporting quotes from those excerpts and checks numeric
+claims against the quotes. Invalid citations or evidence receive one correction
+attempt. These checks reduce unsupported claims; the model's support judgment
+is still fallible. A successful answer cites at least two sources. Use
+`--max-sources` to select a limit from two through eight.
+
+Research results record search, retrieval, model, and total durations. The
+fixture evaluation can compare serial and concurrent retrieval with a fixed
+simulated network delay:
+
+```sh
+jamie eval research --runs 3 --workers 1 --fixture-delay 0.5
+jamie eval research --runs 3 --workers 3 --fixture-delay 0.5
+```
 
 ## Everyday performance benchmarks
 

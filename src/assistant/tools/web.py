@@ -9,11 +9,13 @@ import re
 import socket
 from collections.abc import Callable, Iterable
 from html.parser import HTMLParser
+from threading import Lock
 from urllib.parse import parse_qs, unquote, urljoin, urlsplit, urlunsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from assistant.cancellation import check_cancelled
 from assistant.security.policy import PermissionLevel
 from assistant.tools.base import ToolError
 
@@ -66,14 +68,17 @@ class PageStore:
 
     def __init__(self) -> None:
         self._pages: dict[str, FetchedPage] = {}
+        self._lock = Lock()
 
     def put(self, page: FetchedPage) -> None:
-        self._pages[page.requested_url] = page
-        self._pages[page.url] = page
+        with self._lock:
+            self._pages[page.requested_url] = page
+            self._pages[page.url] = page
 
     def get(self, url: str) -> FetchedPage:
         try:
-            return self._pages[_normalize_url(url)]
+            with self._lock:
+                return self._pages[_normalize_url(url)]
         except KeyError as exc:
             raise WebError("The URL has not been fetched in this session.") from exc
 
@@ -411,6 +416,7 @@ class WebClient:
         self.close()
 
     def search(self, query: str, *, limit: int = 5) -> list[SearchResult]:
+        check_cancelled()
         query = query.strip()
         if not query:
             raise WebError("Search query must not be blank.")
@@ -420,6 +426,7 @@ class WebClient:
             # Submit like DuckDuckGo's own form; GET requests for longer queries draw bot checks.
             response = self._client.post(SEARCH_URL, data={"q": query})
             response.raise_for_status()
+            check_cancelled()
         except httpx.HTTPError as exc:
             raise WebError("Web search request failed.") from exc
         if response.status_code == 202:  # DuckDuckGo answers with a bot-check page
@@ -432,9 +439,11 @@ class WebClient:
         return results
 
     def fetch(self, url: str) -> FetchedPage:
+        check_cancelled()
         requested = validate_public_url(url, self._resolver)
         target = requested
         for redirect_count in range(MAX_REDIRECTS + 1):
+            check_cancelled()
             try:
                 with self._client.stream("GET", target) as response:
                     if response.status_code in {301, 302, 303, 307, 308}:
@@ -459,6 +468,7 @@ class WebClient:
                     body = bytearray()
                     truncated = False
                     for chunk in response.iter_bytes():
+                        check_cancelled()
                         remaining = MAX_PAGE_BYTES - len(body)
                         if len(chunk) > remaining:
                             body.extend(chunk[:remaining])
@@ -481,6 +491,7 @@ class WebClient:
                 truncated=truncated,
             )
             self.store.put(page)
+            check_cancelled()
             return page
         raise WebError("Page exceeded the redirect limit.")
 

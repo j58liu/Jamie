@@ -22,6 +22,7 @@ from assistant.interactive_evaluation import (
     run_interactive_evaluation,
 )
 from assistant.llm.base import ContextUsage, LLMResponse, Message
+from assistant.research import VERIFICATION_INSTRUCTIONS
 from assistant.runtime import JamieApplication
 from assistant.runtime.application import COMPACT_REQUEST
 from assistant.tools.registry import create_read_only_registry
@@ -51,6 +52,23 @@ class ScriptedModel:
             return '{"queries":["boiling point of water"]}'
         if system.startswith("Cross-check"):
             return "The sources agree [S1] [S2]."
+        if system == VERIFICATION_INSTRUCTIONS:
+            data = json.loads(prompt)
+            sources = {s["id"]: s["text"] for s in data["sources"]}
+            return json.dumps(
+                {
+                    "claims": [
+                        {
+                            "index": p["index"],
+                            "supported": True,
+                            "evidence": [
+                                {"source_id": s, "quote": sources[s][:800]} for s in p["source_ids"]
+                            ],
+                        }
+                        for p in data["passages"]
+                    ]
+                }
+            )
         if system.startswith("Answer from the supplied evidence"):
             sources = json.loads(prompt.split("Sources: ", 1)[1])
             return "\n".join(f"{source['text']} [{source['id']}]" for source in sources)
