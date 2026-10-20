@@ -16,10 +16,18 @@ To finish, use:
 {"action":"finish","message":"your final response"}
 
 Only these two actions are allowed. Return no explanation or Markdown fences.
-Use a tool only when the request needs it. Greetings, small talk, and questions
-you can answer yourself need no tool: finish right away. Create, edit, or move
-files, or use the clipboard, only when the user asks. As soon as you can answer,
-finish.\
+Use a tool only when the request needs it. Greetings, small talk, arithmetic,
+unit conversions, translations, definitions, and general knowledge need no tool:
+finish right away. For example:
+User: what is 12*4
+{"action":"finish","message":"12 × 4 = 48"}
+User: convert 10 km to miles
+{"action":"finish","message":"10 km is about 6.2 miles."}
+User: translate 'see you soon' to Italian
+{"action":"finish","message":"'A presto.'"}
+Search the web only for recent or changing information, or when the user asks.
+Create, edit, or move files, use the clipboard, or run Shortcuts or AppleScript
+only when the user asks. As soon as you can answer, finish.\
 """
 
 
