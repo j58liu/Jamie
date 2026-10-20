@@ -32,6 +32,16 @@ def rendered():
     return render
 
 
+def test_empty_results_count_as_zero(rendered):
+    text = rendered(
+        TurnStarted("find"),
+        ToolStarted("find_files", {"pattern": "agent"}),
+        ToolFinished("find_files", ToolResult(success=True, output="No files found."), 0.1),
+    )
+
+    assert '✓ Found files matching "agent" · 0 files · 0.1 s' in text
+
+
 def test_tool_progress_reads_as_prose_without_protocol_json(rendered):
     text = rendered(
         TurnStarted("read foo"),

@@ -101,6 +101,22 @@ def test_find_files_recurses_and_returns_workspace_relative_paths(sandbox: Path)
     assert result.output.splitlines() == ["src/alpha.py", "src/nested/beta.py"]
 
 
+def test_find_files_returns_folders_and_skips_hidden_folders(sandbox: Path):
+    hidden = sandbox / ".venv" / "nested"
+    hidden.mkdir(parents=True)
+    (hidden / "beta.py").write_text("")
+    (sandbox / ".env").write_text("")
+    registry = create_read_only_registry(sandbox)
+
+    folders = registry.execute("find_files", {"pattern": "nested"}).output
+    files = registry.execute("find_files", {"pattern": "*.py"}).output
+    dotfile = registry.execute("find_files", {"pattern": ".env"}).output
+
+    assert folders.splitlines() == ["src/nested/"]
+    assert files.splitlines() == ["src/alpha.py", "src/nested/beta.py"]
+    assert dotfile == ".env"  # hidden files are found; only hidden folders are skipped
+
+
 @pytest.mark.parametrize("pattern", ["", "../*", "/tmp/*"])
 def test_find_files_rejects_unsafe_patterns(sandbox: Path, pattern: str):
     result = create_read_only_registry(sandbox).execute(

@@ -235,8 +235,9 @@ The loop applies these limits from its first version:
 - At most 12 valid model actions are processed.
 - An invalid response receives a correction asking for exactly one valid
   action. Two additional parse attempts are allowed for each step.
-- Three consecutive failures of the same tool name and arguments stop the run.
-  A successful call or a different failed action resets this count.
+- If the same tool call (name and arguments) gives the same result a second
+  time in a turn, even with other calls in between, the model is told it
+  already tried it. A third time stops the run.
 - The complete run has a 300-second timeout covering model and tool calls.
 
 All limits can be reduced or extended through `run_agent` arguments except the
@@ -252,9 +253,15 @@ tools:
 
 - `read_file` reads a bounded line range from one UTF-8 file.
 - `list_directory` lists and sorts immediate directory entries.
-- `find_files` recursively finds files using a glob pattern.
+- `find_files` recursively finds files and folders (shown with a trailing `/`)
+  using a glob pattern.
 - `search_files` recursively searches UTF-8 files for literal text and reports
   matching paths and line numbers.
+
+`find_files` and `search_files` skip hidden folders such as `.git` and `.venv`,
+which would otherwise fill the results; hidden files are still found. A missing
+path error suggests `find_files`, so the model can search for the name instead
+of guessing another path.
 
 Each tool publishes its name, description, Pydantic input schema, and `READ`
 permission value. The registry validates model arguments before execution

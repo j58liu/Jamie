@@ -2,7 +2,7 @@
 
 from assistant.agent.loop import (
     MAX_PARSE_RETRIES,
-    MAX_REPEATED_FAILED_ACTIONS,
+    MAX_REPEATED_ACTIONS,
     MAX_STEPS,
     TIMEOUT_SECONDS,
     AgentError,
@@ -27,7 +27,7 @@ from assistant.agent.protocol import (
 __all__ = [
     "ACTION_PROTOCOL_INSTRUCTIONS",
     "MAX_PARSE_RETRIES",
-    "MAX_REPEATED_FAILED_ACTIONS",
+    "MAX_REPEATED_ACTIONS",
     "MAX_STEPS",
     "TIMEOUT_SECONDS",
     "Action",

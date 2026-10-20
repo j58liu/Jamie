@@ -7,7 +7,7 @@ import pytest
 from assistant.agent.loop import (
     INVALID_OUTPUT_MESSAGE,
     MAX_PARSE_RETRIES,
-    MAX_REPEATED_FAILED_ACTIONS,
+    MAX_REPEATED_ACTIONS,
     MAX_STEPS,
     REPEATED_RESULT_MESSAGE,
     TIMEOUT_SECONDS,
@@ -53,7 +53,7 @@ def finish_action(message: str = "Done.") -> str:
 def test_default_limits_are_bounded():
     assert MAX_STEPS == 12
     assert MAX_PARSE_RETRIES == 2
-    assert MAX_REPEATED_FAILED_ACTIONS == 3
+    assert MAX_REPEATED_ACTIONS == 3
     assert TIMEOUT_SECONDS == 300.0
 
 
@@ -152,7 +152,7 @@ def test_three_consecutive_failures_of_same_action_stop_loop():
     backend = FakeBackend([first, reordered, first])
     tools = FakeTools([ToolResult(success=False, output="failed")] * 3)
 
-    with pytest.raises(AgentRepeatedActionError, match="failed 3 consecutive times"):
+    with pytest.raises(AgentRepeatedActionError, match="failed 3 times"):
         run_agent(backend, tools, "Read one line.")
     assert len(backend.requests) == 3
     assert len(tools.calls) == 3
@@ -190,7 +190,7 @@ def test_third_identical_result_stops_loop():
     backend = FakeBackend([search] * 3)
     tools = FakeTools([ToolResult(success=True, output="same results")] * 3)
 
-    with pytest.raises(AgentRepeatedActionError, match="same result 3 consecutive times"):
+    with pytest.raises(AgentRepeatedActionError, match="same result 3 times"):
         run_agent(backend, tools, "Research natural gas.")
     assert len(tools.calls) == 3
 
@@ -205,14 +205,23 @@ def test_denied_approval_ends_the_turn_without_asking_the_model_again():
     assert len(backend.requests) == 1
 
 
-def test_different_failed_action_resets_repeated_failure_detection():
-    read = tool_action()
-    inspect = tool_action("inspect_file", '{"path":"README.md"}')
-    backend = FakeBackend([read, read, inspect, read, read, finish_action()])
-    tools = FakeTools([ToolResult(success=False, output="failed")] * 5)
+def test_repeats_count_across_the_turn_even_with_other_actions_between():
+    # The model alternates between a folder that exists and one that does not.
+    listed = tool_action("list_directory", '{"path":"src"}')
+    missing = tool_action("list_directory", '{"path":"src/agent"}')
+    backend = FakeBackend([listed, missing, listed, missing, listed])
+    tools = FakeTools(
+        [
+            ToolResult(success=True, output="assistant/"),
+            ToolResult(success=False, output="Path does not exist"),
+        ]
+        * 3
+    )
 
-    assert run_agent(backend, tools, "Inspect the file.") == "Done."
+    with pytest.raises(AgentRepeatedActionError, match="same result 3 times"):
+        run_agent(backend, tools, "What is in the agent folder?")
     assert len(tools.calls) == 5
+    assert backend.requests[3][-1].content.endswith(REPEATED_RESULT_MESSAGE)
 
 
 def test_model_call_stops_at_total_timeout():

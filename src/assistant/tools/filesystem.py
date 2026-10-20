@@ -33,7 +33,10 @@ def _resolve(root: Path, requested: Path) -> Path:
     try:
         resolved = (root / requested).resolve(strict=True)
     except (OSError, RuntimeError) as exc:
-        raise ToolError(f"Path does not exist or cannot be accessed: {requested}") from exc
+        raise ToolError(
+            f"Path does not exist or cannot be accessed: {requested}. "
+            "Use find_files to search for it by name."
+        ) from exc
     if not resolved.is_relative_to(root):
         raise ToolError("Path resolves outside the workspace root.")
     return resolved
@@ -52,7 +55,11 @@ def _display_path(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def _matching_files(root: Path, directory: Path, pattern: str):
+def _matching_paths(root: Path, directory: Path, pattern: str, *, directories: bool = False):
+    """Files (and directories, if asked) under ``directory``, skipping hidden folders.
+
+    Hidden folders such as .git and .venv would otherwise fill the results.
+    """
     try:
         candidates = sorted(directory.rglob(pattern), key=lambda path: path.as_posix())
     except (OSError, ValueError) as exc:
@@ -60,11 +67,13 @@ def _matching_files(root: Path, directory: Path, pattern: str):
     for candidate in candidates:
         if candidate.is_symlink():
             continue
+        if any(part.startswith(".") for part in candidate.relative_to(directory).parts[:-1]):
+            continue
         try:
             resolved = candidate.resolve(strict=True)
         except (OSError, RuntimeError):
             continue
-        if resolved.is_relative_to(root) and resolved.is_file():
+        if resolved.is_relative_to(root) and (resolved.is_file() or directories):
             yield resolved
 
 
@@ -130,7 +139,10 @@ class ListDirectoryTool:
 
 class FindFilesTool:
     name = "find_files"
-    description = "Find files recursively by a glob pattern inside the workspace."
+    description = (
+        "Find files and folders recursively by a glob pattern inside the workspace. "
+        "Folders end with /."
+    )
     risk = Risk.READ
 
     class Input(_Input):
@@ -155,11 +167,12 @@ class FindFilesTool:
 
         matches = []
         truncated = False
-        for candidate in _matching_files(self._root, path, arguments.pattern):
+        for candidate in _matching_paths(self._root, path, arguments.pattern, directories=True):
             if len(matches) == arguments.limit:
                 truncated = True
                 break
-            matches.append(_display_path(self._root, candidate))
+            suffix = "/" if candidate.is_dir() else ""
+            matches.append(f"{_display_path(self._root, candidate)}{suffix}")
         if truncated:
             matches.append("[truncated]")
         return "\n".join(matches) if matches else "No files found."
@@ -201,7 +214,7 @@ class SearchFilesTool:
 
         query = arguments.query if arguments.case_sensitive else arguments.query.casefold()
         matches = []
-        for candidate in _matching_files(self._root, path, arguments.pattern):
+        for candidate in _matching_paths(self._root, path, arguments.pattern):
             try:
                 with candidate.open(encoding="utf-8") as file:
                     for line_number, line in enumerate(file, start=1):

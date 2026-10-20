@@ -1,6 +1,7 @@
 """Run the model action loop with bounded retries and tool execution."""
 
 import json
+from collections import Counter
 from collections.abc import Callable
 from copy import deepcopy
 from functools import partial
@@ -39,7 +40,7 @@ from assistant.llm.base import LLMBackend, Message, constrained_to
 
 MAX_STEPS = 12
 MAX_PARSE_RETRIES = 2
-MAX_REPEATED_FAILED_ACTIONS = 3
+MAX_REPEATED_ACTIONS = 3
 TIMEOUT_SECONDS = 300.0
 
 INVALID_OUTPUT_MESSAGE = """\
@@ -50,8 +51,8 @@ Keep the tool name in "tool" and put every argument inside "args".\
 """
 
 REPEATED_RESULT_MESSAGE = """\
-This action returned the same result as your previous call. Do not repeat it.
-Use the results you have: return a finish action, or choose a different action.\
+You already ran this exact action in this turn and got the same result. Do not repeat it.
+Use what you have: return a finish action, or choose a different action.\
 """
 
 
@@ -64,7 +65,7 @@ class AgentInvalidOutputError(AgentError):
 
 
 class AgentRepeatedActionError(AgentError):
-    """The same tool action failed too many consecutive times."""
+    """The model kept repeating a tool action that gave the same result."""
 
 
 class AgentStepLimitError(AgentError):
@@ -246,10 +247,7 @@ def _run_loop(
         ]
         messages.extend(history or [])
         messages.append(Message(role="user", content=prompt))
-        last_failed_action: str | None = None
-        repeated_failures = 0
-        last_result: tuple[str, str] | None = None
-        repeated_results = 0
+        tried: Counter[tuple[str, str]] = Counter()  # (action, result) pairs in this turn
 
         for _ in range(max_steps):
             action = _request_action(llm, messages, max_parse_retries, schema)
@@ -282,38 +280,20 @@ def _run_loop(
                 return f"Stopped: {action.tool} was not approved."
             if result.final:
                 return result.output
+            # Small models repeat an action they already tried, even with others in between.
+            key = (_action_key(action), result.output)
+            tried[key] += 1
+            if tried[key] >= MAX_REPEATED_ACTIONS:
+                outcome = "returned the same result" if result.success else "failed"
+                raise AgentRepeatedActionError(
+                    f"The tool action {action.tool!r} {outcome} {MAX_REPEATED_ACTIONS} times."
+                )
             observation = tool_observation(action, result)
-            action_key = _action_key(action)
-            # Small models re-run a successful search instead of using its results.
-            result_key = (action_key, result.output) if result.success else None
-            same = result_key is not None and result_key == last_result
-            repeated_results = repeated_results + 1 if same else 1
-            last_result = result_key
-            if same:
+            if tried[key] > 1:
                 observation = Message(
                     role="user", content=f"{observation.content}\n{REPEATED_RESULT_MESSAGE}"
                 )
             messages.append(observation)
-
-            if result.success:
-                last_failed_action = None
-                repeated_failures = 0
-            elif action_key == last_failed_action:
-                repeated_failures += 1
-            else:
-                last_failed_action = action_key
-                repeated_failures = 1
-
-            if repeated_failures >= MAX_REPEATED_FAILED_ACTIONS:
-                raise AgentRepeatedActionError(
-                    f"The tool action {action.tool!r} failed "
-                    f"{MAX_REPEATED_FAILED_ACTIONS} consecutive times."
-                )
-            if repeated_results >= MAX_REPEATED_FAILED_ACTIONS:
-                raise AgentRepeatedActionError(
-                    f"The tool action {action.tool!r} returned the same result "
-                    f"{MAX_REPEATED_FAILED_ACTIONS} consecutive times."
-                )
         if perf_counter() >= deadline:
             raise _DeadlineExceeded
         raise AgentStepLimitError(f"The agent reached the {max_steps}-step limit.")

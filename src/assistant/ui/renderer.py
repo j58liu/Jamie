@@ -78,6 +78,10 @@ _COUNTED: dict[str, tuple[str, str]] = {
 }
 
 
+# What the file tools return when they find nothing; one line, but no results.
+_EMPTY_OUTPUTS = {"No files found.", "No matches found.", "Directory is empty."}
+
+
 def _label(tool: str) -> _Label:
     return _LABELS.get(tool, _Label("▸", f"Running {tool}", f"Ran {tool}"))
 
@@ -108,6 +112,8 @@ def _detail(tool: str, output: str) -> str | None:
     units = _COUNTED.get(tool)
     if units is None or not output:
         return None
+    if output in _EMPTY_OUTPUTS:
+        return _counted(0, units)
     return _counted(len(output.splitlines()), units)
 
 
