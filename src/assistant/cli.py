@@ -29,6 +29,7 @@ from assistant.runtime import JamieApplication, JamieApplicationError, TurnResul
 from assistant.tools import WebClient, create_agent_registry
 from assistant.tools.scopes import ToolScope, select_tools
 from assistant.ui.approvals import TerminalApprovalProvider
+from assistant.ui.gui import run_gui
 from assistant.ui.renderer import EventRenderer, OneShotRenderer
 from assistant.ui.repl import run_repl
 
@@ -334,6 +335,22 @@ def research(
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
     Console(no_color=not settings.color).print(result.answer, markup=False, highlight=False)
+
+
+@app.command()
+def gui(
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Read a specific TOML configuration file."),
+    ] = None,
+) -> None:
+    """Open Jamie in a window; Jamie.app runs this command."""
+    try:
+        settings = load_config(config)
+    except ConfigurationError as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    run_gui(settings)
 
 
 SYMBOLS = {

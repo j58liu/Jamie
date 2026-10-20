@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.28,<1",
     "prompt-toolkit>=3.0,<4",
     "pydantic>=2.10,<3",
+    "pywebview>=6.2,<7",
     "rich>=14,<15",
     "typer>=0.16,<1",
 ]

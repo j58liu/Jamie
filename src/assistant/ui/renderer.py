@@ -90,7 +90,8 @@ def _phrase(label: _Label, verb: str, args: dict[str, Any] | None) -> str:
     """Name the action without exposing the protocol arguments."""
     value = (args or {}).get(label.field) if label.field else None
     if not isinstance(value, str | int | float) or not str(value).strip():
-        return verb
+        # Without its subject, "Searching files for" would read as a broken sentence.
+        return verb.removesuffix(" for").removesuffix(" matching")
     subject = label.subject(str(value).strip())
     if len(subject) > MAX_SUBJECT_CHARACTERS:
         subject = f"{subject[: MAX_SUBJECT_CHARACTERS - 1]}…"
@@ -123,7 +124,21 @@ def _elapsed(seconds: float) -> str:
     return f"{int(seconds // 60)} min {int(seconds % 60)} s"
 
 
-def _error_lines(message: str) -> list[str]:
+def tool_summary(event: ToolStarted | ToolFinished | ToolFailed, args: dict | None) -> str:
+    """One line naming a tool step; ``args`` come from its ToolStarted event."""
+    label = _label(event.tool)
+    match event:
+        case ToolStarted():
+            return _phrase(label, label.present, args)
+        case ToolFinished(result=result, duration=duration):
+            detail = _detail(event.tool, result.output)
+            line = _phrase(label, label.past, args)
+            return " · ".join([line, *([detail] if detail else []), _elapsed(duration)])
+        case ToolFailed(duration=duration):
+            return f"{_phrase(label, label.present, args)} failed · {_elapsed(duration)}"
+
+
+def error_lines(message: str) -> list[str]:
     lines = [line.strip() for line in message.replace("\r", " ").splitlines() if line.strip()]
     if not lines:
         return ["Unknown error"]
@@ -134,7 +149,7 @@ def _error_lines(message: str) -> list[str]:
 
 def render_error(console: Console, message: str) -> None:
     """Show a bounded error and keep the next terminal prompt readable."""
-    first, *rest = _error_lines(message)
+    first, *rest = error_lines(message)
     line = Text("  ✗ Error: ", style="red")
     line.append(first)
     console.print(line)
@@ -209,23 +224,12 @@ class EventRenderer:
                     self._streaming = False
             case ToolStarted(tool=tool, args=args):
                 self._started = (tool, args)
-                label = _label(tool)
-                self._status(label.icon, _phrase(label, label.present, args), "cyan")
-            case ToolFinished(tool=tool, result=result, duration=duration):
-                label = _label(tool)
-                line = _phrase(label, label.past, self._args(tool))
-                detail = _detail(tool, result.output)
-                parts = [line, *([detail] if detail else []), _elapsed(duration)]
-                self._status("✓", " · ".join(parts), "green")
-            case ToolFailed(tool=tool, error=error, duration=duration):
-                label = _label(tool)
-                failed = _phrase(label, label.present, self._args(tool))
-                self._status(
-                    "✗",
-                    f"{failed} failed · {_elapsed(duration)}",
-                    "red",
-                )
-                for detail in _error_lines(error):
+                self._status(_label(tool).icon, tool_summary(event, args), "cyan")
+            case ToolFinished(tool=tool):
+                self._status("✓", tool_summary(event, self._args(tool)), "green")
+            case ToolFailed(tool=tool, error=error):
+                self._status("✗", tool_summary(event, self._args(tool)), "red")
+                for detail in error_lines(error):
                     self._console.print(Text(f"    {detail}", style="red"))
             case AssistantDelta(text=text):
                 if not self._streaming:

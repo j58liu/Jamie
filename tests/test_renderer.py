@@ -65,6 +65,8 @@ def test_tool_progress_reads_as_prose_without_protocol_json(rendered):
         ("open_application", {"name": "Safari"}, "  ▸ Opening Safari\n"),
         ("clipboard_read", {}, "  ▸ Reading the clipboard\n"),
         ("mystery_tool", {"path": "x"}, "  ▸ Running mystery_tool\n"),
+        ("search_files", {}, "  ◦ Searching files\n"),
+        ("find_files", {}, "  ◦ Finding files\n"),
     ],
 )
 def test_each_tool_start_names_the_action(rendered, tool, args, expected):

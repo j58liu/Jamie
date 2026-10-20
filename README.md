@@ -181,6 +181,37 @@ completes slash commands and paths (including directories after `/cwd`); a dim
 preview describes a matching slash command as you type. Use `/help` to list
 commands, Ctrl+C to cancel a running turn, and Ctrl+D or `/quit` to leave.
 
+## Desktop app
+
+Jamie also runs in its own window, styled after jameshliu.me. Build the app once
+from the checkout, after installing Jamie into `.venv`:
+
+```sh
+macos/build-app.sh            # installs ~/Applications/Jamie.app
+```
+
+Open Jamie from Spotlight, Launchpad, or the Dock. The app runs this checkout's
+code in place, so pulling changes needs no rebuild; rebuild after moving the
+checkout or recreating `.venv`. `jamie gui` opens the same window from a
+terminal, working in the current directory; the app works in your home folder.
+
+The window opens immediately and connects to llama.cpp. If no server is running,
+it starts `scripts/start-local-model.sh` in the background, shows that the model
+is loading, and leaves the server running after the window closes. Startup
+failures appear in the window. Logs are in `~/Library/Logs/Jamie/`.
+
+On first launch macOS asks whether Jamie may access the Documents folder, because
+the checkout lives there; Jamie opens once you answer. Later,
+macOS also asks before Jamie first controls another app.
+
+The window uses the same runtime, tools, permission policy, and memory as the
+terminal. Enter sends, Shift+Enter adds a line, Escape stops a running turn, and
+the plus button starts a new conversation. Model text is inserted as text, never
+as HTML, and the page loads nothing from the network. Approval prompts are not
+in the window yet, so an action that requires approval is declined; no tool that
+Jamie currently registers requires one. DM Sans is bundled under the SIL Open
+Font License (`src/assistant/ui/gui/fonts/OFL.txt`).
+
 ## Action protocol
 
 Model responses intended for action handling have exactly two forms. A tool
@@ -754,6 +785,8 @@ works independently of configuration and reads the installed package version.
 - `src/assistant/agent/loop.py`: bounded model actions and tool observations.
 - `src/assistant/agent/events.py`: typed turn, tool, approval, and answer events.
 - `src/assistant/ui/renderer.py`: one-shot answer rendering from runtime events.
+- `src/assistant/ui/gui/`: the desktop window, its page, fonts, and icon.
+- `macos/`: Jamie.app launcher, Info.plist, icon source, and build script.
 - `src/assistant/tools/`: filesystem, editing, macOS, and web tools plus the registry.
 - `src/assistant/security/`: permission policy, trusted approvals, and audit records.
 - `src/assistant/research.py`: bounded search, retrieval, cross-checking, and cited synthesis.
