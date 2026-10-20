@@ -157,20 +157,19 @@ def test_repl_reports_turn_failure_and_continues_until_ctrl_d(tmp_path: Path):
 
 
 def test_repl_thinking_command_toggles_reasoning_without_calling_the_model(tmp_path: Path):
-    backend = FakeBackend([LLMResponse("Default"), LLMResponse("Quick"), LLMResponse("Deep")])
+    backend = FakeBackend([LLMResponse("Default"), LLMResponse("Deep"), LLMResponse("Quick")])
 
     output, backend = _run(
         tmp_path,
-        "/thinking\nhi\n/thinking off\nhi\n/thinking maybe\n/thinking ON\nhi\n/quit\n",
+        "/thinking\nhi\n/thinking on\nhi\n/thinking maybe\n/thinking OFF\nhi\n/quit\n",
         backend,
     )
 
-    assert "Thinking: server default" in output
-    assert "Thinking: off" in output
+    assert output.index("Thinking: off") < output.index("Default")  # off on launch
     assert "Usage: /thinking on|off" in output
     assert "Thinking: on" in output
-    assert backend.thinking == [None, False, True]
-    assert all(m.content != "/thinking off" for request in backend.requests for m in request)
+    assert backend.thinking == [False, True, False]
+    assert all(m.content != "/thinking on" for request in backend.requests for m in request)
 
 
 def _run_with_history(tmp_path: Path, keys: str, backend: FakeBackend) -> Path:

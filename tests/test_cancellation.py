@@ -249,7 +249,7 @@ from assistant.runtime import JamieApplication
 from assistant.ui.repl import create_prompt_session, run_repl
 
 class Backend:
-    def chat(self, messages, *, temperature=0.6, max_tokens=1024):
+    def chat(self, messages, *, temperature=0.6, max_tokens=1024, thinking=None):
         prompt = messages[-1].content
         if prompt.startswith("slow"):
             print("TURN RUNNING", flush=True)

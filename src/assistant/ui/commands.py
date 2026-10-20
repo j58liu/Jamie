@@ -47,7 +47,7 @@ class ReplState:
     listed: list[ConversationSummary] = field(default_factory=list)  # last /history
     history: list[Message] = field(default_factory=list)
     context: ContextUsage | None = None  # last exact measurement of ``history``
-    thinking: bool | None = None
+    thinking: bool | None = False  # off on launch; /thinking on enables it
     temperature: float = 0.6
     max_tokens: int = 1024
     model: str | None = None

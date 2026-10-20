@@ -16,8 +16,10 @@ To finish, use:
 {"action":"finish","message":"your final response"}
 
 Only these two actions are allowed. Return no explanation or Markdown fences.
-Use a tool only when the request needs it. Create, edit, or move files only when
-the user asks. As soon as you can answer, finish.\
+Use a tool only when the request needs it. Greetings, small talk, and questions
+you can answer yourself need no tool: finish right away. Create, edit, or move
+files, or use the clipboard, only when the user asks. As soon as you can answer,
+finish.\
 """
 
 

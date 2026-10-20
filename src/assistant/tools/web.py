@@ -7,6 +7,7 @@ import ipaddress
 import json
 import re
 import socket
+import time
 from collections.abc import Callable, Iterable
 from html.parser import HTMLParser
 from threading import Lock
@@ -29,6 +30,9 @@ MAX_EXTRACTED_CHARACTERS = 30_000
 MAX_TOOL_PAGE_CHARACTERS = 24_000
 MAX_SEARCH_RESULTS = 10
 MAX_REDIRECTS = 5
+# ponytail: one fixed pace per client; DuckDuckGo answers bursts of parallel queries
+# (as research sends) with a bot check. Use a search API if this gets too slow.
+SEARCH_INTERVAL_SECONDS = 1.0
 
 
 class WebError(ToolError):
@@ -398,6 +402,8 @@ class WebClient:
     ) -> None:
         self._resolver = resolver
         self.store = store if store is not None else PageStore()
+        self._search_lock = Lock()
+        self._next_search = 0.0
         self._client = httpx.Client(
             transport=transport,
             timeout=httpx.Timeout(20.0, connect=5.0),
@@ -422,14 +428,20 @@ class WebClient:
             raise WebError("Search query must not be blank.")
         if len(query) > MAX_QUERY_CHARACTERS:
             raise WebError("Search query is too long.")
-        try:
-            # Submit like DuckDuckGo's own form; GET requests for longer queries draw bot checks.
-            response = self._client.post(SEARCH_URL, data={"q": query})
-            response.raise_for_status()
+        with self._search_lock:
+            time.sleep(max(0.0, self._next_search - time.monotonic()))
             check_cancelled()
-        except httpx.HTTPError as exc:
-            raise WebError("Web search request failed.") from exc
-        if response.status_code == 202:  # DuckDuckGo answers with a bot-check page
+            try:
+                # Like DuckDuckGo's own form; GET requests for longer queries draw bot checks.
+                response = self._client.post(SEARCH_URL, data={"q": query})
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise WebError("Web search request failed.") from exc
+            finally:
+                self._next_search = time.monotonic() + SEARCH_INTERVAL_SECONDS
+        check_cancelled()
+        # The bot-check page sometimes arrives as 200; without this it reads as "no results".
+        if response.status_code == 202 or "anomaly-modal" in response.text:
             raise WebError("DuckDuckGo blocked the search with a bot check. Try again later.")
         parser = _SearchParser()
         parser.feed(response.text)

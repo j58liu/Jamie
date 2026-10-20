@@ -95,7 +95,9 @@ for a 16 GB Mac; memory use also depends on other running applications.
 The chat template setting disables thinking by default so short requests return
 an answer without spending the token budget on reasoning. When thinking is
 enabled, `--reasoning-format deepseek` separates reasoning from the final answer
-in the HTTP response, so Jamie prints the answer text.
+in the HTTP response, so Jamie prints the answer text. The interactive terminal
+also starts with thinking off, whatever the server default; `/thinking on`
+enables it for the session.
 
 Keep the server running. Then, in the activated project environment:
 

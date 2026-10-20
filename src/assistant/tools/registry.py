@@ -159,7 +159,7 @@ class ToolRegistry:
             ),
             "clipboard_read": ('{"action":"tool","tool":"clipboard_read","args":{}}'),
             "clipboard_write": (
-                '{"action":"tool","tool":"clipboard_write","args":{"text":"hello"}}'
+                '{"action":"tool","tool":"clipboard_write","args":{"text":"Meeting at 3 pm"}}'
             ),
             "run_shortcut": (
                 '{"action":"tool","tool":"run_shortcut","args":{"name":"Morning Routine"}}'

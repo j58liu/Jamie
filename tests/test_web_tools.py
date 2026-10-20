@@ -1,5 +1,8 @@
+import itertools
 import json
 import socket
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 import pytest
@@ -12,6 +15,7 @@ from assistant.tools import (
     create_web_registry,
     extract_page,
     validate_public_url,
+    web,
 )
 from assistant.tools.web import MAX_TOOL_PAGE_CHARACTERS
 
@@ -47,13 +51,30 @@ def test_search_parses_results_and_unwraps_redirects():
     assert results[0].snippet == "Useful summary."
 
 
-def test_search_reports_a_bot_check_instead_of_empty_results():
+@pytest.mark.parametrize("status", [200, 202])
+def test_search_reports_a_bot_check_instead_of_empty_results(status: int):
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(202, text='<div class="anomaly-modal"></div>')
+        return httpx.Response(status, text='<div class="anomaly-modal"></div>')
 
     with WebClient(transport=httpx.MockTransport(handler), resolver=public_resolver) as client:
         with pytest.raises(WebError, match="bot check"):
             client.search("natural gas")
+
+
+def test_parallel_searches_are_sent_one_at_a_time_with_a_gap(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(web, "SEARCH_INTERVAL_SECONDS", 0.05)
+    sent: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(time.monotonic())
+        return httpx.Response(200, text='<a class="result__a" href="https://a.example/">A</a>')
+
+    with WebClient(transport=httpx.MockTransport(handler), resolver=public_resolver) as client:
+        with ThreadPoolExecutor(3) as pool:
+            list(pool.map(client.search, ["a", "b", "c"]))
+
+    gaps = [later - earlier for earlier, later in itertools.pairwise(sorted(sent))]
+    assert len(sent) == 3 and min(gaps) >= 0.045
 
 
 def test_fetch_then_extract_removes_scripts_and_keeps_readable_text():
