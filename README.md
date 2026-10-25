@@ -211,6 +211,23 @@ bring the window back; ⌃⌥J again hides Jamie. The shortcut uses macOS's hot 
 registration, so it needs no Accessibility permission. Quit with ⌘Q, the Dock
 menu, or `/quit`.
 
+Jamie can also start work by itself. `/schedule daily 08:00 Give me a morning
+briefing` runs that prompt every day at 08:00 local time; `/schedule at 15:30
+Remind me to call Alex` runs once at the next 15:30. `/schedule` lists tasks and
+`/unschedule <id>` removes one. Jamie.app runs due tasks while it is open, one at
+a time and never during your own turn, shows each in the window, saves it as its
+own conversation, and sends a macOS notification with the answer; clicking it
+brings Jamie forward. macOS asks once whether Jamie may send notifications. A
+task missed while the Mac slept runs once when Jamie next checks, and a daily
+task then moves to its next time instead of catching up on every missed day.
+Nobody is there to approve a scheduled task, so it gets only the read and web
+tools: it can read files and search or read the web, but cannot change files or
+control apps, and anything that would need approval is declined.
+
+Recalled memories shape answers, including mistaken ones. `/memories <words>`
+shows what Jamie would recall for those words, with ids, and `/forget <id>` stops
+Jamie recalling that excerpt; the saved conversation itself is kept.
+
 `/startup on` opens Jamie in the background each time you log in (with the
 window hidden, and the model server started if needed); `/startup off` stops it.
 It writes a user LaunchAgent, `~/Library/LaunchAgents/me.jameshliu.jamie.plist`,
@@ -226,7 +243,7 @@ as HTML, and the page loads nothing from the network.
 
 Slash commands work as in the terminal and print into the window: `/help`,
 `/history`, `/resume`, `/diff`, `/undo`, `/mode`, `/scope`, `/compact`, `/stats`,
-`/startup`, and the rest. `/new` and `/resume` redraw the conversation, `/clear` empties the
+`/schedule`, `/memories`, `/forget`, `/startup`, and the rest. `/new` and `/resume` redraw the conversation, `/clear` empties the
 window, and `/quit` closes it.
 
 When the permission policy requires approval, the window shows the exact action

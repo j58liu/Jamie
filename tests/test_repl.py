@@ -4,6 +4,7 @@ import io
 import os
 import re
 import signal
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,6 +30,7 @@ from assistant.agent.events import (
 from assistant.agent.loop import ToolResult
 from assistant.config import ProjectConfig
 from assistant.llm.base import LLMError, LLMResponse, Message
+from assistant.memory import MemoryStore
 from assistant.runtime import JamieApplication, TurnResult
 from assistant.runtime.application import COMPACT_REQUEST
 from assistant.security import CallbackApprovalProvider
@@ -413,6 +415,7 @@ class FakeJamieApplication:
         self.closes = 0
         self.conversations = 0
         self.model_calls = 0
+        self.memory = MemoryStore(Path(tempfile.mkdtemp()) / "memory.sqlite3")
 
     async def __aenter__(self):
         self.starts += 1

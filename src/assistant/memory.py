@@ -127,6 +127,15 @@ CREATE TRIGGER IF NOT EXISTS memories_after_update AFTER UPDATE ON memories BEGI
     INSERT INTO memories_fts(rowid, content, tags) VALUES (new.id, new.content, new.tags);
 END;
 
+CREATE TABLE IF NOT EXISTS schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt TEXT NOT NULL,
+    repeat TEXT NOT NULL CHECK (repeat IN ('daily', 'once')),
+    time TEXT NOT NULL,
+    next_run TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
@@ -184,6 +193,17 @@ def _fts_query(query: str) -> str | None:
     if not tokens:
         return None
     return " OR ".join(f'"{token}"' for token in tokens[:16])
+
+
+@dataclass(frozen=True)
+class ScheduledTask:
+    """A prompt Jamie runs by itself; ``time`` is local HH:MM, ``next_run`` is UTC."""
+
+    id: int
+    prompt: str
+    repeat: str
+    time: str
+    next_run: datetime
 
 
 @dataclass(frozen=True)
@@ -460,6 +480,72 @@ class MemoryStore:
             )
             for row in rows
         ]
+
+    def forget_memory(self, memory_id: int) -> bool:
+        """Delete one recalled excerpt; the saved conversation itself is kept."""
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+        except sqlite3.Error as exc:
+            raise MemoryStoreError("Cannot forget memory.") from exc
+        return cursor.rowcount == 1
+
+    def add_schedule(self, prompt: str, repeat: str, time: str, next_run: datetime) -> int:
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    "INSERT INTO schedules(prompt, repeat, time, next_run, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (prompt, repeat, time, next_run.astimezone(UTC).isoformat(), _now()),
+                )
+        except sqlite3.Error as exc:
+            raise MemoryStoreError("Cannot save the scheduled task.") from exc
+        return int(cursor.lastrowid)
+
+    def schedules(self, *, due_by: datetime | None = None) -> list[ScheduledTask]:
+        """Every task in run order, or only those due by ``due_by``."""
+        cutoff = due_by.astimezone(UTC).isoformat() if due_by is not None else None
+        try:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    "SELECT id, prompt, repeat, time, next_run FROM schedules "
+                    "WHERE ? IS NULL OR next_run <= ? ORDER BY next_run, id",
+                    (cutoff, cutoff),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise MemoryStoreError("Cannot read scheduled tasks.") from exc
+        return [
+            ScheduledTask(
+                id=int(row["id"]),
+                prompt=str(row["prompt"]),
+                repeat=str(row["repeat"]),
+                time=str(row["time"]),
+                next_run=datetime.fromisoformat(row["next_run"]),
+            )
+            for row in rows
+        ]
+
+    def reschedule(self, task_id: int, next_run: datetime | None) -> None:
+        """Move a task to its next run, or remove it when ``next_run`` is None."""
+        try:
+            with self._connect() as connection:
+                if next_run is None:
+                    connection.execute("DELETE FROM schedules WHERE id = ?", (task_id,))
+                else:
+                    connection.execute(
+                        "UPDATE schedules SET next_run = ? WHERE id = ?",
+                        (next_run.astimezone(UTC).isoformat(), task_id),
+                    )
+        except sqlite3.Error as exc:
+            raise MemoryStoreError("Cannot update the scheduled task.") from exc
+
+    def remove_schedule(self, task_id: int) -> bool:
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute("DELETE FROM schedules WHERE id = ?", (task_id,))
+        except sqlite3.Error as exc:
+            raise MemoryStoreError("Cannot remove the scheduled task.") from exc
+        return cursor.rowcount == 1
 
     def add_source(
         self,

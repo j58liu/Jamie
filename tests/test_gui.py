@@ -1,6 +1,7 @@
 import asyncio
 import json
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -419,3 +420,88 @@ def test_gui_command_reports_bad_configuration_without_a_window(tmp_path, monkey
 
     assert result.exit_code == 1 and "Invalid configuration" in result.output
     assert opened == []
+
+
+class Notifier:
+    def __init__(self):
+        self.sent, self.asked = [], 0
+
+    def send(self, title, body):
+        self.sent.append((title, body))
+
+    def ask_permission(self):
+        self.asked += 1
+
+
+def due_task(session, prompt="Morning briefing", repeat="daily"):
+    from datetime import UTC, datetime, timedelta
+
+    memory = session.state.application.memory
+    when = datetime.now(UTC) - timedelta(minutes=1)
+    return memory.add_schedule(prompt, repeat, "08:00", when)
+
+
+def test_a_due_task_runs_unattended_in_its_own_conversation(session_for, tmp_path):
+    notifier, built = Notifier(), []
+
+    def scheduled_tools():
+        built.append(create_workspace_registry(tmp_path).subset({"read_file"}))
+        return built[-1]
+
+    backend = Backend(finish("Sunny, 18 °C."))
+    session, pushed = session_for(backend, scheduled_tools=scheduled_tools, notifier=notifier)
+    task_id = due_task(session)
+
+    assert session.run_due()
+    assert not session.run_due()  # moved to tomorrow before it ran
+
+    assert kinds(pushed) == ["scheduled", "answer", "idle"]
+    assert pushed[0] == {"type": "scheduled", "prompt": "Morning briefing", "time": "08:00"}
+    assert notifier.sent == [("Morning briefing", "Sunny, 18 °C.")]
+    tool_names = backend.requests[0][0].content
+    assert "read_file" in tool_names and "write_file" not in tool_names
+    (task,) = session.state.application.memory.schedules()
+    assert task.id == task_id and task.next_run > datetime.now(UTC)  # tomorrow, 08:00
+    assert session.state.history == []  # the window's own conversation is untouched
+    saved = session.state.application.recent_conversations()
+    assert saved[0].title == "Morning briefing"
+
+
+def test_due_tasks_wait_for_the_running_turn_and_failures_still_move_on(session_for, tmp_path):
+    pending, notifier = [], Notifier()
+    session, pushed = session_for(
+        Backend(finish("mine"), LLMError("model went away")),
+        pending,
+        scheduled_tools=lambda: create_workspace_registry(tmp_path),
+        notifier=notifier,
+    )
+    due_task(session, "Remind me to stretch", repeat="once")
+
+    session.send("my question")
+    assert not session.run_due()  # the window is busy
+    asyncio.run(pending.pop())
+    assert session.run_due()
+    asyncio.run(pending.pop())
+
+    assert session.state.application.memory.schedules() == []  # one-off, so it is gone
+    assert notifier.sent == [
+        ("Remind me to stretch", "Jamie could not finish this: model went away")
+    ]
+    assert kinds(pushed)[-3:] == ["scheduled", "error", "idle"]
+
+
+def test_nothing_due_and_no_scheduler_mean_no_run(session_for):
+    session, _ = session_for(Backend())
+    due_task(session)
+    assert not session.run_due()  # this window was given no scheduled tools
+
+
+def test_adding_a_schedule_in_the_window_asks_for_notifications(session_for):
+    notifier = Notifier()
+    session, pushed = session_for(Backend(), notifier=notifier)
+
+    session.send("/schedule")
+    session.send("/schedule daily 08:00 Briefing")
+
+    assert notifier.asked == 1
+    assert "Scheduled task 1" in pushed[-2]["text"]

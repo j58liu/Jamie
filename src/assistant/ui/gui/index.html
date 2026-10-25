@@ -701,17 +701,17 @@
         input.style.height = `${Math.min(input.scrollHeight, 220)}px`;
       }
 
-      function exchange(text) {
+      function exchange(text, label = "You") {
         const section = el("section", "turn");
-        section.append(el("p", "eyebrow", "You"), el("div", "user", text));
+        section.append(el("p", "eyebrow", label), el("div", "user", text));
         const reply = el("div", "reply");
         reply.append(el("p", "eyebrow", "Jamie"));
         section.append(reply);
         return { section, reply };
       }
-      function startTurn(text) {
+      function startTurn(text, label) {
         $("intro")?.remove();
-        const { section, reply } = exchange(text);
+        const { section, reply } = exchange(text, label);
         const tools = el("div", "tools");
         tools.hidden = true;
         const thinking = el("div", "thinking");
@@ -851,6 +851,10 @@
               return;
             case "approval-closed":
               closeApproval(payload);
+              return;
+            case "scheduled": // Jamie starts this one itself, at the task's time
+              startTurn(payload.prompt, `Scheduled · ${payload.time}`);
+              setBusy(true);
               return;
           }
           if (!turn) return;

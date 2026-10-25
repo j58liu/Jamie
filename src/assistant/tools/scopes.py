@@ -35,6 +35,10 @@ SCOPE_TOOLS = {
 }
 
 
+# Scheduled tasks run while nobody is watching: they may read and search, never act.
+UNATTENDED_TOOLS = READ_TOOLS | SCOPE_TOOLS[ToolScope.WEB]
+
+
 def select_tools(registry, scope: ToolScope | str):
     scope = ToolScope(scope)
     return registry if scope is ToolScope.ALL else registry.subset(SCOPE_TOOLS[scope])

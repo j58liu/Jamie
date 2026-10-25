@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
 
+from assistant import schedule
 from assistant.agent.events import ToolFailed, ToolFinished
 from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
 from assistant.llm.base import ContextUsage, LLMError, Message
@@ -296,7 +297,7 @@ def ago(timestamp: str, now: datetime | None = None) -> str:
     return f"{int(seconds // 86_400)}d ago"
 
 
-def _title(text: str, limit: int = 50) -> str:
+def short_title(text: str, limit: int = 50) -> str:
     line = " ".join(text.split())
     return line if len(line) <= limit else f"{line[: limit - 1]}…"
 
@@ -314,7 +315,7 @@ def _history(state: ReplState, argument: str) -> None:
         marker = "*" if conversation.id == state.conversation_id else " "
         state.say(
             f" {marker}{number:>2}  {ago(conversation.updated_at):<10} "
-            f"{_title(conversation.title)}  [{conversation.id[:8]}]"
+            f"{short_title(conversation.title)}  [{conversation.id[:8]}]"
         )
     state.say("Resume one with /resume <number> or /resume <id>.")
 
@@ -348,7 +349,7 @@ def _resume(state: ReplState, argument: str) -> None:
     state.conversation_id = conversation.id
     refresh_context(state)
     exchanges = len(state.history) // 2
-    state.say(f"Resumed: {_title(conversation.title)} ({exchanges} exchanges)")
+    state.say(f"Resumed: {short_title(conversation.title)} ({exchanges} exchanges)")
     directory = Path(conversation.working_directory)
     if directory.is_dir() and os.access(directory, os.R_OK | os.X_OK):
         os.chdir(directory)
@@ -491,6 +492,82 @@ def _cwd(state: ReplState, argument: str) -> None:
     state.say(str(Path.cwd()))
 
 
+def _when(moment: datetime) -> str:
+    return moment.astimezone().strftime("%a %d %b %H:%M")
+
+
+def _schedule(state: ReplState, argument: str) -> None:
+    if state.application is None:
+        state.say("Scheduled tasks are not available.")
+        return
+    memory = state.application.memory
+    if argument:
+        try:
+            repeat, time, prompt = schedule.parse(argument)
+        except ValueError as exc:
+            state.say(str(exc))
+            return
+        first = schedule.next_occurrence(time, datetime.now(UTC))
+        task_id = memory.add_schedule(prompt, repeat, time, first)
+        how = f"every day at {time}" if repeat == "daily" else f"once at {time}"
+        state.say(f"Scheduled task {task_id}: {how}, next {_when(first)}.")
+        state.say("Jamie.app runs it and sends a notification; /startup on keeps the app running.")
+        return
+    tasks = memory.schedules()
+    if not tasks:
+        state.say("No scheduled tasks. Add one with /schedule daily 08:00 <prompt>.")
+        return
+    state.say("Scheduled tasks")
+    for task in tasks:
+        how = f"daily {task.time}" if task.repeat == "daily" else f"once {task.time}"
+        when = _when(task.next_run)
+        state.say(f"  {task.id:>3}  {how:<11} next {when}  {short_title(task.prompt)}")
+    state.say("Remove one with /unschedule <id>. Tasks run while Jamie.app is open.")
+
+
+def _unschedule(state: ReplState, argument: str) -> None:
+    if state.application is None:
+        state.say("Scheduled tasks are not available.")
+        return
+    if not argument.isdigit():
+        state.say("Usage: /unschedule <id>. Type /schedule to list tasks.")
+        return
+    if state.application.memory.remove_schedule(int(argument)):
+        state.say(f"Removed scheduled task {argument}.")
+    else:
+        state.say(f"No scheduled task {argument}. Type /schedule to list tasks.")
+
+
+def _memories(state: ReplState, argument: str) -> None:
+    if state.application is None:
+        state.say("Memories are not available.")
+        return
+    if not argument:
+        state.say("Usage: /memories <words>. Shows what Jamie would recall for them.")
+        return
+    records = state.application.memory.search_memories(argument, limit=10)
+    if not records:
+        state.say(f"No memories match {argument}.")
+        return
+    for record in records:
+        excerpt = short_title(record.content, 70)
+        state.say(f"  {record.id:>5}  {ago(record.created_at):<10} {excerpt}")
+    state.say("Forget one with /forget <id>; the saved conversation is kept.")
+
+
+def _forget(state: ReplState, argument: str) -> None:
+    if state.application is None:
+        state.say("Memories are not available.")
+        return
+    if not argument.isdigit():
+        state.say("Usage: /forget <id>. Find ids with /memories <words>.")
+        return
+    if state.application.memory.forget_memory(int(argument)):
+        state.say(f"Forgot memory {argument}. Jamie will no longer recall it.")
+    else:
+        state.say(f"No memory {argument}. Find ids with /memories <words>.")
+
+
 def _startup(state: ReplState, argument: str) -> None:
     argument = argument.lower()
     if argument not in {"", "on", "off"}:
@@ -622,6 +699,16 @@ def create_command_registry() -> CommandRegistry:
         SlashCommand("/permissions", "Show which tools ask for approval.", _permissions),
         SlashCommand("/cwd", "Show or change the working directory.", _cwd, "[path]"),
         SlashCommand("/stats", "Show turn, token, and timing totals.", _stats),
+        SlashCommand(
+            "/schedule",
+            "List tasks, or run a prompt daily or once at a time.",
+            _schedule,
+            "[daily|at HH:MM <prompt>]",
+            completions=("daily", "at"),
+        ),
+        SlashCommand("/unschedule", "Remove a scheduled task.", _unschedule, "<id>"),
+        SlashCommand("/memories", "Show what Jamie recalls for some words.", _memories, "<words>"),
+        SlashCommand("/forget", "Stop Jamie recalling one memory.", _forget, "<id>"),
         SlashCommand(
             "/startup",
             "Open Jamie.app in the background when you log in.",

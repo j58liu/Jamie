@@ -437,6 +437,11 @@ class JamieApplication:
             event_sink(TurnFailed(str(exc)))
             raise
 
+    @property
+    def memory(self) -> MemoryStore:
+        """The started application's store, for commands and scheduled tasks."""
+        return self._require_memory()
+
     def start_conversation(self) -> str:
         return self._require_memory().start_conversation(str(Path.cwd()))
 

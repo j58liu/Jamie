@@ -15,12 +15,14 @@ import threading
 import time
 from collections.abc import Callable, Coroutine
 from contextlib import ExitStack
+from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 
+from assistant import schedule
 from assistant.agent.events import (
     AgentEvent,
     AssistantDelta,
@@ -29,15 +31,17 @@ from assistant.agent.events import (
     ToolFinished,
     ToolStarted,
 )
+from assistant.agent.loop import ToolExecutor
 from assistant.cancellation import CancellationToken, TurnCancelled, current_token
 from assistant.config import ProjectConfig
 from assistant.llm.base import LLMError, ServerInfo
 from assistant.llm.llamacpp import LlamaCppBackend
+from assistant.memory import ScheduledTask
 from assistant.runtime import JamieApplication
 from assistant.runtime.workspaces import WorkspaceTools
 from assistant.security.approvals import ApprovalRequest
 from assistant.ui.approvals import summarize_approval
-from assistant.ui.commands import ReplState, create_command_registry
+from assistant.ui.commands import ReplState, create_command_registry, short_title
 from assistant.ui.renderer import error_lines, tool_summary
 from assistant.ui.status import short_model
 
@@ -52,6 +56,8 @@ MODEL_START_SECONDS = 900.0  # a first, uncached load can take minutes
 EXTRA_PATH = ("/opt/homebrew/bin", "/usr/local/bin")
 COMMAND_WIDTH = 88  # command output is shown in a monospace block
 COMMANDS = create_command_registry()
+SCHEDULE_POLL_SECONDS = 30.0
+NOTIFICATION_CHARACTERS = 240
 
 type Payload = dict[str, Any]
 type Submit = Callable[[Coroutine[Any, Any, None]], object]
@@ -158,10 +164,14 @@ class GuiSession:
         *,
         model: str | None = None,
         on_quit: Callable[[], object] = lambda: None,
+        scheduled_tools: Callable[[], ToolExecutor] | None = None,
+        notifier: Any = None,
     ) -> None:
         self._push = push
         self._submit = submit
         self._on_quit = on_quit
+        self._scheduled_tools = scheduled_tools  # None: this window runs no scheduled tasks
+        self._notifier = notifier
         self._output = io.StringIO()  # what commands print, sent to the page as text
         console = Console(file=self._output, width=COMMAND_WIDTH, no_color=True)
         self.state = ReplState(
@@ -178,7 +188,22 @@ class GuiSession:
             if not prompt or self._token is not None:
                 return False
             token = self._token = CancellationToken()
-        self._submit(self._run(prompt, token))
+        command = "\n" not in prompt and prompt.startswith("/")
+        self._submit(self._run(self._command(prompt) if command else self._turn(prompt, token)))
+        return True
+
+    def run_due(self, now: datetime | None = None) -> bool:
+        """Start the earliest due scheduled task, unless something is already running."""
+        if self._scheduled_tools is None:
+            return False
+        with self._lock:
+            if self._token is not None:
+                return False
+            due = self.state.application.memory.schedules(due_by=now or datetime.now(UTC))
+            if not due:
+                return False
+            token = self._token = CancellationToken()
+        self._submit(self._run(self._scheduled(due[0], token)))
         return True
 
     def cancel(self) -> None:
@@ -195,12 +220,9 @@ class GuiSession:
             self._take_output()
             return True
 
-    async def _run(self, prompt: str, token: CancellationToken) -> None:
+    async def _run(self, work: Coroutine[Any, Any, None]) -> None:
         try:
-            if "\n" not in prompt and prompt.startswith("/"):
-                await self._command(prompt)
-            else:
-                await self._turn(prompt, token)
+            await work
         except TurnCancelled:
             self.state.cancelled += 1
             self._send({"type": "cancelled"})
@@ -231,8 +253,47 @@ class GuiSession:
         )
         state.record_turn(prompt, result, time.monotonic() - started)
 
+    async def _scheduled(self, task: ScheduledTask, token: CancellationToken) -> None:
+        """Run a task in its own saved conversation, with tools safe to use unattended."""
+        application = self.state.application
+        # Move it on first, so a failure or a quit never runs the same task twice.
+        application.memory.reschedule(
+            task.id, schedule.after_run(task.repeat, task.time, datetime.now(UTC))
+        )
+        self._send({"type": "scheduled", "prompt": task.prompt, "time": task.time})
+        tools = self._scheduled_tools()
+        title = short_title(task.prompt)
+        try:
+            result = await application.run_turn(
+                task.prompt,
+                temperature=self.state.temperature,
+                max_tokens=self.state.max_tokens,
+                thinking=self.state.thinking,
+                cancel=token,
+                conversation_id=application.start_conversation(),
+                event_sink=self._show,
+                tools=tools,
+            )
+        except TurnCancelled:
+            raise
+        except Exception as exc:
+            self._notify(title, f"Jamie could not finish this: {exc}")
+            raise
+        finally:
+            close = getattr(tools, "close", None)
+            if close is not None:
+                close()
+        self._notify(title, result.message)
+
+    def _notify(self, title: str, body: str) -> None:
+        if self._notifier is not None:
+            self._notifier.send(title, short_title(body, NOTIFICATION_CHARACTERS))
+
     async def _command(self, line: str) -> None:
         state = self.state
+        name, _, argument = line.partition(" ")
+        if name.lower() == "/schedule" and argument.strip() and self._notifier is not None:
+            self._notifier.ask_permission()  # once; macOS remembers the answer
         if line.split(" ", 1)[0].lower() == "/clear":
             self._send({"type": "clear"})  # the page clears itself; nothing else changes
             return
@@ -350,6 +411,16 @@ def page_html(workspace: str = "") -> str:
     )
 
 
+async def poll_schedules(session: GuiSession, interval: float = SCHEDULE_POLL_SECONDS) -> None:
+    """Check for due tasks while the app runs; after sleep, a missed task runs once."""
+    while True:
+        try:
+            session.run_due()
+        except Exception as exc:  # noqa: BLE001 - keep checking; the store may recover
+            print(f"Jamie: scheduled tasks unavailable: {exc}", file=sys.stderr)
+        await asyncio.sleep(interval)
+
+
 class _RuntimeThread:
     """The asyncio loop that owns the application, beside the window's main thread."""
 
@@ -384,8 +455,11 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
     import webview  # loaded only here, so the terminal never pays for AppKit
     from PyObjCTools import AppHelper
 
+    from assistant.security.approvals import DenyAllApprovals
     from assistant.tools import WebClient, create_agent_registry
+    from assistant.tools.scopes import UNATTENDED_TOOLS
     from assistant.ui.gui import background, hotkey
+    from assistant.ui.gui.notifications import Notifier
 
     runtime = _RuntimeThread()
     window = webview.create_window(
@@ -400,6 +474,7 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
     quitting = threading.Event()
     background.hide_instead_of_closing(window, quitting)
     background.handle_reopen_and_quit(window, quitting)
+    notifier = Notifier(on_click=window.show)
 
     def quit_jamie() -> None:
         quitting.set()
@@ -448,10 +523,28 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
             lambda: create_agent_registry(Path.cwd(), approvals=approvals, web=web, backend=backend)
         )
         resources.callback(tools.close)
+
+        def scheduled_tools() -> ToolExecutor:
+            # Nobody is there to approve, so anything that would ask is denied.
+            registry = create_agent_registry(
+                Path.cwd(), approvals=DenyAllApprovals(), web=web, backend=backend
+            )
+            return registry.subset(UNATTENDED_TOOLS)
+
         session = GuiSession(
-            application, tools, push, runtime.submit, model=info.model, on_quit=quit_jamie
+            application,
+            tools,
+            push,
+            runtime.submit,
+            model=info.model,
+            on_quit=quit_jamie,
+            scheduled_tools=scheduled_tools,
+            notifier=notifier,
         )
         sessions.append(session)
+        if application.memory.schedules():
+            notifier.ask_permission()
+        runtime.submit(poll_schedules(session))
         push({"type": "ready", "model": short_model(info.model), "shortcut": shortcut_label})
 
     shortcuts: list[hotkey.HotKey] = []  # keeps the registration alive
