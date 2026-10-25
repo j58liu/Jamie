@@ -16,6 +16,7 @@ Jamie runs a small language model on your own Mac through [llama.cpp](https://gi
 - **Private by default.** Inference, memory, and task state stay on your Mac. Network access happens only through explicit tools: web research, Gmail, and Calendar.
 - **Permission-first.** Every action has a fixed risk class. Reads run freely, changes ask first, and sending a message asks every time. Approvals are bound to the exact operation.
 - **Persistent.** Tasks survive restarts, run on schedules or when new mail arrives, and resume exactly where they paused.
+- **Remembers you, carefully.** Jamie learns only from your own words, never from the emails or pages it reads. It never treats a model's guess as fact, and you can correct or erase any memory.
 - **Built for small models.** Grammar-constrained actions, scoped tool lists, and compact tool results make a 2B-parameter model reliable for everyday work.
 - **Measured.** A built-in evaluation suite covers the model, the agent, research, memory, and performance, and saves reproducible reports.
 
@@ -28,7 +29,8 @@ Jamie runs a small language model on your own Mac through [llama.cpp](https://gi
 | **Deferred approvals** | Unattended tasks pause and notify you. Approve from the terminal later, and Jamie runs exactly what you approved. |
 | **Safe file editing** | Workspace-confined edits with per-turn diffs, one-command undo, and enforced read-back verification. |
 | **Cited web research** | Concurrent search and retrieval, cross-checked answers, and citations validated against verbatim quotes. |
-| **Local memory** | SQLite FTS5 recall of earlier conversations, labeled as untrusted background. |
+| **Personal memory** | Typed facts (preferences, people, projects) with evidence and authority. Corrections win and keep history, and only relevant facts reach the prompt. |
+| **Step planner** | Multi-step requests become a validated plan. The runtime enforces dependencies, verifies each write with the provider id, and limits retries and replanning. |
 | **macOS automation** | Open apps, reveal files in Finder, use the clipboard, and run Shortcuts and AppleScript, each behind approval. |
 
 ## Demo
@@ -95,6 +97,8 @@ jamie research "What changed in Python 3.13?"
 jamie tasks add "Morning brief of my calendar" --every daily@08:00 --scope personal
 ```
 
+Design notes cover [personal memory](docs/design/memory.md), [planning](docs/design/planning.md), and [tasks](docs/design/tasks.md).
+
 To connect Gmail, Google Calendar, and Apple Reminders, see [docs/design/connectors.md](docs/design/connectors.md). It covers a Google desktop OAuth client, `jamie connect google`, and building the Reminders helper.
 
 ## How it works
@@ -156,11 +160,23 @@ Recorded runs with reports, fixtures, and hashes are kept in [`evals/results/`](
 | [Action protocol](evals/results/action-protocol-baseline.md) | 100% parse success, 90% exact instruction following (50 attempts) |
 | [Memory retrieval](evals/results/memory-fts-baseline.md) | 100% recall@k, MRR 1.000 (SQLite FTS5, no embeddings) |
 
+| [Personal memory, deterministic](evals/personal_memory_cases/deterministic/) | 14/14 cases, including 100% of explicit corrections |
+
+The workflow suite has 59 scenarios across planning, cross-app tasks, personal memory, and safety, including prompt injection inside emails, denied approvals, and recovery from failed or ambiguous writes. Its targets are engineering goals, not current results:
+
+| Metric | Target |
+| --- | --- |
+| Correct tool and arguments on routine tasks | ≥95% |
+| Completion of supported multi-step workflows | ≥90% |
+| Approval violations | 0 |
+| Unintended duplicate external writes | 0 |
+
 ```sh
+jamie eval scenarios --runs 3            # 59 workflows against fake Gmail, Calendar, Reminders
+jamie eval personal-memory               # deterministic, no model needed
 jamie eval benchmark --runs 3 --scope files
-jamie eval agent --runs 5        # includes the Gmail + Calendar reply workflow
+jamie eval agent --runs 5
 jamie eval research --runs 5
-jamie eval memory
 ```
 
 ## Project layout
@@ -169,6 +185,8 @@ jamie eval memory
 src/assistant/
   agent/        action protocol and bounded agent loop
   connectors/   Gmail, Google Calendar, Apple Reminders (+ OAuth, Keychain, time handling)
+  knowledge/    personal memory: records, extraction gate, retrieval
+  planning/     plan schema, validation, executor with verification and budgets
   tasks/        task store, engine, scheduler, approvals, recovery, worker
   tools/        file, editing, macOS, web, and connector tools; registry and scopes
   security/     permission policy, approvals, audit log

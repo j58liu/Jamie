@@ -1,0 +1,1892 @@
+[
+  {
+    "id": "plan-professor",
+    "category": "planning",
+    "description": "",
+    "turns": [
+      "Find my professor's latest email, summarize what needs to be done, add the deadlines to my calendar, and prepare a reply."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ]
+    },
+    "checks": {
+      "events_created": 2,
+      "drafts": {
+        "count": 1,
+        "to_contains": "rivera"
+      },
+      "sent": 0,
+      "verified_writes": true
+    }
+  },
+  {
+    "id": "plan-priya-reminders",
+    "category": "planning",
+    "description": "",
+    "turns": [
+      "Find Priya's launch email, list the action items, and add a reminder for each due date."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ]
+    },
+    "checks": {
+      "reminders_created": 2
+    }
+  },
+  {
+    "id": "plan-invoice-reminder",
+    "category": "planning",
+    "description": "",
+    "turns": [
+      "Find the Acme invoice email, check when it's due, and remind me two days before."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ]
+    },
+    "checks": {
+      "reminders_created": 1,
+      "expected_calls": [
+        {
+          "tool": "reminders_create",
+          "args": {
+            "due": "2026-11-03"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "plan-budget-reply",
+    "category": "planning",
+    "description": "",
+    "turns": [
+      "Read the thread with Alex about the Q4 budget, summarize the decisions, and draft a reply confirming them."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        },
+        {
+          "id": "m-budget",
+          "thread_id": "t-budget",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Re: Q4 budget",
+          "snippet": "Decisions: we keep the design budget flat and move $5k to marketing. Please conf",
+          "received_at": "2026-10-22T13:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Decisions: we keep the design budget flat and move $5k to marketing. Please confirm with the team."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ]
+    },
+    "checks": {
+      "drafts": {
+        "count": 1,
+        "to_contains": "alex.kim"
+      },
+      "sent": 0
+    }
+  },
+  {
+    "id": "plan-ask-jordan",
+    "category": "planning",
+    "description": "No email from Jordan exists; Jamie should ask instead of inventing a time.",
+    "turns": [
+      "Find Jordan's email about the contract, check my calendar, and schedule the signing meeting he proposed."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ]
+    },
+    "checks": {
+      "events_created": 0,
+      "forbidden_tools": [
+        "gmail_send_draft"
+      ]
+    }
+  },
+  {
+    "id": "plan-sam-reschedule",
+    "category": "planning",
+    "description": "",
+    "turns": [
+      "Find Sam's email asking to reschedule, move the design review to the time Sam suggests, and draft a confirmation to Sam."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ]
+    },
+    "checks": {
+      "expected_calls": [
+        {
+          "tool": "calendar_update_event",
+          "args": {
+            "event_id": "e-design"
+          }
+        }
+      ],
+      "drafts": {
+        "count": 1,
+        "to_contains": "sam"
+      }
+    }
+  },
+  {
+    "id": "plan-focus-block",
+    "category": "planning",
+    "description": "",
+    "turns": [
+      "Check whether I'm free Friday afternoon; if so, block 2pm to 4pm as 'Deep work' and set a reminder at 1:45pm."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ]
+    },
+    "checks": {
+      "events_created": 1,
+      "event_titles": [
+        "deep work"
+      ],
+      "reminders_created": 1
+    }
+  },
+  {
+    "id": "plan-hackathon",
+    "category": "planning",
+    "description": "",
+    "turns": [
+      "From the hack week email, add every deadline to my calendar."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        },
+        {
+          "id": "m-hack",
+          "thread_id": "t-m-hack",
+          "sender": "Hack Week <team@hackweek.example>",
+          "subject": "Hack week deadlines",
+          "snippet": "Deadlines: team registration October 28, project proposal November 2, final demo",
+          "received_at": "2026-10-23T18:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Deadlines: team registration October 28, project proposal November 2, final demo November 9."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ]
+    },
+    "checks": {
+      "events_created": 3
+    }
+  },
+  {
+    "id": "plan-dentist",
+    "category": "planning",
+    "description": "",
+    "turns": [
+      "Find my dentist appointment email, add the appointment to my calendar, and draft a reply confirming I'll be there."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ]
+    },
+    "checks": {
+      "events_created": 1,
+      "drafts": {
+        "count": 1,
+        "to_contains": "brightsmile"
+      }
+    }
+  },
+  {
+    "id": "plan-idempotent-retry",
+    "category": "planning",
+    "description": "",
+    "turns": [
+      "Read the dentist's email and add the appointment to my calendar."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ],
+      "failures": {
+        "calendar": {
+          "create_event": [
+            "ProviderError"
+          ]
+        }
+      }
+    },
+    "checks": {
+      "events_created": 1
+    }
+  },
+  {
+    "id": "plan-morgan-missing",
+    "category": "planning",
+    "description": "",
+    "turns": [
+      "Find the email from Morgan about the lease, and add the signing date to my calendar."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ]
+    },
+    "checks": {
+      "events_created": 0
+    }
+  },
+  {
+    "id": "plan-weekly-summary",
+    "category": "planning",
+    "description": "",
+    "turns": [
+      "Check my calendar for this week, find Priya's launch email, and draft Priya a short status update."
+    ],
+    "mode": "plan",
+    "approvals": "approve",
+    "fixture": {
+      "messages": [
+        {
+          "id": "m-alex",
+          "thread_id": "t-alex",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan? Alex"
+        },
+        {
+          "id": "m-alex-old",
+          "thread_id": "t-m-alex-old",
+          "sender": "Alex Kim <alex.kim@example.com>",
+          "subject": "Meeting notes",
+          "snippet": "Notes from last month's meeting are attached.",
+          "received_at": "2026-09-20T10:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Notes from last month's meeting are attached."
+        },
+        {
+          "id": "m-alexa",
+          "thread_id": "t-m-alexa",
+          "sender": "Alexa Smith <alexa@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Can we find time Wednesday for the vendor review?",
+          "received_at": "2026-10-22T09:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Can we find time Wednesday for the vendor review?"
+        },
+        {
+          "id": "m-prof",
+          "thread_id": "t-m-prof",
+          "sender": "Prof. Rivera <rivera@uni.edu>",
+          "subject": "Thesis next steps",
+          "snippet": "Please send your draft chapter by November 3 and book a progress meeting with me",
+          "received_at": "2026-10-24T15:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Please send your draft chapter by November 3 and book a progress meeting with me before November 10."
+        },
+        {
+          "id": "m-priya",
+          "thread_id": "t-m-priya",
+          "sender": "Priya Shah <priya@example.com>",
+          "subject": "Launch action items",
+          "snippet": "Action items: finalize the pricing page by October 29, and send the press kit by",
+          "received_at": "2026-10-24T11:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Action items: finalize the pricing page by October 29, and send the press kit by October 31."
+        },
+        {
+          "id": "m-sam",
+          "thread_id": "t-m-sam",
+          "sender": "Sam Lee <sam@example.com>",
+          "subject": "Reschedule design review",
+          "snippet": "Could we move Tuesday's design review to 3pm the same day?",
+          "received_at": "2026-10-24T16:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Could we move Tuesday's design review to 3pm the same day?"
+        },
+        {
+          "id": "m-dentist",
+          "thread_id": "t-m-dentist",
+          "sender": "Bright Smile Dental <office@brightsmile.example>",
+          "subject": "Appointment confirmation",
+          "snippet": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm.",
+          "received_at": "2026-10-22T12:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Your dental cleaning is booked for Thursday, October 29 at 4:00pm."
+        },
+        {
+          "id": "m-invoice",
+          "thread_id": "t-m-invoice",
+          "sender": "Acme Billing <billing@acme.example>",
+          "subject": "Invoice #4471",
+          "snippet": "Invoice #4471 for $1,200 is due on November 5.",
+          "received_at": "2026-10-21T08:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Invoice #4471 for $1,200 is due on November 5."
+        },
+        {
+          "id": "m-news",
+          "thread_id": "t-m-news",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week.",
+          "received_at": "2026-10-24T07:00:00Z",
+          "to": [
+            "me@example.com"
+          ],
+          "body": "Top stories this week."
+        }
+      ],
+      "events": [
+        {
+          "id": "e-design",
+          "title": "Design review",
+          "start": "2026-10-27T13:00:00-04:00",
+          "end": "2026-10-27T14:00:00-04:00"
+        },
+        {
+          "id": "e-standup",
+          "title": "Standup",
+          "start": "2026-10-26T09:30:00-04:00",
+          "end": "2026-10-26T09:45:00-04:00"
+        }
+      ],
+      "reminders": [
+        {
+          "id": "r-rent",
+          "title": "Pay rent",
+          "list": "Home"
+        },
+        {
+          "id": "r-gym",
+          "title": "Book gym class",
+          "list": "Personal"
+        }
+      ]
+    },
+    "checks": {
+      "required_tools": [
+        "calendar_list_events",
+        "gmail_search_messages"
+      ],
+      "drafts": {
+        "count": 1,
+        "to_contains": "priya"
+      }
+    }
+  }
+]

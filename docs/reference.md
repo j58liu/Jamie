@@ -1,8 +1,27 @@
 # Jamie reference
 
 The complete command, protocol, security, and evaluation reference. For an overview,
-see the [README](../README.md). Personal-app connectors are described in
-[connectors](design/connectors.md) and persistent tasks in [tasks](design/tasks.md).
+see the [README](../README.md). Design notes: [connectors](design/connectors.md),
+[tasks](design/tasks.md), [personal memory](design/memory.md), and
+[planning](design/planning.md).
+
+## Workflow evaluations
+
+```sh
+jamie eval scenarios --runs 3 [--category planning|cross_app|routine|memory|safety]
+jamie eval personal-memory
+```
+
+Scenario cases live in `evals/planning_cases/`, `evals/cross_app_cases/`,
+`evals/personal_memory_cases/`, and `evals/safety_cases/`. Each case defines one or
+more turns (each turn is a new session that shares memory), the approval policy,
+fixture emails, events, reminders, and seeded memories, and injected connector
+failures. It also defines checks: expected calls and arguments, required and
+forbidden tools, answer text, drafts, sends, created events and reminders, memory
+state, and whether writes were verified. The report scores routine accuracy,
+workflow completion, approval violations, and duplicate external writes. The
+deterministic memory cases in `personal_memory_cases/deterministic/` run without a
+model.
 
 ## Development
 
