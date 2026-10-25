@@ -234,6 +234,7 @@ def _run_loop(
     deadline: float,
     memory_context: str | None,
     history: list[Message] | None,
+    prior_messages: list[Message] | None = None,
 ) -> str:
     _optional_call(tools, "begin_turn")
     try:
@@ -247,6 +248,7 @@ def _run_loop(
         ]
         messages.extend(history or [])
         messages.append(Message(role="user", content=prompt))
+        messages.extend(prior_messages or [])  # actions already taken by a resumed task
         tried: Counter[tuple[str, str]] = Counter()  # (action, result) pairs in this turn
 
         for _ in range(max_steps):
@@ -313,8 +315,12 @@ def run_agent(
     history: list[Message] | None = None,
     event_sink: EventSink = discard_event,
     cancel: CancellationToken | None = None,
+    prior_messages: list[Message] | None = None,
 ) -> str:
     """Run bounded model actions until the model returns a finish action.
+
+    ``prior_messages`` continues a turn: the action/observation pairs a resumed task
+    already completed, placed after the prompt.
 
     Cancellation is checked before each model request and tool call, and is passed to
     the model and tools so they can stop early; it raises TurnCancelled.
@@ -338,6 +344,7 @@ def run_agent(
                         deadline=deadline,
                         memory_context=memory_context,
                         history=history,
+                        prior_messages=prior_messages,
                     ),
                     deadline,
                     event_sink,

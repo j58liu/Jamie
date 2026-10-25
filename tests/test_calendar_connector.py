@@ -283,3 +283,26 @@ def test_prompt_includes_current_local_time(calendar):
         "Current local time: Sunday 2026-10-25T10:00-04:00"
         in _registry(connector, []).instructions()
     )
+
+
+def test_free_slot_lengths_are_elapsed_time_across_fall_back(calendar):
+    api, connector = calendar
+    # 00:00-04:00 local on 2026-11-01 is five real hours (04:00Z-09:00Z); busy 05:00-06:00Z.
+    api.on(
+        "POST",
+        FREEBUSY,
+        {
+            "calendars": {
+                "primary": {
+                    "busy": [{"start": "2026-11-01T05:00:00Z", "end": "2026-11-01T06:00:00Z"}]
+                }
+            }
+        },
+    )
+    result = connector.check_availability(
+        at(2026, 11, 1, 0), at(2026, 11, 1, 4), duration_minutes=150
+    )
+    # 04:00Z-05:00Z is one hour, 06:00Z-09:00Z is three hours; only the second fits 2.5h.
+    assert [(s.start, s.end) for s in result.free_slots] == [
+        ("2026-11-01T01:00-05:00", "2026-11-01T04:00-05:00")
+    ]

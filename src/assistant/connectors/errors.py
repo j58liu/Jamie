@@ -35,5 +35,9 @@ class ProviderError(ConnectorError):
     """The provider failed or returned a response Jamie could not use."""
 
 
+class AlreadyExistsError(ProviderError):
+    """An item with the client-supplied id already exists (an earlier attempt succeeded)."""
+
+
 class UnavailableError(ConnectorError):
     """The connector cannot run on this machine (platform, missing helper, permission)."""

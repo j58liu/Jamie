@@ -513,6 +513,74 @@ def _stats(state: ReplState, argument: str) -> None:
         state.say(f"{label:<{label_width}}{value:>{value_width}}")
 
 
+def _task_store(state: ReplState):
+    from assistant.config import ProjectConfig
+    from assistant.tasks.store import TaskStore, TaskStoreError
+
+    settings = getattr(state.application, "config", None) or ProjectConfig()
+    path = settings.resolved_tasks_path()
+    if not path.exists():  # reading tasks never creates the database
+        state.say('No tasks yet. Add one with: jamie tasks add "..."')
+        return None
+    try:
+        return TaskStore(path)
+    except TaskStoreError as exc:
+        state.say(f"Tasks unavailable: {exc}")
+        return None
+
+
+def _tasks(state: ReplState, argument: str) -> None:
+    from assistant.ui.tasks import ACTIVE_STATES, pending_approvals, task_rows
+
+    store = _task_store(state)
+    if store is None:
+        return
+    for line in task_rows(store.list_tasks(ACTIVE_STATES)):
+        state.say(line)
+    waiting = len(pending_approvals(store))
+    if waiting:
+        state.say(f"{waiting} waiting for approval · /approvals")
+
+
+def _approvals(state: ReplState, argument: str) -> None:
+    from assistant.ui.tasks import approval_view, pending_approvals
+
+    store = _task_store(state)
+    if store is None:
+        return
+    pending = pending_approvals(store)
+    if not pending:
+        state.say("Nothing is waiting for approval.")
+        return
+    for approval in pending:
+        state.console.print(approval_view(store, approval))
+    state.say("Decide with /approve <id> or /reject <id>.")
+
+
+def _decide(approving: bool) -> CommandHandler:
+    def handler(state: ReplState, argument: str) -> None:
+        from assistant.tasks.approvals import ApprovalError, approve, reject
+
+        store = _task_store(state)
+        if store is None:
+            return
+        approval = store.find_approval_by_prefix(argument.strip()) if argument.strip() else None
+        if approval is None:
+            state.say(f"Usage: {'/approve' if approving else '/reject'} <approval id>")
+            return
+        try:
+            decided = (approve if approving else reject)(store, approval.id)
+        except ApprovalError as exc:
+            state.say(str(exc))
+            return
+        if approving:
+            state.say(f"Approved. Task {decided.task_id[:8]} continues on the next worker pass.")
+        else:
+            state.say(f"Rejected. Task {decided.task_id[:8]} was cancelled.")
+
+    return handler
+
+
 def create_command_registry() -> CommandRegistry:
     registry = CommandRegistry()
     for command in (
@@ -531,7 +599,7 @@ def create_command_registry() -> CommandRegistry:
             "/scope",
             "Choose the tools sent to the model.",
             _scope,
-            "[all|files|read|web|macos]",
+            "[all|files|read|web|macos|personal]",
             completions=tuple(ToolScope),
         ),
         SlashCommand(
@@ -581,6 +649,10 @@ def create_command_registry() -> CommandRegistry:
         SlashCommand("/tools", "List agent tools and their permission levels.", _tools),
         SlashCommand("/permissions", "Show which tools ask for approval.", _permissions),
         SlashCommand("/cwd", "Show or change the working directory.", _cwd, "[path]"),
+        SlashCommand("/tasks", "List persistent tasks.", _tasks),
+        SlashCommand("/approvals", "Show task actions waiting for approval.", _approvals),
+        SlashCommand("/approve", "Approve a waiting task action.", _decide(True), "<id>"),
+        SlashCommand("/reject", "Reject a waiting task action.", _decide(False), "<id>"),
         SlashCommand("/stats", "Show turn, token, and timing totals.", _stats),
         SlashCommand("/quit", "Leave Jamie (also Ctrl+D).", _quit, aliases=("/exit",)),
     ):

@@ -163,6 +163,10 @@ class JamieApplication:
         self._connectors = None
 
     @property
+    def config(self) -> ProjectConfig:
+        return self._config
+
+    @property
     def connectors(self):
         """Personal-application connectors from configuration, created once on first use.
 

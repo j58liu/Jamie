@@ -16,6 +16,7 @@ from assistant.connectors import Connectors
 from assistant.connectors.base import ConnectorInput, ConnectorTool, to_json
 from assistant.connectors.timeutil import describe_now
 from assistant.security.policy import PermissionLevel
+from assistant.tasks.context import current_operation_key
 
 _ID = re.compile(r"^[A-Za-z0-9_:.\-]{1,256}$")
 _EMAIL = re.compile(r"^[^@\s,<>]+@[^@\s,<>]+\.[^@\s,<>]+$")
@@ -182,6 +183,7 @@ class GmailCreateDraftTool(ConnectorTool):
             arguments.body,
             cc=arguments.cc,
             reply_to_message_id=arguments.reply_to_message_id,
+            operation_key=current_operation_key.get(),
         )
 
 
@@ -342,6 +344,7 @@ class CalendarCreateEventTool(_NowContext, ConnectorTool):
             attendees=arguments.attendees,
             description=arguments.description,
             location=arguments.location,
+            operation_key=current_operation_key.get(),
         )
 
 

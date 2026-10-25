@@ -167,6 +167,13 @@ class RemindersConnector:
         result = self._call("create", request)
         return self._reminders([result])[0]
 
+    def find(self, title: str) -> Reminder | None:
+        """An existing reminder with exactly this title, completed or not."""
+        for reminder in self.list(include_completed=True, limit=100):
+            if reminder.title.strip().casefold() == title.strip().casefold():
+                return reminder
+        return None
+
     def complete(self, reminder_id: str) -> Reminder:
         result = self._call("complete", {"id": reminder_id})
         reminder = self._reminders([result])[0]

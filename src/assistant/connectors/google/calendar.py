@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 from datetime import datetime, timedelta, tzinfo
 
 from pydantic import BaseModel
 
 from assistant.connectors.base import Capability, ConnectionStatus, ConnectorInfo
-from assistant.connectors.errors import ConnectorError
+from assistant.connectors.errors import AlreadyExistsError, ConnectorError, NotFoundError
 from assistant.connectors.google.auth import (
     CALENDAR_EVENTS,
     CALENDAR_EVENTS_READONLY,
@@ -19,6 +21,7 @@ from assistant.connectors.timeutil import (
     iso_utc,
     parse_provider_time,
     require_aware,
+    to_utc,
 )
 
 API = "https://www.googleapis.com/calendar/v3"
@@ -71,19 +74,25 @@ class Availability(BaseModel):
     unavailable_attendees: list[str] | None = None
 
 
+def event_id_for(operation_key: str) -> str:
+    """A Google-valid event id (base32hex, lowercase) derived from an operation key."""
+    digest = hashlib.sha256(operation_key.encode("utf-8")).digest()[:20]
+    return base64.b32hexencode(digest).decode("ascii").lower().rstrip("=")
+
+
 def _check_range(start: datetime, end: datetime) -> None:
     require_aware(start, "start")
     require_aware(end, "end")
     if end <= start:
         raise ConnectorError("end must be after start.")
-    if end - start > timedelta(days=MAX_RANGE_DAYS):
+    if to_utc(end) - to_utc(start) > timedelta(days=MAX_RANGE_DAYS):
         raise ConnectorError(f"The range must be at most {MAX_RANGE_DAYS} days.")
 
 
 def merge_spans(spans: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
-    """Merge overlapping or touching busy blocks."""
+    """Merge overlapping or touching busy blocks (compared in UTC)."""
     merged: list[tuple[datetime, datetime]] = []
-    for start, end in sorted(spans):
+    for start, end in sorted((to_utc(a), to_utc(b)) for a, b in spans):
         if merged and start <= merged[-1][1]:
             merged[-1] = (merged[-1][0], max(merged[-1][1], end))
         else:
@@ -95,6 +104,7 @@ def free_slots(
     start: datetime, end: datetime, busy: list[tuple[datetime, datetime]], minimum_minutes: float
 ) -> list[tuple[datetime, datetime]]:
     slots = []
+    start, end = to_utc(start), to_utc(end)
     cursor = start
     for busy_start, busy_end in merge_spans(busy):
         if busy_end <= start or busy_start >= end:
@@ -210,9 +220,7 @@ class CalendarConnector:
 
     def get_event(self, event_id: str) -> EventDetail:
         self._session.require_scope(CALENDAR_EVENTS_READONLY, "read")
-        return self._detail(
-            self._session.request("GET", f"{API}/calendars/{self._calendar}/events/{event_id}")
-        )
+        return self._detail(self._raw_event(event_id))
 
     def check_availability(
         self,
@@ -250,7 +258,7 @@ class CalendarConnector:
                     )
                 )
         merged = merge_spans(busy)
-        length = duration_minutes or (end - start).total_seconds() / 60
+        length = duration_minutes or (to_utc(end) - to_utc(start)).total_seconds() / 60
         slots = free_slots(start, end, merged, length)
         return Availability(
             start=self._local(start),
@@ -281,9 +289,16 @@ class CalendarConnector:
         attendees: list[str] | None = None,
         description: str | None = None,
         location: str | None = None,
+        operation_key: str | None = None,
     ) -> EventDetail:
+        """Create an event; ``operation_key`` makes a retried create return the first one."""
         self._session.require_scope(CALENDAR_EVENTS, "calendar-write")
         _check_range(start, end)
+        if operation_key is not None:
+            try:
+                return self._detail(self._raw_event(event_id_for(operation_key)), duplicate=True)
+            except NotFoundError:
+                pass
         existing = self.find_duplicate(title, start, end)
         if existing is not None:
             return self._detail(existing, duplicate=True)
@@ -298,13 +313,32 @@ class CalendarConnector:
             body["location"] = location
         if attendees:
             body["attendees"] = [{"email": email} for email in attendees]
-        created = self._session.request(
-            "POST",
-            f"{API}/calendars/{self._calendar}/events",
-            params={"sendUpdates": "all" if attendees else "none"},
-            json=body,
-        )
+        if operation_key is not None:
+            body["id"] = event_id_for(operation_key)
+        try:
+            created = self._session.request(
+                "POST",
+                f"{API}/calendars/{self._calendar}/events",
+                params={"sendUpdates": "all" if attendees else "none"},
+                json=body,
+            )
+        except AlreadyExistsError:
+            return self._detail(self._raw_event(str(body["id"])), duplicate=True)
         return self._detail(created)
+
+    def _raw_event(self, event_id: str) -> dict:
+        event = self._session.request("GET", f"{API}/calendars/{self._calendar}/events/{event_id}")
+        if event.get("status") == "cancelled":
+            raise NotFoundError("Not found in the Google account.")
+        return event
+
+    def find_by_operation(self, operation_key: str) -> EventDetail | None:
+        """The event an earlier attempt of this operation created, if any."""
+        self._session.require_scope(CALENDAR_EVENTS_READONLY, "read")
+        try:
+            return self._detail(self._raw_event(event_id_for(operation_key)))
+        except NotFoundError:
+            return None
 
     def update_event(
         self,

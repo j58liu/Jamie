@@ -28,6 +28,7 @@ from assistant.connectors.google.gmail import (
     SentMessage,
     ThreadSummary,
 )
+from assistant.connectors.timeutil import to_utc
 
 
 class FakeGmail:
@@ -36,6 +37,7 @@ class FakeGmail:
     def __init__(self, messages: list[dict]) -> None:
         self.messages = [MessageDetail.model_validate(m) for m in messages]
         self.drafts: dict[str, Draft] = {}
+        self.drafts_by_operation: dict[str, Draft] = {}
         self.sent: list[str] = []
 
     def info(self) -> ConnectorInfo:
@@ -86,7 +88,14 @@ class FakeGmail:
             id=thread_id, message_count=len(thread), messages=summaries, latest=thread[-1]
         )
 
-    def create_draft(self, to, subject, body, *, cc=None, reply_to_message_id=None) -> Draft:
+    def find_draft_by_operation(self, operation_key: str) -> Draft | None:
+        return self.drafts_by_operation.get(operation_key)
+
+    def create_draft(
+        self, to, subject, body, *, cc=None, reply_to_message_id=None, operation_key=None
+    ) -> Draft:
+        if operation_key in self.drafts_by_operation:
+            return self.drafts_by_operation[operation_key]
         thread_id = None
         if reply_to_message_id:
             original = self.get_message(reply_to_message_id)
@@ -103,6 +112,8 @@ class FakeGmail:
             in_reply_to=reply_to_message_id,
         )
         self.drafts[draft.id] = draft
+        if operation_key is not None:
+            self.drafts_by_operation[operation_key] = draft
         return draft
 
     def get_draft(self, draft_id: str) -> Draft:
@@ -170,7 +181,7 @@ class FakeCalendar:
         busy = merge_spans(
             [(e["start"], e["end"]) for e in self.events if e["start"] < end and e["end"] > start]
         )
-        length = duration_minutes or (end - start).total_seconds() / 60
+        length = duration_minutes or (to_utc(end) - to_utc(start)).total_seconds() / 60
         slots = free_slots(start, end, busy, length)
         return Availability(
             start=self._local(start),
@@ -181,9 +192,26 @@ class FakeCalendar:
             unavailable_attendees=list(attendees) if attendees else None,
         )
 
+    def find_by_operation(self, operation_key: str) -> EventDetail | None:
+        for event in self.events:
+            if event.get("operation_key") == operation_key:
+                return EventDetail(**self._summary(event))
+        return None
+
     def create_event(
-        self, title, start, end, *, attendees=None, description=None, location=None
+        self,
+        title,
+        start,
+        end,
+        *,
+        attendees=None,
+        description=None,
+        location=None,
+        operation_key=None,
     ) -> EventDetail:
+        existing = self.find_by_operation(operation_key) if operation_key else None
+        if existing is not None:
+            return existing.model_copy(update={"duplicate": True})
         for event in self.events:
             if (
                 event["title"].casefold() == title.casefold()
@@ -191,7 +219,13 @@ class FakeCalendar:
                 and event["end"] > start
             ):
                 return EventDetail(**self._summary(event), duplicate=True)
-        event = {"id": f"event-{len(self.events) + 1}", "title": title, "start": start, "end": end}
+        event = {
+            "id": f"event-{len(self.events) + 1}",
+            "title": title,
+            "start": start,
+            "end": end,
+            "operation_key": operation_key,
+        }
         self.events.append(event)
         return EventDetail(**self._summary(event))
 

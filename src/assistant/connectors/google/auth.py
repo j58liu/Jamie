@@ -24,6 +24,7 @@ import httpx
 from assistant.connectors.base import ConnectionStatus
 from assistant.connectors.credentials import CredentialStore
 from assistant.connectors.errors import (
+    AlreadyExistsError,
     AuthExpiredError,
     ConnectorError,
     NotConnectedError,
@@ -365,4 +366,6 @@ def _checked(response: httpx.Response) -> dict:
         raise PermissionScopeError("The Google sign-in lacks permission for this operation.")
     if response.status_code == 404:
         raise NotFoundError("Not found in the Google account.")
+    if response.status_code == 409:
+        raise AlreadyExistsError("An item with this id already exists.")
     raise ProviderError(f"Google API error {response.status_code}: {message[:200]}")

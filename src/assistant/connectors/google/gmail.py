@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import html
 import re
 from datetime import UTC, datetime
@@ -180,6 +181,12 @@ def _draft(draft: dict) -> Draft:
     )
 
 
+def message_id_for(operation_key: str) -> str:
+    """A stable RFC 5322 Message-ID for one operation, used to find an earlier attempt."""
+    digest = hashlib.sha256(operation_key.encode("utf-8")).hexdigest()[:32]
+    return f"<jamie-{digest}@jamie.local>"
+
+
 class GmailConnector:
     """Search, read, draft, and send Gmail messages through one Google session."""
 
@@ -248,9 +255,16 @@ class GmailConnector:
         *,
         cc: list[str] | None = None,
         reply_to_message_id: str | None = None,
+        operation_key: str | None = None,
     ) -> Draft:
         self._session.require_scope(GMAIL_COMPOSE, "compose")
+        if operation_key is not None:
+            existing = self.find_draft_by_operation(operation_key)
+            if existing is not None:
+                return existing
         email = EmailMessage()
+        if operation_key is not None:
+            email["Message-ID"] = message_id_for(operation_key)
         email["To"] = ", ".join(to)
         if cc:
             email["Cc"] = ", ".join(cc)
@@ -290,6 +304,17 @@ class GmailConnector:
             body=body,
             in_reply_to=in_reply_to,
         )
+
+    def find_draft_by_operation(self, operation_key: str) -> Draft | None:
+        """The draft an earlier attempt of this operation saved, if any."""
+        self._session.require_scope(GMAIL_COMPOSE, "compose")
+        listing = self._session.request(
+            "GET",
+            f"{API}/drafts",
+            params={"q": f"rfc822msgid:{message_id_for(operation_key)}", "maxResults": 1},
+        )
+        drafts = listing.get("drafts", [])
+        return self.get_draft(drafts[0]["id"]) if drafts else None
 
     def get_draft(self, draft_id: str) -> Draft:
         self._session.require_scope(GMAIL_COMPOSE, "compose")

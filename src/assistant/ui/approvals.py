@@ -46,6 +46,7 @@ ACTIONS: dict[str, tuple[str, str | None]] = {
     "calendar_update_event": ("change the calendar event", "event_id"),
     "reminders_create": ("create the reminder", "title"),
     "reminders_complete": ("complete the reminder", "reminder_id"),
+    "run_missed_task": ("run a task that was missed", "task"),
 }
 
 # tool: (argument holding the command, the command line the tool runs with it).
