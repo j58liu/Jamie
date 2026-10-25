@@ -68,3 +68,9 @@ def test_reject_edit_and_cancel(store):
     assert runner.invoke(cli.app, ["tasks", "cancel", other.id[:8]]).exit_code == 0
     shown = runner.invoke(cli.app, ["tasks", "show", other.id[:8]])
     assert "State: cancelled" in shown.output
+
+
+def test_start_queues_a_scheduled_commitment(store):
+    task = store().create_task("Commitment: reply to Sam", "reply", state=TaskState.SCHEDULED)
+    assert runner.invoke(cli.app, ["tasks", "start", task.id[:8]]).exit_code == 0
+    assert store().get_task(task.id).state is TaskState.READY

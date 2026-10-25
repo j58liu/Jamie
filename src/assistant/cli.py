@@ -18,6 +18,7 @@ from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_c
 from assistant.config import ConfigurationError, ProjectConfig, load_config
 from assistant.doctor import Status, run_checks
 from assistant.eval_cli import app as eval_app
+from assistant.knowledge_cli import memory_app
 from assistant.llm.base import LLMError, managed_backend
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import (
@@ -55,6 +56,7 @@ app = typer.Typer(
 app.add_typer(eval_app, name="eval")
 app.add_typer(tasks_app, name="tasks")
 app.add_typer(worker_app, name="worker")
+app.add_typer(memory_app, name="memory")
 
 
 def _start_memory(settings, kind: str, prompt: str) -> tuple[MemoryStore, str, str | None]:
@@ -117,13 +119,18 @@ async def _run_agent(
     max_steps: int,
     timeout: float,
     scope: ToolScope = ToolScope.ALL,
+    plan: str = "auto",
 ) -> None:
     """One agent turn on the shared runtime; Ctrl+C cancels it at the next safe point."""
     console = Console(no_color=not settings.color)
     renderer = EventRenderer(console, Console(stderr=True, no_color=not settings.color))
     backend = LlamaCppBackend()
     token = CancellationToken()
-    async with JamieApplication(settings, backend_factory=lambda: backend) as application:
+    async with JamieApplication(
+        settings,
+        backend_factory=lambda: backend,
+        extract_memories=settings.memory.extraction == "cue",
+    ) as application:
         with WebClient() as web, interrupt_cancels(token):
             tools = create_agent_registry(
                 workspace,
@@ -140,6 +147,7 @@ async def _run_agent(
                 timeout_seconds=timeout,
                 cancel=token,
                 event_sink=renderer.handle,
+                plan=plan,
             )
 
 
@@ -174,7 +182,11 @@ async def _run_repl(settings: ProjectConfig) -> None:
         raise StartupError(backend.server_url, str(exc)) from exc
     console = Console(no_color=not settings.color)
     approvals = TerminalApprovalProvider(console)  # one per session, so "allow session" lasts
-    async with JamieApplication(settings, backend_factory=lambda: backend) as application:
+    async with JamieApplication(
+        settings,
+        backend_factory=lambda: backend,
+        extract_memories=settings.memory.extraction == "cue",
+    ) as application:
         with WebClient() as web:
             await run_repl(
                 application,
@@ -283,6 +295,10 @@ def agent(
     timeout: Annotated[
         float, typer.Option(min=0.001, help="Maximum seconds for the complete task.")
     ] = 300.0,
+    plan: Annotated[
+        str,
+        typer.Option(help="Use the step planner: auto (multi-step requests), always, or never."),
+    ] = "auto",
     config: Annotated[
         Path | None,
         typer.Option("--config", help="Read a specific TOML configuration file."),
@@ -297,8 +313,18 @@ def agent(
     try:
         settings = load_config(config)
         steps = max_steps if max_steps is not None else SCOPE_MAX_STEPS.get(scope, MAX_STEPS)
+        if plan not in {"auto", "always", "never"}:
+            raise typer.BadParameter("Use auto, always, or never.", param_hint="--plan")
         asyncio.run(
-            _run_agent(settings, prompt, workspace, max_steps=steps, timeout=timeout, scope=scope)
+            _run_agent(
+                settings,
+                prompt,
+                workspace,
+                max_steps=steps,
+                timeout=timeout,
+                scope=scope,
+                plan=plan,
+            )
         )
     except TurnCancelled as exc:
         Console(stderr=True).print("Cancelled.", markup=False, highlight=False)

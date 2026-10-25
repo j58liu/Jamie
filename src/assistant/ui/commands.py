@@ -66,6 +66,7 @@ class ReplState:
     workspace_tools: WorkspaceTools | None = None
     mode: str = "task"
     scope: ToolScope = ToolScope.ALL
+    plan: str = "auto"  # auto | always | never: when task mode uses the step planner
 
     def estimated_tokens(self) -> int:
         return sum(len(m.content) for m in self.history) // CHARACTERS_PER_TOKEN
@@ -513,6 +514,15 @@ def _stats(state: ReplState, argument: str) -> None:
         state.say(f"{label:<{label_width}}{value:>{value_width}}")
 
 
+def _plan(state: ReplState, argument: str) -> None:
+    if argument:
+        if argument not in {"auto", "always", "never"}:
+            state.say("Usage: /plan auto|always|never")
+            return
+        state.plan = argument
+    state.say(f"Planner: {state.plan}")
+
+
 def _task_store(state: ReplState):
     from assistant.config import ProjectConfig
     from assistant.tasks.store import TaskStore, TaskStoreError
@@ -649,6 +659,13 @@ def create_command_registry() -> CommandRegistry:
         SlashCommand("/tools", "List agent tools and their permission levels.", _tools),
         SlashCommand("/permissions", "Show which tools ask for approval.", _permissions),
         SlashCommand("/cwd", "Show or change the working directory.", _cwd, "[path]"),
+        SlashCommand(
+            "/plan",
+            "Use the step planner for multi-step requests.",
+            _plan,
+            "[auto|always|never]",
+            completions=("auto", "always", "never"),
+        ),
         SlashCommand("/tasks", "List persistent tasks.", _tasks),
         SlashCommand("/approvals", "Show task actions waiting for approval.", _approvals),
         SlashCommand("/approve", "Approve a waiting task action.", _decide(True), "<id>"),

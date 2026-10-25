@@ -237,3 +237,88 @@ class FakeCalendar:
                         event[key] = fields[key]
                 return EventDetail(**self._summary(event))
         raise NotFoundError("Not found in the Google account.")
+
+
+class FakeReminders:
+    name = "apple_reminders"
+
+    def __init__(self, reminders: list[dict] | None = None) -> None:
+        from assistant.connectors.apple.reminders import Reminder
+
+        self._model = Reminder
+        self.items = [Reminder.model_validate(r) for r in reminders or []]
+        self.created: list[str] = []
+
+    def info(self) -> ConnectorInfo:
+        from assistant.connectors.apple import reminders as module
+
+        return ConnectorInfo(
+            self.name,
+            ConnectionStatus.CONNECTED,
+            frozenset({Capability.READ, Capability.WRITE}),
+            module.OPERATIONS,
+        )
+
+    def list(self, list_name=None, include_completed=False, limit=25):
+        found = [r for r in self.items if include_completed or not r.completed]
+        if list_name:
+            found = [r for r in found if r.list == list_name]
+        return found[:limit]
+
+    def find(self, title: str):
+        return next((r for r in self.items if r.title.casefold() == title.casefold()), None)
+
+    def create(self, title, *, due=None, list_name=None, notes=None):
+        reminder = self._model(
+            id=f"reminder-{len(self.items) + 1}",
+            title=title,
+            list=list_name or "Reminders",
+            due=due.isoformat() if due is not None else None,
+            notes=notes,
+        )
+        self.items.append(reminder)
+        self.created.append(reminder.id)
+        return reminder
+
+    def complete(self, reminder_id: str):
+        for index, reminder in enumerate(self.items):
+            if reminder.id == reminder_id:
+                self.items[index] = reminder.model_copy(update={"completed": True})
+                return self.items[index]
+        raise NotFoundError("Reminder not found.")
+
+
+class FailureInjector:
+    """Wrap a connector so chosen methods fail a set number of times (for tests and evals).
+
+    ``failures`` maps a method name to a list of error class names, raised in order on
+    successive calls before the real method runs.
+    """
+
+    ERRORS = {
+        "RateLimitedError": "Google rate limit reached; try again shortly.",
+        "NotFoundError": "Not found in the Google account.",
+        "ProviderError": "Google API error 500: backend error",
+        "PermissionScopeError": "The Google sign-in lacks permission for this operation.",
+    }
+
+    def __init__(self, target, failures: dict[str, list[str]]) -> None:
+        self._target = target
+        self._failures = {name: list(errors) for name, errors in failures.items()}
+        self.name = target.name
+
+    def __getattr__(self, attribute: str):
+        value = getattr(self._target, attribute)
+        pending = self._failures.get(attribute)
+        if not callable(value) or not pending:
+            return value
+
+        def failing(*args, **kwargs):
+            if pending:
+                from assistant.connectors import errors
+
+                error = pending.pop(0)
+                raise getattr(errors, error)(self.ERRORS.get(error, error))
+            return value(*args, **kwargs)
+
+        return failing

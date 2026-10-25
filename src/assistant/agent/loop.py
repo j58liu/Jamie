@@ -85,6 +85,7 @@ class ToolResult(BaseModel):
     output: str
     denied: bool = False  # the user declined approval; the turn stops instead of retrying
     final: bool = False  # the output is the turn's answer, shown as is
+    error: str | None = None  # exception class of a failed tool, e.g. "RateLimitedError"
 
 
 class ToolExecutor(Protocol):

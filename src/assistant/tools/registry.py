@@ -59,11 +59,12 @@ if TYPE_CHECKING:
 
 
 def _compact_schema(value: object) -> object:
+    """Drop schema annotations; a property that happens to be named "title" stays."""
     if isinstance(value, dict):
         return {
             key: _compact_schema(item)
             for key, item in value.items()
-            if key not in {"title", "$schema"}
+            if not (key == "$schema" or (key == "title" and isinstance(item, str)))
         }
     if isinstance(value, list):
         return [_compact_schema(item) for item in value]
@@ -242,18 +243,22 @@ class ToolRegistry:
             )
             for name in self._tools
         )
-        contexts = []
-        for tool in self._tools.values():
-            context = getattr(tool, "prompt_context", None)
-            text = context() if callable(context) else None
-            if text and text not in contexts:
-                contexts.append(text)
-        context_text = "".join(f"\n{text}" for text in contexts)
+        context_text = "".join(f"\n{text}" for text in self.prompt_contexts())
         return (
             f"Available tools and their argument schemas:\n{definitions}\n"
             "The schema properties belong inside the action's args object. Examples:\n"
             f"{registered_examples}{context_text}"
         )
+
+    def prompt_contexts(self) -> list[str]:
+        """Distinct context lines tools add to the prompt, such as the current time."""
+        contexts: list[str] = []
+        for tool in self._tools.values():
+            context = getattr(tool, "prompt_context", None)
+            text = context() if callable(context) else None
+            if text and text not in contexts:
+                contexts.append(text)
+        return contexts
 
     def begin_turn(self) -> None:
         if self._changes is not None:
@@ -368,7 +373,7 @@ class ToolRegistry:
         try:
             output = registered.execute(inputs)
         except ToolError as exc:
-            result = ToolResult(success=False, output=str(exc))
+            result = ToolResult(success=False, output=str(exc), error=type(exc).__name__)
         except Exception:
             self._record(
                 tool,

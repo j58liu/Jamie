@@ -2,8 +2,9 @@
 
 import tomllib
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 
 class GoogleConfig(BaseModel):
@@ -29,6 +30,17 @@ class RemindersConfig(BaseModel):
     helper_path: str | None = None
 
 
+class MemoryConfig(BaseModel):
+    """Personal memory settings."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    # "cue": after a turn whose message looks personal ("I prefer...", "remember..."),
+    # ask the model which statements to remember. "off": never extract automatically.
+    extraction: Literal["cue", "off"] = "cue"
+    personal_context_tokens: int = Field(default=400, ge=0, le=4000)
+
+
 class ProjectConfig(BaseModel):
     """Local settings; unknown keys and incorrect types are rejected."""
 
@@ -40,6 +52,7 @@ class ProjectConfig(BaseModel):
     timezone: str | None = None
     google: GoogleConfig = GoogleConfig()
     reminders: RemindersConfig = RemindersConfig()
+    memory: MemoryConfig = MemoryConfig()
 
     @field_validator("timezone")
     @classmethod

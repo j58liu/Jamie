@@ -176,6 +176,18 @@ def cancel(task_id: str, config: ConfigOption = None) -> None:
     _say(f"Cancelled {task.id[:8]}.")
 
 
+@tasks_app.command("start")
+def start(task_id: str, config: ConfigOption = None) -> None:
+    """Queue a scheduled task (such as a remembered commitment) to run now."""
+    _, store = _open(config)
+    task = _find_task(store, task_id)
+    try:
+        store.transition(task.id, TaskState.READY, expected=TaskState.SCHEDULED)
+    except (StaleTaskError, ValueError) as exc:
+        _fail(str(exc))
+    _say(f"Queued {task.id[:8]}; it runs on the next worker pass.")
+
+
 @tasks_app.command("unschedule")
 def unschedule(schedule_id: str, config: ConfigOption = None) -> None:
     """Stop a repeating or one-time schedule."""

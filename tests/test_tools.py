@@ -228,3 +228,10 @@ def test_registry_rejects_invalid_tool_metadata():
 
     with pytest.raises(PolicyError, match="no permission policy"):
         ToolRegistry().register(InvalidTool())
+
+
+def test_prompt_schema_keeps_a_property_named_title():
+    from assistant.tools.registry import _compact_schema
+
+    schema = {"title": "Input", "properties": {"title": {"title": "Title", "type": "string"}}}
+    assert _compact_schema(schema) == {"properties": {"title": {"type": "string"}}}

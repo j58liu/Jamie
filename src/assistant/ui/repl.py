@@ -219,6 +219,7 @@ async def _run_repl(
                     {
                         "tools": workspace_tools.current(state.scope),
                         "max_steps": SCOPE_MAX_STEPS.get(state.scope, MAX_STEPS),
+                        "plan": state.plan,
                     }
                     if workspace_tools is not None and state.mode == "task"
                     else {}
