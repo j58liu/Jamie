@@ -106,6 +106,32 @@ def check_browser_runtime() -> Check:
     return Check("Browser runtime", Status.SKIP, "not used; web tools fetch pages over HTTP")
 
 
+def check_connectors(settings: ProjectConfig | None) -> list[Check]:
+    """Report each configured personal-app connector; nothing is contacted."""
+    if settings is None:
+        return [Check("Personal connectors", Status.SKIP, "needs a valid configuration")]
+    from assistant.connectors import ConnectionStatus, build_connectors
+
+    connectors = build_connectors(settings).all()
+    if not connectors:
+        return [Check("Personal connectors", Status.SKIP, "none configured in assistant.toml")]
+    checks = []
+    for connector in connectors:
+        try:
+            info = connector.info()
+        except Exception as exc:  # a status check must never break doctor
+            checks.append(Check(f"Connector {connector.name}", Status.WARN, str(exc)))
+            continue
+        ok = info.status is ConnectionStatus.CONNECTED
+        detail = info.status.value.replace("_", " ")
+        if info.capabilities:
+            detail += f" ({', '.join(sorted(c.value for c in info.capabilities))})"
+        if info.detail:
+            detail += f"; {info.detail}"
+        checks.append(Check(f"Connector {info.name}", Status.PASS if ok else Status.WARN, detail))
+    return checks
+
+
 def check_macos() -> Check:
     if sys.platform != "darwin":
         return Check("macOS tools", Status.WARN, f"unavailable on {sys.platform}")
@@ -130,4 +156,5 @@ def run_checks(config: Path | None, backend: LlamaCppBackend) -> list[Check]:
         check_data_directory(settings),
         check_browser_runtime(),
         check_macos(),
+        *check_connectors(settings),
     ]

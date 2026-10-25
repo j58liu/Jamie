@@ -43,7 +43,7 @@ def agent_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     command_runner = FakeRunner()
     monkeypatch.setattr(cli, "LlamaCppBackend", lambda: backend)
 
-    def registry(root, *, approvals, web, backend):
+    def registry(root, *, approvals, web, backend, connectors=None):
         return create_macos_registry(root, approvals=approvals, runner=command_runner)
 
     monkeypatch.setattr(cli, "create_agent_registry", registry)

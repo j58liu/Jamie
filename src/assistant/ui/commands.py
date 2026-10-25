@@ -194,7 +194,7 @@ def _scope(state: ReplState, argument: str) -> None:
         try:
             state.scope = ToolScope(argument)
         except ValueError:
-            state.say("Usage: /scope all|files|read|web|macos")
+            state.say(f"Usage: /scope {'|'.join(ToolScope)}")
             return
         refresh_context(state)
     state.say(f"Tool scope: {state.scope}")

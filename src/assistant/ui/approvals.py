@@ -14,8 +14,8 @@ from rich.text import Text
 from assistant.security.approvals import ApprovalRequest
 from assistant.security.policy import PermissionLevel
 
-# Levels where one "yes" may cover the rest of the session. Sensitive and destructive
-# actions are always confirmed one at a time.
+# Levels where one "yes" may cover the rest of the session. Sensitive, destructive,
+# and send actions are always confirmed one at a time.
 SESSION_APPROVABLE = frozenset({PermissionLevel.SAFE_WRITE, PermissionLevel.EXTERNAL})
 
 RISKS = {
@@ -23,6 +23,7 @@ RISKS = {
     PermissionLevel.SENSITIVE: "sensitive; can read private data or run automation",
     PermissionLevel.DESTRUCTIVE: "destructive; may not be recoverable",
     PermissionLevel.EXTERNAL: "contacts the network",
+    PermissionLevel.SEND: "sends a message as you; cannot be unsent",
 }
 
 # tool: (what Jamie wants to do, argument shown as the headline)
@@ -39,6 +40,12 @@ ACTIONS: dict[str, tuple[str, str | None]] = {
     "web_search": ("search the web for", "query"),
     "fetch_url": ("fetch", "url"),
     "research": ("research on the web", "question"),
+    "gmail_create_draft": ("save a Gmail draft to", "to"),
+    "gmail_send_draft": ("SEND the Gmail draft", "draft_id"),
+    "calendar_create_event": ("create the calendar event", "title"),
+    "calendar_update_event": ("change the calendar event", "event_id"),
+    "reminders_create": ("create the reminder", "title"),
+    "reminders_complete": ("complete the reminder", "reminder_id"),
 }
 
 # tool: (argument holding the command, the command line the tool runs with it).

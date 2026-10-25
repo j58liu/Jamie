@@ -14,6 +14,7 @@ class PermissionLevel(StrEnum):
     SENSITIVE = "SENSITIVE"
     DESTRUCTIVE = "DESTRUCTIVE"
     EXTERNAL = "EXTERNAL"
+    SEND = "SEND"  # sends a message as the user; confirmed every time
 
 
 class PolicyAction(StrEnum):
@@ -54,12 +55,28 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
         "clipboard_read": PermissionLevel.SENSITIVE,
         "run_shortcut": PermissionLevel.SENSITIVE,
         "run_applescript": PermissionLevel.SENSITIVE,
-        "send_email": PermissionLevel.EXTERNAL,
         "web_search": PermissionLevel.EXTERNAL,
         "fetch_url": PermissionLevel.EXTERNAL,
         "research": PermissionLevel.EXTERNAL,
         "delete_file": PermissionLevel.DESTRUCTIVE,
         "trash_file": PermissionLevel.SAFE_WRITE,
+        # Personal-application connectors. Reads run without asking; anything that
+        # changes or sends data outside this Mac asks first.
+        "connectors_status": PermissionLevel.READ,
+        "gmail_search_messages": PermissionLevel.READ,
+        "gmail_get_message": PermissionLevel.READ,
+        "gmail_get_thread": PermissionLevel.READ,
+        "gmail_get_draft": PermissionLevel.READ,
+        "gmail_create_draft": PermissionLevel.EXTERNAL,
+        "gmail_send_draft": PermissionLevel.SEND,
+        "calendar_list_events": PermissionLevel.READ,
+        "calendar_check_availability": PermissionLevel.READ,
+        "calendar_get_event": PermissionLevel.READ,
+        "calendar_create_event": PermissionLevel.EXTERNAL,
+        "calendar_update_event": PermissionLevel.EXTERNAL,
+        "reminders_list": PermissionLevel.READ,
+        "reminders_create": PermissionLevel.SAFE_WRITE,
+        "reminders_complete": PermissionLevel.SAFE_WRITE,
     }
 )
 

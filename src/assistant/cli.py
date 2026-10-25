@@ -13,6 +13,7 @@ from typer.core import TyperGroup
 from assistant import STARTED, __version__
 from assistant.agent import AgentError
 from assistant.agent.events import EventSink
+from assistant.agent.loop import MAX_STEPS
 from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
 from assistant.config import ConfigurationError, ProjectConfig, load_config
 from assistant.doctor import Status, run_checks
@@ -27,7 +28,7 @@ from assistant.memory import (
 from assistant.research import ResearchError, ResearchWorkflow
 from assistant.runtime import JamieApplication, JamieApplicationError, TurnResult
 from assistant.tools import WebClient, create_agent_registry
-from assistant.tools.scopes import ToolScope, select_tools
+from assistant.tools.scopes import SCOPE_MAX_STEPS, ToolScope, select_tools
 from assistant.ui.approvals import TerminalApprovalProvider
 from assistant.ui.renderer import EventRenderer, OneShotRenderer
 from assistant.ui.repl import run_repl
@@ -122,7 +123,11 @@ async def _run_agent(
     async with JamieApplication(settings, backend_factory=lambda: backend) as application:
         with WebClient() as web, interrupt_cancels(token):
             tools = create_agent_registry(
-                workspace, approvals=TerminalApprovalProvider(console), web=web, backend=backend
+                workspace,
+                approvals=TerminalApprovalProvider(console),
+                web=web,
+                backend=backend,
+                connectors=application.connectors,
             )
             tools = select_tools(tools, scope)
             await application.run_turn(
@@ -174,7 +179,11 @@ async def _run_repl(settings: ProjectConfig) -> None:
                 model=info.model,
                 started=STARTED,
                 agent_tools_factory=lambda: create_agent_registry(
-                    Path.cwd(), approvals=approvals, web=web, backend=backend
+                    Path.cwd(),
+                    approvals=approvals,
+                    web=web,
+                    backend=backend,
+                    connectors=application.connectors,
                 ),
             )
 
@@ -257,7 +266,14 @@ def ask(
 def agent(
     prompt: Annotated[str, typer.Argument(help="Task for the local agent.")],
     workspace: Annotated[Path, typer.Option(help="Workspace available to file tools.")] = Path("."),
-    max_steps: Annotated[int, typer.Option(min=1, help="Maximum number of model actions.")] = 12,
+    max_steps: Annotated[
+        int | None,
+        typer.Option(
+            min=1,
+            help="Maximum number of model actions. Defaults to 12, or 16 for --scope personal.",
+            show_default=False,
+        ),
+    ] = None,
     scope: Annotated[
         ToolScope, typer.Option(help="Tools available for this task.")
     ] = ToolScope.ALL,
@@ -277,10 +293,9 @@ def agent(
 
     try:
         settings = load_config(config)
+        steps = max_steps if max_steps is not None else SCOPE_MAX_STEPS.get(scope, MAX_STEPS)
         asyncio.run(
-            _run_agent(
-                settings, prompt, workspace, max_steps=max_steps, timeout=timeout, scope=scope
-            )
+            _run_agent(settings, prompt, workspace, max_steps=steps, timeout=timeout, scope=scope)
         )
     except TurnCancelled as exc:
         Console(stderr=True).print("Cancelled.", markup=False, highlight=False)
@@ -334,6 +349,107 @@ def research(
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
     Console(no_color=not settings.color).print(result.answer, markup=False, highlight=False)
+
+
+connect_app = typer.Typer(help="Connect personal applications to Jamie.")
+app.add_typer(connect_app, name="connect")
+
+
+def _google_session(config: Path | None):
+    from assistant.connectors import build_connectors
+
+    settings = load_config(config)
+    session = build_connectors(settings).google
+    if session is None or not settings.google.enabled:
+        raise ConfigurationError(
+            "Add a [google] section with client_secrets_path to assistant.toml first."
+        )
+    return session
+
+
+@connect_app.command("google")
+def connect_google(
+    scopes: Annotated[
+        str,
+        typer.Option(help="Access level: read, compose (drafts and send), or calendar-write."),
+    ] = "read",
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Read a specific TOML configuration file."),
+    ] = None,
+) -> None:
+    """Sign in to Google in the browser and store the refresh token in Keychain."""
+    import webbrowser
+
+    from assistant.connectors import ConnectorError
+    from assistant.connectors.google.auth import SCOPE_LEVELS
+
+    if scopes not in SCOPE_LEVELS:
+        raise typer.BadParameter(
+            f"Choose one of: {', '.join(SCOPE_LEVELS)}.", param_hint="--scopes"
+        )
+    console = Console()
+    try:
+        session = _google_session(config)
+
+        def open_browser(url: str) -> None:
+            console.print("Opening Google sign-in. If no browser opens, visit:", markup=False)
+            console.print(url, markup=False, highlight=False, soft_wrap=True)
+            webbrowser.open(url)
+
+        granted = session.connect(SCOPE_LEVELS[scopes], open_browser=open_browser)
+    except (ConfigurationError, ConnectorError) as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    names = ", ".join(sorted(scope.rsplit("/", 1)[-1] for scope in granted))
+    console.print(f"Google connected: {names}", markup=False, highlight=False)
+
+
+@app.command()
+def disconnect(
+    provider: Annotated[str, typer.Argument(help="Provider to disconnect: google.")],
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Read a specific TOML configuration file."),
+    ] = None,
+) -> None:
+    """Revoke and delete stored credentials for a provider."""
+    if provider != "google":
+        raise typer.BadParameter("Only google can be disconnected.", param_hint="PROVIDER")
+    try:
+        _google_session(config).disconnect()
+    except ConfigurationError as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    Console().print("Google disconnected.", markup=False, highlight=False)
+
+
+@app.command()
+def connectors(
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Read a specific TOML configuration file."),
+    ] = None,
+) -> None:
+    """Show the status of each personal-app connector."""
+    from assistant.connectors import build_connectors
+
+    try:
+        found = build_connectors(load_config(config)).all()
+    except ConfigurationError as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    console = Console()
+    if not found:
+        console.print("No connectors configured. See docs/design/connectors.md.", markup=False)
+        return
+    for connector in found:
+        info = connector.info()
+        capabilities = ", ".join(sorted(c.value for c in info.capabilities)) or "none"
+        line = f"{info.name:<16} {info.status.value:<18} {capabilities}"
+        console.print(
+            line + (f"  {info.detail}" if info.detail else ""), markup=False, highlight=False
+        )
 
 
 SYMBOLS = {

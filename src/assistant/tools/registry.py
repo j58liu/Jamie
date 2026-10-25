@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from pydantic import JsonValue, ValidationError
 
@@ -53,6 +53,9 @@ from assistant.tools.macos import (
     RunShortcutTool,
 )
 from assistant.tools.web import ExtractPageTool, FetchUrlTool, WebClient, WebSearchTool
+
+if TYPE_CHECKING:
+    from assistant.connectors import Connectors
 
 
 def _compact_schema(value: object) -> object:
@@ -179,6 +182,55 @@ class ToolRegistry:
             "research": (
                 '{"action":"tool","tool":"research","args":{"question":"What changed in X?"}}'
             ),
+            "gmail_search_messages": (
+                '{"action":"tool","tool":"gmail_search_messages",'
+                '"args":{"query":"from:alex meeting newer_than:14d"}}'
+            ),
+            "gmail_get_message": (
+                '{"action":"tool","tool":"gmail_get_message","args":{"message_id":"18c2f0a1b"}}'
+            ),
+            "gmail_get_thread": (
+                '{"action":"tool","tool":"gmail_get_thread","args":{"thread_id":"18c2f0a1b"}}'
+            ),
+            "gmail_create_draft": (
+                '{"action":"tool","tool":"gmail_create_draft","args":{"to":["alex@example.com"],'
+                '"subject":"","body":"Tuesday at 2pm works for me.",'
+                '"reply_to_message_id":"18c2f0a1b"}}'
+            ),
+            "gmail_get_draft": (
+                '{"action":"tool","tool":"gmail_get_draft","args":{"draft_id":"r-123"}}'
+            ),
+            "gmail_send_draft": (
+                '{"action":"tool","tool":"gmail_send_draft","args":{"draft_id":"r-123"}}'
+            ),
+            "calendar_list_events": (
+                '{"action":"tool","tool":"calendar_list_events","args":'
+                '{"start":"2026-10-26T00:00:00-04:00","end":"2026-10-27T00:00:00-04:00"}}'
+            ),
+            "calendar_check_availability": (
+                '{"action":"tool","tool":"calendar_check_availability","args":'
+                '{"start":"2026-10-27T09:00:00-04:00","end":"2026-10-27T17:00:00-04:00",'
+                '"duration_minutes":30}}'
+            ),
+            "calendar_get_event": (
+                '{"action":"tool","tool":"calendar_get_event","args":{"event_id":"abc123"}}'
+            ),
+            "calendar_create_event": (
+                '{"action":"tool","tool":"calendar_create_event","args":{"title":"Sync with Alex",'
+                '"start":"2026-10-27T14:00:00-04:00","end":"2026-10-27T14:30:00-04:00"}}'
+            ),
+            "calendar_update_event": (
+                '{"action":"tool","tool":"calendar_update_event","args":{"event_id":"abc123",'
+                '"title":"Sync with Alex (moved)"}}'
+            ),
+            "reminders_list": '{"action":"tool","tool":"reminders_list","args":{}}',
+            "reminders_create": (
+                '{"action":"tool","tool":"reminders_create","args":{"title":"Call Alex",'
+                '"due":"2026-10-26T10:00:00-04:00"}}'
+            ),
+            "reminders_complete": (
+                '{"action":"tool","tool":"reminders_complete","args":{"reminder_id":"ABC-1"}}'
+            ),
         }
         registered_examples = "\n".join(
             examples.get(
@@ -190,10 +242,17 @@ class ToolRegistry:
             )
             for name in self._tools
         )
+        contexts = []
+        for tool in self._tools.values():
+            context = getattr(tool, "prompt_context", None)
+            text = context() if callable(context) else None
+            if text and text not in contexts:
+                contexts.append(text)
+        context_text = "".join(f"\n{text}" for text in contexts)
         return (
             f"Available tools and their argument schemas:\n{definitions}\n"
             "The schema properties belong inside the action's args object. Examples:\n"
-            f"{registered_examples}"
+            f"{registered_examples}{context_text}"
         )
 
     def begin_turn(self) -> None:
@@ -419,7 +478,15 @@ def create_agent_registry(
     runner: CommandRunner | None = None,
     web: WebClient | None = None,
     backend: LLMBackend | None = None,
+    connectors: "Connectors | None" = None,
 ) -> ToolRegistry:
-    """Register workspace, macOS, and web tools; ``backend`` enables the research tool."""
+    """Register workspace, macOS, web, and configured personal-app tools.
+
+    ``backend`` enables the research tool; ``connectors`` adds Gmail, Calendar, and
+    Reminders tools for the connectors that are configured.
+    """
+    from assistant.tools.integrations import register_personal_tools
+
     registry = create_macos_registry(root, approvals=approvals, audit=audit, runner=runner)
-    return register_web_tools(registry, web if web is not None else WebClient(), backend)
+    register_web_tools(registry, web if web is not None else WebClient(), backend)
+    return register_personal_tools(registry, connectors)

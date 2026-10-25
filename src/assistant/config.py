@@ -6,6 +6,29 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 
+class GoogleConfig(BaseModel):
+    """A Google Cloud "Desktop app" OAuth client used for Gmail and Calendar."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    client_secrets_path: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.client_secrets_path or self.client_id)
+
+
+class RemindersConfig(BaseModel):
+    """Apple Reminders through the native EventKit helper."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    enabled: bool = False
+    helper_path: str | None = None
+
+
 class ProjectConfig(BaseModel):
     """Local settings; unknown keys and incorrect types are rejected."""
 
@@ -13,6 +36,22 @@ class ProjectConfig(BaseModel):
 
     color: bool = True
     memory_path: str | None = None
+    timezone: str | None = None
+    google: GoogleConfig = GoogleConfig()
+    reminders: RemindersConfig = RemindersConfig()
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"Unknown timezone {value!r}.") from exc
+        return value
 
     @field_validator("memory_path")
     @classmethod

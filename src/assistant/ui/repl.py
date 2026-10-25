@@ -28,12 +28,13 @@ from assistant.agent.events import (
     ToolStarted,
     TurnFailed,
 )
-from assistant.agent.loop import AgentError, ToolExecutor
+from assistant.agent.loop import MAX_STEPS, AgentError, ToolExecutor
 from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
 from assistant.llm.base import LLMError, Message
 from assistant.memory import MemoryStoreError, default_memory_path
 from assistant.runtime import JamieApplication, JamieApplicationError
 from assistant.runtime.workspaces import WorkspaceTools
+from assistant.tools.scopes import SCOPE_MAX_STEPS
 from assistant.ui.commands import ReplState, create_command_registry, refresh_context
 from assistant.ui.prompt import JamieCompleter, command_preview, continuation, input_bindings
 from assistant.ui.renderer import EventRenderer, render_error
@@ -196,7 +197,10 @@ async def _run_repl(
                 state.conversation_id = application.start_conversation()
             with interrupt_cancels(token):
                 agent_options = (
-                    {"tools": workspace_tools.current(state.scope)}
+                    {
+                        "tools": workspace_tools.current(state.scope),
+                        "max_steps": SCOPE_MAX_STEPS.get(state.scope, MAX_STEPS),
+                    }
                     if workspace_tools is not None and state.mode == "task"
                     else {}
                 )

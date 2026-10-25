@@ -160,6 +160,19 @@ class JamieApplication:
         self._last_context: ContextUsage | None = None
         self._measured_history: list[Message] | None = None
         self._last_tool_names: tuple[str, ...] = ()
+        self._connectors = None
+
+    @property
+    def connectors(self):
+        """Personal-application connectors from configuration, created once on first use.
+
+        Creating them reads configuration only; no provider is contacted.
+        """
+        if self._connectors is None:
+            from assistant.connectors import build_connectors
+
+            self._connectors = build_connectors(self._config)
+        return self._connectors
 
     async def __aenter__(self) -> Self:
         await self.start()
