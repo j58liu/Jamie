@@ -1,770 +1,194 @@
 # Jamie
 
-A local-first macOS assistant using Python 3.12+, Typer, Rich, and Pydantic.
-Jamie sends text prompts to a local llama.cpp server using HTTPX.
+**A private, local-first AI agent for macOS that works across your files, mail, calendar, and reminders, and asks before it acts.**
 
-## Development
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)
+![macOS](https://img.shields.io/badge/platform-macOS-000000?logo=apple&logoColor=white)
+![Local model](https://img.shields.io/badge/inference-llama.cpp%20(local)-4B8BBE)
+![Ruff](https://img.shields.io/badge/lint-ruff-D7FF64)
 
-Use a Python 3.12 or newer interpreter. From the repository root:
+Jamie runs a small language model on your own Mac through [llama.cpp](https://github.com/ggml-org/llama.cpp). It has no cloud inference and needs no API key for the model. A Python policy layer, not the model, decides what each action is allowed to do. Jamie remembers unfinished work, runs it on a schedule, and waits for your approval before anything leaves your machine.
+
+---
+
+## Why Jamie
+
+- **Private by default.** Inference, memory, and task state stay on your Mac. Network access happens only through explicit tools: web research, Gmail, and Calendar.
+- **Permission-first.** Every action has a fixed risk class. Reads run freely, changes ask first, and sending a message asks every time. Approvals are bound to the exact operation.
+- **Persistent.** Tasks survive restarts, run on schedules or when new mail arrives, and resume exactly where they paused.
+- **Built for small models.** Grammar-constrained actions, scoped tool lists, and compact tool results make a 2B-parameter model reliable for everyday work.
+- **Measured.** A built-in evaluation suite covers the model, the agent, research, memory, and performance, and saves reproducible reports.
+
+## Highlights
+
+| | |
+| --- | --- |
+| **Personal apps** | Search and read Gmail, save reply drafts, check Google Calendar availability, create and update events, and manage Apple Reminders through a native EventKit helper. |
+| **Persistent tasks** | `jamie tasks add "…" --every daily@08:00`. Tasks have explicit states, durable steps, crash recovery, and DST-aware schedules. |
+| **Deferred approvals** | Unattended tasks pause and notify you. Approve from the terminal later, and Jamie runs exactly what you approved. |
+| **Safe file editing** | Workspace-confined edits with per-turn diffs, one-command undo, and enforced read-back verification. |
+| **Cited web research** | Concurrent search and retrieval, cross-checked answers, and citations validated against verbatim quotes. |
+| **Local memory** | SQLite FTS5 recall of earlier conversations, labeled as untrusted background. |
+| **macOS automation** | Open apps, reveal files in Finder, use the clipboard, and run Shortcuts and AppleScript, each behind approval. |
+
+## Demo
+
+```text
+$ jamie agent --scope personal "Find Alex's email about meeting next week, check my calendar, and prepare a reply."
+
+  ✓ gmail_search_messages   0.4s
+  ✓ gmail_get_message       0.3s
+  ✓ calendar_check_availability  0.2s
+
+╭─ Approval required ───────────────────────────────────╮
+│ Jamie wants to save a Gmail draft to:                  │
+│ ["alex@example.com"]                                   │
+│ subject:                                               │
+│ body: Hi Alex, Tuesday at 2pm for 30 minutes works…    │
+│ reply_to_message_id: 18c2f0a1b                         │
+│                                                        │
+│ Tool: gmail_create_draft                               │
+│ Risk: EXTERNAL, contacts the network                   │
+╰────────────────────────────────────────────────────────╯
+[y] allow once  [a] allow session  [n] deny
+› y
+
+Jamie › You're free Tuesday 2:00–2:30pm. I saved a reply in the thread
+        as a draft; nothing has been sent.
+```
+
+The same request can run unattended:
+
+```text
+$ jamie tasks add "Reply to new meeting requests from Alex" --on-email "from:alex meeting"
+$ jamie worker install          # checks every 5 minutes with launchd
+…later, a macOS notification: "Jamie needs approval: gmail create draft"
+$ jamie tasks approvals
+$ jamie tasks approve 3f9c2a1e --run
+```
+
+## Quickstart
+
+Requirements: macOS on Apple silicon (16 GB recommended), Python 3.12+, and Homebrew.
 
 ```sh
-python3 --version
-python3 -m venv .venv
-source .venv/bin/activate
+# 1. Install Jamie
+git clone https://github.com/j58liu/j_cli.git && cd j_cli
+python3 -m venv .venv && source .venv/bin/activate
 python -m pip install -e '.[dev]'
 
-jamie --version
-jamie doctor
-jamie --help
-```
-
-The editable install exposes the `jamie` command. The Python package remains
-`assistant`, so `python -m assistant` is also supported.
-
-Run the development checks inside the activated environment:
-
-```sh
-python -m pytest
-ruff check .
-ruff format --check .
-jamie --version
-jamie doctor
-```
-
-The automated tests use HTTPX mock transports and do not require a model or a
-running server.
-
-## Ask the local model
-
-The selected model is
-[Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B). For llama.cpp, use
-[Unsloth's GGUF release](https://huggingface.co/unsloth/Qwen3.5-2B-GGUF),
-specifically `Qwen3.5-2B-Q4_K_M.gguf` (about 1.28 GB). The linked source model
-contains Transformers weights; the GGUF release is the format llama.cpp loads.
-
-Install llama.cpp on macOS with Homebrew:
-
-```sh
+# 2. Install llama.cpp and download the model once (Qwen3.5-2B, about 1.3 GB)
 brew install llama.cpp
-```
+llama-server -hf unsloth/Qwen3.5-2B-GGUF:Q4_K_M --no-mmproj --port 8080   # Ctrl+C after download
 
-The first setup needs internet access to install llama.cpp and download the
-model. In a separate terminal, run the following command once to download the
-selected GGUF into llama.cpp's model cache and start the server:
-
-```sh
-llama-server \
-  -hf unsloth/Qwen3.5-2B-GGUF:Q4_K_M --no-mmproj \
-  --host 127.0.0.1 --port 8080 \
-  --ctx-size 32768 --parallel 1 \
-  --jinja --reasoning-format deepseek \
-  --chat-template-kwargs '{"enable_thinking":false}' \
-  --temp 0.6 --top-p 0.95 --top-k 20
-```
-
-After that download finishes, stop the server with Ctrl+C. For subsequent
-starts, use this launcher from the repository root:
-
-```sh
+# 3. Start the local model (offline, cached) and check the setup
 ./scripts/start-local-model.sh
+jamie doctor
 ```
 
-The launcher uses the cached model with llama.cpp's `--offline` option, binds
-only to `127.0.0.1:8080`, enables all GPU layers and Flash Attention, and prints
-generation timings in the server terminal. Saved prompt caching stays enabled
-with a 512 MiB RAM limit to reduce memory pressure on a 16 GB Mac; this limit is
-separate from the active 32,768-token context. The launcher does not download
-files. It requires a recent llama.cpp build that supports `--offline` and
-`--cache-ram`. If you already have a GGUF file elsewhere, pass its path instead:
+Then:
 
 ```sh
-./scripts/start-local-model.sh "/path/to/Qwen3.5-2B-Q4_K_M.gguf"
+jamie                                   # interactive session
+jamie "summarize README.md"             # one task with tools
+jamie research "What changed in Python 3.13?"
+jamie tasks add "Morning brief of my calendar" --every daily@08:00 --scope personal
 ```
 
-With the model installed, local conversations and local file tools work without
-internet access. Web research, web search, and fetching web pages still require
-internet access. The cached GGUF is stored on disk and loaded into unified
-memory for generation; moving it to an external drive does not speed up
-generation. Close memory-heavy applications if macOS reports high memory
-pressure. Compare the server's generation timing when measuring model speed;
-Jamie's total turn duration also includes prompt processing and any tool work.
+To connect Gmail, Google Calendar, and Apple Reminders, see [docs/design/connectors.md](docs/design/connectors.md). It covers a Google desktop OAuth client, `jamie connect google`, and building the Reminders helper.
 
-Use a recent llama.cpp build with support for the Qwen3.5 architecture.
-The 32,768-token context and single request slot provide a starting configuration
-for a 16 GB Mac; memory use also depends on other running applications.
-The chat template setting disables thinking by default so short requests return
-an answer without spending the token budget on reasoning. When thinking is
-enabled, `--reasoning-format deepseek` separates reasoning from the final answer
-in the HTTP response, so Jamie prints the answer text.
+## How it works
 
-Keep the server running. Then, in the activated project environment:
-
-```sh
-jamie ask "hello"
-jamie ask "Explain Python generators briefly." --temperature 0.6 --max-tokens 1024
-jamie ask "Explain your answer to this puzzle: ..." --max-tokens 4096
+```mermaid
+flowchart LR
+    U[You] -->|prompt| A[Agent loop]
+    S[Scheduler / worker] -->|ready task| E[Task engine]
+    E --> A
+    A <-->|JSON actions| M[(Local model<br/>llama.cpp)]
+    A --> R[Tool registry<br/>validates arguments]
+    R --> P{Permission policy}
+    P -->|READ| T[Tools]
+    P -->|needs approval| AP[Approval<br/>terminal or deferred]
+    AP -->|approved| T
+    T --> F[Files / macOS / Web]
+    T --> C[Connectors<br/>Gmail · Calendar · Reminders]
+    E <--> DB[(tasks.sqlite3)]
+    A <--> MEM[(memory.sqlite3)]
 ```
 
-Each invocation sends one user message to `/v1/chat/completions` and streams
-the visible answer as plain text. Reasoning stays hidden. Cancelled or incomplete
-answers are not saved as completed exchanges. The server chooses
-its loaded model; Jamie does not hardcode a model name or download model files.
-No OpenAI SDK or API key is used. See the
-[llama.cpp server documentation](https://github.com/ggml-org/llama.cpp/tree/master/tools/server)
-for server setup and chat template options.
+- **Action protocol.** The model replies with exactly one JSON action, either a tool call or a finish. Generation is constrained by a JSON-schema grammar that allows only registered tool names, and every reply is validated with Pydantic.
+- **Layers.** Each layer has one job:
+  - Connectors make the provider calls.
+  - Tools expose typed operations.
+  - The registry validates arguments.
+  - The policy decides whether an action may run.
+  - The model only chooses.
+- **Scopes.** `--scope files|read|web|macos|personal` sends the model only the tools it needs, which keeps prompts small and tool choice accurate.
+- **Durability.** Each tool call is recorded before it runs, with a stable operation key, and its outcome is stored afterwards. Tasks are rebuilt from these records after a restart or an approval.
 
-The defaults are temperature `0.6` and a maximum of `1024` generated tokens.
-The transport allows 5 seconds to connect and 600 seconds of read inactivity.
-Requests go directly to the server without using environment proxy settings,
-following redirects, or automatically retrying.
+## Security model
 
-Connection failures, timeouts, HTTP errors, and invalid responses produce an
-error on stderr and exit code `1`. An empty prompt or invalid generation option
-exits with code `2`. If generation reaches the token limit, the answer is printed
-with a notice on stderr; use a larger `--max-tokens` value if needed. Reasoning
-models may consume that budget before producing answer text, which Jamie reports
-as an error instead of printing a blank answer.
+| Level | Examples | Behavior |
+| --- | --- | --- |
+| `READ` | Read files, search mail, check availability | Runs without asking |
+| `SAFE_WRITE` | Edit files, create reminders | Asks; can be allowed for the session |
+| `EXTERNAL` | Fetch pages, save drafts, create events | Asks; can be allowed for the session |
+| `SENSITIVE` | Clipboard read, Shortcuts, AppleScript | Asks every time |
+| `DESTRUCTIVE` | Reserved | Asks every time |
+| `SEND` | Send an email | Asks every time |
 
-To manually verify a running model:
+- **Fail closed.** No approval interface means no action. Blank input, EOF, and Ctrl+C all deny.
+- **Bound approvals.** Deferred approvals are bound to the tool, arguments, account, and task revision. Editing any of them invalidates the approval. Approvals expire after 24 hours and are used once.
+- **No silent duplicates.** Calendar events and drafts carry provider-side idempotency keys. Any other interrupted action is marked ambiguous, and Jamie asks before retrying.
+- **Secrets.** Google refresh tokens are stored in the macOS Keychain, and access tokens stay in memory.
+- **Audit and storage.** Audit records hold argument digests instead of raw values. Task history keeps only argument shapes, and full payloads are deleted when a task finishes.
+- **Confinement.** File tools cannot leave the workspace, and macOS tools use fixed argument arrays with no shell.
 
-```sh
-curl --noproxy '*' http://127.0.0.1:8080/health
-jamie ask "Reply with one short greeting."
-```
+## Evaluations
 
-## Interactive terminal
+Recorded runs with reports, fixtures, and hashes are kept in [`evals/results/`](evals/results/):
 
-With the local server running, start a conversation with `jamie`. The terminal
-shows a short welcome, activity while a turn runs, Markdown answers, tool
-durations, and a status line with model, context, thinking mode, directory, and
-Git branch when available. It keeps normal terminal scrollback.
-
-Requests in the interactive terminal use Jamie's agent tools. For example,
-`open Safari` can request the `open_application` tool. Jamie shows the action
-and asks for approval when the Python permission policy requires it. Declining
-ends the turn; Jamie does not retry or look for another way. Asking Jamie to
-research a topic runs the `research` tool described under
-[Web research](#web-research); its cited report is the answer.
-
-Use `/mode chat` for streamed conversation without tools, and `/mode task` for
-actions. `/scope files`, `/scope read`, `/scope web`, `/scope macos`, or
-`/scope all` selects the tools supplied to the model in task mode. The status
-line shows the active mode and scope. These settings keep the same Python
-permission checks. One-shot tasks accept the same choice with
-`jamie agent "Read README.md" --scope read`.
-
-`/read <path>`, `/ls [path]`, `/find <pattern>`, and `/search <text>` display
-workspace results immediately without calling the model. They use the same
-validated, audited file tools. Use a normal task prompt when you want the model
-to interpret the file contents. `/tokens 256` changes the session's maximum
-answer length; `/tokens` shows the current value.
-
-Before inference, the runtime measures the complete request, including tool
-instructions, recalled memory, the current prompt, and tool observations. It
-reserves space for the requested answer. When older history no longer fits,
-automatic compaction selects original conversation excerpts by validated IDs;
-it preserves recent exchanges when space permits and keeps the current task's
-observations. An oversized current request produces an error before inference.
-Compaction failures leave the conversation unchanged. `/context` reports the
-last complete request and its answer reserve after a turn; before a turn it
-reports the conversation's base cost.
-
-`/compact` asks the model to summarize the conversation and continues from that
-summary, which frees context for long sessions. It runs like a turn: Ctrl+C
-cancels it and leaves the conversation unchanged. The saved conversation keeps
-every exchange, so `/resume` restores the full history rather than the summary.
-
-Enter sends a prompt. Press Escape then Enter to insert a line break. Tab
-completes slash commands and paths (including directories after `/cwd`); a dim
-preview describes a matching slash command as you type. Use `/help` to list
-commands, Ctrl+C to cancel a running turn, and Ctrl+D or `/quit` to leave.
-
-## Action protocol
-
-Model responses intended for action handling have exactly two forms. A tool
-action names a tool and supplies a JSON object of arguments:
-
-```json
-{
-  "action": "tool",
-  "tool": "read_file",
-  "args": {
-    "path": "README.md"
-  }
-}
-```
-
-A finish action contains the final user-facing message:
-
-```json
-{
-  "action": "finish",
-  "message": "The README describes..."
-}
-```
-
-`parse_action` validates these responses with Pydantic. It accepts direct JSON,
-JSON enclosed by one outer `json` Markdown fence, and either form following one
-leading `<think>...</think>` block. It rejects malformed JSON, unknown actions,
-missing or incorrectly typed fields, duplicate JSON keys, extra top-level
-fields, surrounding prose, and incomplete fences or think blocks. It does not
-search for embedded JSON or repair model output.
-
-`ACTION_PROTOCOL_INSTRUCTIONS` gives Qwen the two response shapes as a fixed
-system instruction. Protocol evaluations use that instruction unchanged.
-
-During agent turns, Jamie also sends the two shapes as a JSON schema
-(`response_format`), with `tool` limited to the registered tool names.
-llama.cpp turns the schema into a sampling grammar, so the model cannot write
-prose around an action; without it, Qwen3.5-2B usually starts with a sentence
-before the JSON. With thinking on, the constraint applies after the reasoning.
-The parser still validates every reply, and model calls made inside tools, such
-as the research workflow's, are not constrained.
-
-## Agent loop
-
-`run_agent` starts a fresh conversation with the action protocol instructions
-and a user prompt. A finish action returns its message. A tool action is passed
-to a `ToolExecutor`, and its typed `ToolResult` is returned to the model as a
-JSON observation before the next action. When the executor supplies tool
-instructions, the loop includes the tool descriptions and JSON argument schemas
-in the system message.
-
-The loop applies these limits from its first version:
-
-- At most 12 valid model actions are processed.
-- An invalid response receives a correction asking for exactly one valid
-  action. Two additional parse attempts are allowed for each step.
-- If the same tool call (name and arguments) gives the same result a second
-  time in a turn, even with other calls in between, the model is told it
-  already tried it. A third time stops the run.
-- The complete run has a 300-second timeout covering model and tool calls.
-
-All limits can be reduced or extended through `run_agent` arguments except the
-three-failure threshold, which is fixed. Tool implementations should enforce
-their own operation timeout as well: once Jamie's total deadline expires, the
-loop stops waiting for the active synchronous call but cannot forcibly terminate
-that Python function.
-
-## Read-only tools
-
-`create_read_only_registry(root)` creates a registry containing exactly these
-tools:
-
-- `read_file` reads a bounded line range from one UTF-8 file.
-- `list_directory` lists and sorts immediate directory entries.
-- `find_files` recursively finds files and folders (shown with a trailing `/`)
-  using a glob pattern.
-- `search_files` recursively searches UTF-8 files for literal text and reports
-  matching paths and line numbers.
-
-`find_files` and `search_files` skip hidden folders such as `.git` and `.venv`,
-which would otherwise fill the results; hidden files are still found. A missing
-path error suggests `find_files`, so the model can search for the name instead
-of guessing another path.
-
-Each tool publishes its name, description, Pydantic input schema, and `READ`
-permission value. The registry validates model arguments before execution
-and converts expected validation and filesystem errors into failed tool
-observations. Paths must be relative to the configured workspace root. Resolved
-paths and symlink targets cannot leave that root. File matching skips symlinks,
-and every tool applies a configurable result limit with a fixed upper bound.
-
-The registry can be passed directly to the agent loop:
-
-```python
-from pathlib import Path
-
-from assistant.agent import run_agent
-from assistant.tools import create_read_only_registry
-
-tools = create_read_only_registry(Path.cwd())
-answer = run_agent(backend, tools, "What does README.md contain?")
-```
-
-## Permission system
-
-Tool permissions come from a fixed application policy:
-
-| Permission | Policy decision |
+| Suite | Result |
 | --- | --- |
-| `READ` | Allow |
-| `SAFE_WRITE` | Confirm |
-| `SENSITIVE` | Confirm |
-| `DESTRUCTIVE` | Confirm |
-| `EXTERNAL` | Confirm |
-
-The default policy assigns filesystem reads and cached page extraction to
-`READ`; the five reversible editing tools, application opening, Finder reveal,
-and clipboard writing to `SAFE_WRITE`; clipboard reading, Shortcuts, and
-AppleScript to `SENSITIVE`; and web search and page retrieval to `EXTERNAL`.
-It reserves classifications for unimplemented names such as `shell`,
-`delete_file`, and `send_email`. A tool cannot register without a central
-policy entry, and its declared permission must match that entry.
-
-`ToolRegistry.execute` validates arguments, asks `PermissionPolicy` for an
-allow-or-confirm decision, and calls an `ApprovalProvider` for confirmation
-when required. The default provider denies every confirmation request. A user
-interface can inject `CallbackApprovalProvider`; its request is bound to the
-exact tool name, permission, and normalized arguments. Approval-like fields in
-model arguments do not bypass validation or policy.
-
-Audit recording starts before approval or execution. The default in-memory log
-records the request and its completion, denial, rejection, or error. An optional
-`JsonlAuditLog` flushes each event to disk. Records contain a SHA-256 digest of
-the arguments instead of their raw values. If the initial audit write fails,
-execution does not begin.
-
-The model only produces an action. The policy and approval provider determine
-whether Jamie may execute it.
-
-## Editing, diffs, and undo
-
-`create_workspace_registry(root, approvals=...)` adds five approved editing
-tools to the four read tools:
-
-- `write_file` creates or replaces a UTF-8 text file.
-- `edit_file` replaces exact text, rejecting ambiguous matches unless
-  `replace_all` is explicitly set.
-- `move_file` moves a file or directory to an unused workspace path.
-- `create_directory` creates one directory, with optional parent creation.
-- `trash_file` removes a file or directory while retaining its turn snapshot.
-
-All five tools are classified as `SAFE_WRITE`, so the default approval provider
-denies them. A trusted user interface must approve the exact normalized
-arguments before snapshots or filesystem changes occur. Paths stay within the
-workspace, editing through symbolic links is rejected, and no shell command is
-used.
-
-The registry groups changes made by one `run_agent` call into one turn. Each
-affected path is copied to temporary snapshot storage before its first change
-in that turn. Every successful editing result includes the cumulative unified
-diff, for example:
-
-```diff
--    return a - b
-+    return a + b
-```
-
-The harness handles two slash commands directly, without sending them to the
-model:
-
-- `/diff` returns the active turn's diff, or the most recently completed turn's
-  diff.
-- `/undo` restores every snapshot from the most recently completed changed
-  turn. Multiple edits to one path restore the content from before its first
-  edit in that turn.
-
-After a successful edit, Jamie tracks a relevant verification check. A changed
-file must be read with `read_file` or matched with `search_files`. Directory
-creation, moves, and trash operations require a relevant `list_directory` call.
-If the model attempts to finish while checks remain, the harness rejects that
-finish action and tells the model exactly which read operations are still
-needed. A later edit reinstates the corresponding check.
-
-Snapshots last for the lifetime of the workspace registry and are stored
-outside the workspace. Undo and diff commands are audited; entering `/undo` is
-the user's explicit approval for that restoration.
-
-Interactive sessions retain a separate registry for each resolved working directory.
-`/diff` and `/undo` apply to the current directory's latest changed turn, including
-after later chat turns. `/cwd` switches registries; returning to a directory restores
-its undo history. `/new` starts a conversation without discarding workspace changes.
-Temporary snapshots are removed when the terminal session exits.
-
-## macOS tools
-
-`create_macos_registry(root, approvals=...)` adds six macOS tools to the
-workspace registry:
-
-- `open_application` runs `open -g -j -a` with an application name, so the app
-  launches hidden and stays behind the app you are using. An app that is already
-  running is not hidden. Jamie cannot see or control an app's windows.
-- `reveal_in_finder` runs `open -R` for an existing workspace path.
-- `clipboard_read` reads text with `pbpaste`.
-- `clipboard_write` replaces clipboard text with `pbcopy`.
-- `run_shortcut` runs a named shortcut with `shortcuts run`.
-- `run_applescript` runs supplied AppleScript with `osascript -e`.
-
-The tools pass fixed argument lists directly to the macOS commands without a
-command shell. Finder paths must remain inside the configured workspace.
-Application opening, Finder reveal, and clipboard writing require
-`SAFE_WRITE` approval. Clipboard reading, Shortcuts, and AppleScript require
-`SENSITIVE` approval because they can expose data or perform broader
-automation. The terminal shows the exact tool, permission, and arguments and
-defaults to denying the request.
-
-Use the agent command for model-directed tools:
-
-```sh
-jamie "open Safari"
-```
-
-Jamie sends the task to Qwen, validates its action, applies the permission
-policy, and asks for approval before running the macOS command. `jamie ask`
-continues to send a prompt directly to the model without tools. The explicit
-form `jamie agent "open Safari"` is also available. No screenshot or
-screen-capture tool is included.
-
-## Web research
-
-Jamie provides these web tools without browser automation:
-
-- `web_search` queries DuckDuckGo's HTML search endpoint and returns bounded
-  titles, URLs, and snippets.
-- `fetch_url` retrieves one public HTTP or HTTPS text page, keeps it in an
-  in-memory session cache, and returns it as Markdown: headings, lists, links
-  (made absolute), code blocks, and table rows. Scripts, styles, and the page
-  title markup are dropped, and a page's `<main>` or `<article>` is preferred
-  when it has enough text. The model receives at most 24,000 characters, about
-  6k tokens of the 32k context, with `truncated` set when a page is longer.
-- `extract_page` returns the same Markdown for a page already in the cache.
-- `research` runs the complete research sequence below as one action and
-  returns its cited report, which ends the turn. It is available where Jamie
-  has a model backend: the interactive terminal and `jamie agent`.
-
-Search, retrieval, and research are `EXTERNAL` operations. `web_search` runs
-without asking: it sends only the model-written query to DuckDuckGo, which can
-include text from the conversation or from files Jamie read. `fetch_url` and
-`research` require approval, and approving `research` covers the searches and
-page reads inside it. Extraction reads only the session cache and is classified
-as `READ`.
-Retrieval does not use environment proxies or automatic redirects. It validates
-every redirect, rejects credentials and private, loopback, link-local, or
-otherwise non-public addresses, restricts content types, and limits downloaded
-and extracted content. A fetched page must exist in the same session before it
-can be extracted.
-
-The higher-level command performs the complete sequence directly:
-
-```sh
-jamie research "What evidence supports this claim?"
-```
-
-Qwen first generates up to three searches. Jamie runs independent searches and
-page retrievals with up to three workers, retaining search order for source IDs
-and retrieving up to five distinct pages. It then cross-checks the evidence and
-produces structured answer paragraphs. Python renders their source IDs as links.
-A separate model review checks that the cited excerpts support each paragraph;
-Python requires exact supporting quotes from those excerpts and checks numeric
-claims against the quotes. Invalid citations or evidence receive one correction
-attempt. These checks reduce unsupported claims; the model's support judgment
-is still fallible. A successful answer cites at least two sources. Use
-`--max-sources` to select a limit from two through eight.
-
-Research results record search, retrieval, model, and total durations. The
-fixture evaluation can compare serial and concurrent retrieval with a fixed
-simulated network delay:
-
-```sh
-jamie eval research --runs 3 --workers 1 --fixture-delay 0.5
-jamie eval research --runs 3 --workers 3 --fixture-delay 0.5
-```
-
-## Everyday performance benchmarks
+| [Everyday tasks](evals/results/performance-summary.md), Qwen3.5-2B on an M2 with 16 GB | 18/18 trials passed; median 2.06 s, p95 3.61 s |
+| [Tool scoping](evals/results/performance-summary.md) | File scope cut initial prompt tokens by 43% (1,858 → 1,060) and passed 17/18 vs 13/18 trials |
+| [Agent tool use](evals/results/agent-baseline.md), Qwen3.8-9B-Distill | 20/20 attempts passed tool, output, and answer checks |
+| [Action protocol](evals/results/action-protocol-baseline.md) | 100% parse success, 90% exact instruction following (50 attempts) |
+| [Memory retrieval](evals/results/memory-fts-baseline.md) | 100% recall@k, MRR 1.000 (SQLite FTS5, no embeddings) |
 
 ```sh
 jamie eval benchmark --runs 3 --scope files
-jamie eval benchmark --runs 3 --scope all
-python scripts/benchmark-local-models.py --runs 3
-```
-
-The everyday suite covers file discovery, document questions, verified edits,
-remembered decisions, failed-file recovery, and declined approval. Reports include
-task success, median and p95 time, time to visible text, model calls, protocol
-retries, approval prompts, input/output usage, fixed fixtures and their hashes,
-model file/hash, server build/settings, generation options, and hardware. Failed
-trials remain in the results. Timing covers warm-server use; each trial has a fresh
-temporary workspace and SQLite database. The model comparison uses cached files
-offline, starts one test server at a time on port 8081, and stops only that server.
-Run GPU benchmarks serially. See [the implementation record](docs/design/performance-improvements.md)
-for recorded comparisons and limitations.
-
-## Persistent memory
-
-Jamie stores completed local conversations in SQLite. On macOS the default
-database is:
-
-```text
-~/Library/Application Support/Jamie/memory.sqlite3
-```
-
-The schema contains `sessions`, `conversations`, `messages`, `tool_calls`,
-`memories`, and `sources`. Research sessions also retain their
-retrieved source records. Tool arguments use the same bounded redaction as
-audit records, and tool output is stored only as a bounded preview. The database
-file is created with user-only permissions.
-
-Completed exchanges are added to an SQLite FTS5 index. Before an `ask` or agent
-request, Jamie searches that index with the current prompt, retrieves up to five
-matching memories, and supplies bounded excerpts to Qwen in a separate system
-section. The section labels recalled text as untrusted background so an old
-conversation cannot override current instructions. For example, after a
-conversation that selected SQLite:
-
-```sh
-jamie "What was the database library we discussed?"
-```
-
-Jamie can retrieve the earlier exchange and answer from that context. Memory is
-text-only and local; no embedding model or vector database is used.
-
-Set a different database path in `assistant.toml` when needed:
-
-```toml
-memory_path = "state/memory.sqlite3"
-```
-
-The `JAMIE_MEMORY_PATH` environment variable provides a process-level override.
-Configuration loading and `jamie doctor` validate the path setting without
-creating the database.
-
-## Model evaluations
-
-With the local server running, establish a baseline with:
-
-```sh
-jamie eval model --runs 5
-```
-
-This runs 30 fixed cases five times each: eight structured-output cases, six
-planning cases, six text instruction-following cases, and ten action-protocol
-cases. The planning cases check small dependency-ordering tasks with a single
-expected order. The action-protocol cases validate tool and finish responses;
-they do not execute any actions.
-
-Each round visits cases in case-ID order. Every request starts a fresh
-conversation with the case's unchanged user prompt, temperature `0.6`, and a
-`1024`-token limit. Protocol cases also receive the fixed protocol system
-instruction described above. Other cases receive no additional instructions.
-There are no JSON constraints, retries, warm-up prompts, or prompt adjustments.
-Server-side sampling settings and caching remain as configured on the running
-llama.cpp server.
-
-The summary shows passes and failures, JSON validity, protocol parse success,
-instruction following, median latency, output tokens, token-count coverage,
-and total duration:
-
-- **JSON validity:** complete response text must parse as JSON. Surrounding JSON
-  whitespace is accepted; Markdown fences, explanatory text, duplicate keys,
-  and non-finite numbers fail. This metric applies to the 14 JSON cases, so
-  five runs produce 70 JSON attempts. Request failures count as failed parses.
-- **Protocol parse success:** responses must parse as a `ToolAction` or
-  `FinishAction`. The limited fence and think-block handling described above is
-  allowed. This metric applies to the ten protocol cases, so five runs produce
-  50 protocol attempts. Request failures count as failed parses.
-- **Instruction following:** JSON responses must contain the expected fields,
-  with matching types and values. Extra object fields are allowed; arrays must
-  have the exact expected length and order. Protocol actions must exactly match
-  the expected action, tool, arguments, or message. Text cases match exactly
-  after removing surrounding whitespace. Parse failures and missing responses
-  fail this check. It is measured across all cases.
-- **Success:** a response must pass its expectation checks and complete without
-  a request error, empty answer, or token-limit truncation. Parse success alone
-  does not count as a pass.
-- **Latency:** elapsed time for each complete backend call, including connection
-  time and failures. The displayed median includes all completed attempts; it
-  is not time to first token. Total duration includes evaluation overhead.
-- **Output tokens:** the server's `usage.completion_tokens`, including reasoning
-  tokens when counted by the server. Missing usage is recorded as `null`, not
-  estimated or treated as zero. The summary shows the sum of available counts
-  and how many attempts reported usage.
-
-Reports are saved under `evals/results/` with unique timestamped names. Each
-JSON report includes the exact case definitions,
-settings (including the read timeout), timestamps, model IDs, unmodified answer
-text, per-run metrics, failure reasons, and summary. Results are checkpointed after every completed
-attempt. Ctrl-C saves an interrupted report; unfinished requests are not counted
-as completed attempts. Earlier reports are preserved.
-
-Exit codes are `0` when all attempts pass, `1` for failed evaluations or input /
-report errors, `2` for invalid CLI options, and `130` for interruption. Model
-failures do not stop the remaining cases.
-
-Use a different case file or output directory when needed:
-
-```sh
-jamie eval model --cases evals/cases/planning.json --runs 5 --output-dir evals/results
-jamie eval model --cases evals/cases/action_protocol.json --runs 5
-python evals/runner.py --runs 5
-```
-
-Each case file contains a non-empty JSON array. IDs must be unique across all
-loaded files. Cases default to JSON expectations:
-
-```json
-{
-  "id": "json-001",
-  "prompt": "Return a JSON object with action=finish and message=hello.",
-  "expected": {"action": "finish"}
-}
-```
-
-For exact text checks, use `"format": "text"` and a string `"expected"` value.
-For action checks, use `"format": "protocol"` and a complete tool or finish
-action as the expectation. The CLI also accepts `--temperature`, `--max-tokens`,
-and `--config`. Keep the cases and settings unchanged when comparing results.
-Model outputs are stochastic, so repeated runs need not produce identical
-results.
-
-The [saved baseline](evals/results/baseline.md) contains all 100 attempts with
-Qwen3.8-9B-Distill Q4_K_M. It used the earlier 120-second read timeout; the
-current default is 600 seconds. The original results are preserved, with the
-timeout and server settings recorded in a companion environment file. That run
-predates the ten action-protocol cases and contains the original 20 cases.
-
-The [action protocol baseline](evals/results/action-protocol-baseline.md)
-contains 50 attempts with the ten protocol cases. It reached 100% protocol
-parse success and 90% exact instruction following, with its server settings and
-five exact-message failures recorded alongside the raw report.
-
-## Agent evaluations
-
-With the local server running, evaluate the complete model, action loop, tools,
-observations, and final answers with:
-
-```sh
-jamie eval agent --runs 5
-```
-
-The four fixed cases create isolated temporary workspaces and exercise
-`read_file`, `list_directory`, `find_files`, and `search_files`. Each attempt
-passes only when the expected tool is called, its successful result contains
-the expected workspace content, and the final answer contains the expected
-text. A model answer that happens to be correct without the required tool call
-fails.
-
-The summary reports passes, expected tool calls, correct tool outputs, answer
-checks, median end-to-end latency, output tokens, and total duration. Reports
-are checkpointed under `evals/results/` after each attempt and include the case
-fixtures, tool arguments and observations, final answers, errors, timestamps,
-model ID, raw model outputs, token usage, and the case definitions.
-Temporary workspaces are removed after each attempt.
-
-The [saved agent baseline](evals/results/agent-baseline.md) contains five runs
-of each fixed case against Qwen3.8-9B-Distill Q4_K_M. All 20 attempts passed
-the tool-call, tool-output, and final-answer checks.
-
-Use a custom case file, run count, result directory, or per-run timeout when
-needed:
-
-```sh
-jamie eval agent --cases evals/agent_cases/read_only_tools.json --runs 1
-jamie eval agent --runs 5 --timeout 300 --output-dir evals/results
-```
-
-Agent evaluation cases define their workspace files and checks explicitly:
-
-```json
-{
-  "id": "agent-read-001",
-  "prompt": "What does README.md contain? Read the file before answering.",
-  "files": {"README.md": "hello world\n"},
-  "expected_tool": "read_file",
-  "expected_args": {"path": "README.md"},
-  "tool_output_contains": ["hello world"],
-  "answer_contains": ["hello world"]
-}
-```
-
-## Research evaluations
-
-With the local server running, evaluate the complete research sequence against
-fixed search results and page fixtures:
-
-```sh
+jamie eval agent --runs 5        # includes the Gmail + Calendar reply workflow
 jamie eval research --runs 5
-```
-
-The fixtures keep retrieval repeatable while Qwen still generates searches,
-cross-checks the supplied pages, and writes the cited answer. Each attempt
-reports the number of cited sources and checks that citations exist, resolve to
-successfully extracted pages, contain no URLs outside the search results, cover
-multiple source hosts, and support the expected claims. Claim support requires
-the expected answer text, a citation on that answer line, and the expected
-evidence in the cited page fixture.
-
-Reports are checkpointed under `evals/results/` and contain the exact fixtures,
-generated searches, extracted source URLs, cross-check notes, raw
-model outputs, answers, cited URLs, individual checks, failures, model
-information, token usage, and timing. Custom cases can be selected with
-`--cases`:
-
-```sh
-jamie eval research --cases evals/research_cases/supported_claims.json --runs 1
-```
-
-## Memory evaluations
-
-Run the fixed FTS5 retrieval cases without contacting the model:
-
-```sh
 jamie eval memory
 ```
 
-Each case seeds an isolated temporary database, performs one natural-language
-query, and checks whether the expected memory appears within its configured
-top-k results. The report includes recall@k, mean reciprocal rank, retrieved
-text, and case definitions. This provides a baseline for deciding
-whether text retrieval is sufficient before considering embeddings.
-
-The [saved FTS5 baseline](evals/results/memory-fts-baseline.md) passed all five
-cases with 100% recall@k and a mean reciprocal rank of 1.000. Embeddings remain
-deferred until broader evaluations show a retrieval gap.
-
-## Configuration and diagnostics
-
-`jamie doctor` checks exactly two things: Python is version 3.12 or newer,
-and the project configuration is valid. It displays a Rich table and exits with
-code `0` when both pass, or `1` if either fails. It does not perform network
-requests, create directories, or write configuration files.
-
-Configuration is read from `assistant.toml` in the current working directory.
-If that file is absent, built-in defaults are used:
-
-```toml
-color = true
-```
-
-Set `color = false` for uncolored output. `memory_path` is optional and defaults
-to Jamie's macOS application-support directory. Unknown fields, incorrect types
-(including strings instead of booleans), and malformed TOML are rejected.
-Commands accept an explicit configuration file:
-
-```sh
-jamie doctor --config /path/to/assistant.toml
-jamie ask "hello" --config /path/to/assistant.toml
-```
-
-An explicitly requested file must exist and be readable. `jamie --version`
-works independently of configuration and reads the installed package version.
-
 ## Project layout
 
-- `pyproject.toml`: package metadata, dependencies, CLI entry point, and check settings.
-- `src/assistant/cli.py`: Jamie commands.
-- `src/assistant/config.py`: local Pydantic configuration loading.
-- `src/assistant/runtime/application.py`: reusable async direct-chat lifecycle.
-- `src/assistant/llm/base.py`: `Message`, `LLMResponse`, `LLMError`, and `LLMBackend`.
-- `src/assistant/llm/llamacpp.py`: llama.cpp HTTP transport.
-- `src/assistant/agent/protocol.py`: validated tool and finish action parsing.
-- `src/assistant/agent/loop.py`: bounded model actions and tool observations.
-- `src/assistant/agent/events.py`: typed turn, tool, approval, and answer events.
-- `src/assistant/ui/renderer.py`: one-shot answer rendering from runtime events.
-- `src/assistant/tools/`: filesystem, editing, macOS, and web tools plus the registry.
-- `src/assistant/security/`: permission policy, trusted approvals, and audit records.
-- `src/assistant/research.py`: bounded search, retrieval, cross-checking, and cited synthesis.
-- `src/assistant/memory.py`: SQLite schema, FTS5 retrieval, and conversation storage.
-- `src/assistant/evaluation.py`: evaluation loading, scoring, metrics, and report saving.
-- `src/assistant/agent_evaluation.py`: complete agent evaluation and scoring.
-- `src/assistant/research_evaluation.py`: citation, source, and claim-support evaluation.
-- `src/assistant/memory_evaluation.py`: deterministic FTS5 retrieval evaluation.
-- `src/assistant/eval_cli.py`: evaluation command and terminal summaries.
-- `evals/runner.py`: checkout entry point for the evaluation command.
-- `evals/cases/`: fixed baseline case files, also bundled in installed wheels.
-- `evals/agent_cases/`: isolated workspace and tool-use cases, also bundled in wheels.
-- `evals/research_cases/`: fixed research sources and expected claims, also bundled in wheels.
-- `evals/memory_cases/`: fixed memory retrieval cases, also bundled in wheels.
-- `evals/results/`: saved evaluation reports.
-- `tests/`: CLI, configuration, transport, and evaluation behavior and failure cases.
-- `assistant.toml`: minimal project configuration.
+```text
+src/assistant/
+  agent/        action protocol and bounded agent loop
+  connectors/   Gmail, Google Calendar, Apple Reminders (+ OAuth, Keychain, time handling)
+  tasks/        task store, engine, scheduler, approvals, recovery, worker
+  tools/        file, editing, macOS, web, and connector tools; registry and scopes
+  security/     permission policy, approvals, audit log
+  runtime/      application lifecycle and context budgeting
+  ui/           interactive terminal, approval prompts, rendering
+native/reminders-helper/   Swift EventKit helper
+evals/                     evaluation cases and recorded results
+docs/                      reference and design notes
+```
+
+Full command, protocol, and configuration reference: [docs/reference.md](docs/reference.md).
+
+## Development
+
+```sh
+python -m pytest          # no model or network needed; all I/O is faked
+ruff check .
+ruff format --check .
+```
+
+## License
+
+The license is not chosen yet. Contact the author before using this code beyond evaluation.
