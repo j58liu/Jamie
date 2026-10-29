@@ -148,6 +148,7 @@ class JamieApplication:
         *,
         backend_factory: BackendFactory | None = None,
         memory_store_factory: MemoryStoreFactory = MemoryStore,
+        extract_memories: bool = False,
     ) -> None:
         self._config = config
         self._backend_factory = backend_factory or LlamaCppBackend
@@ -160,6 +161,81 @@ class JamieApplication:
         self._last_context: ContextUsage | None = None
         self._measured_history: list[Message] | None = None
         self._last_tool_names: tuple[str, ...] = ()
+        self._connectors = None
+        self._extract_memories = extract_memories
+        self._personal = None
+        self.last_extraction = None  # the most recent memory extraction outcome
+        self.last_plan = None  # the most recent plan outcome, when the planner ran
+
+    @property
+    def personal(self):
+        """Typed personal memory beside the conversation store, when that store is SQLite."""
+        if self._personal is None and isinstance(self._memory, MemoryStore):
+            from assistant.knowledge import PersonalMemory, PersonalMemoryError
+
+            try:
+                self._personal = PersonalMemory(self._memory.path)
+            except PersonalMemoryError:
+                return None
+        return self._personal
+
+    def _memory_context(self, memory, prompt: str, conversation_id: str | None) -> str | None:
+        """Relevant personal facts plus excerpts from earlier conversations."""
+        parts = []
+        personal = self.personal
+        if personal is not None:
+            from assistant.knowledge.retrieval import format_personal_context, recall
+
+            budget = self._config.memory.personal_context_tokens
+            facts = format_personal_context(recall(personal, prompt), budget)
+            if facts:
+                parts.append(facts)
+        recalled = memory.search_memories(prompt, exclude_session=conversation_id)
+        excerpts = format_memory_context(recalled)
+        if excerpts:
+            parts.append(excerpts)
+        return "\n\n".join(parts) or None
+
+    def _extract(self, prompt: str, evidence_ref: str | None) -> None:
+        """Learn durable facts from the user's own words; never fails the turn."""
+        personal = self.personal
+        if not self._extract_memories or personal is None or self._backend is None:
+            return
+        from assistant.knowledge.extraction import MemoryExtractor, likely_personal
+
+        if not likely_personal(prompt):
+            return
+
+        def commitment(text: str, evidence: str) -> None:
+            from assistant.tasks.models import TaskState
+            from assistant.tasks.store import TaskStore
+
+            store = TaskStore(self._config.resolved_tasks_path())
+            store.create_task(f"Commitment: {text[:80]}", text, state=TaskState.SCHEDULED)
+
+        try:
+            self.model_calls += 1
+            self.last_extraction = MemoryExtractor(
+                self._backend, personal, on_commitment=commitment
+            ).process(prompt, evidence_ref=evidence_ref, force=True)
+        except Exception:  # memory is best effort; the answer already succeeded
+            self.last_extraction = None
+
+    @property
+    def config(self) -> ProjectConfig:
+        return self._config
+
+    @property
+    def connectors(self):
+        """Personal-application connectors from configuration, created once on first use.
+
+        Creating them reads configuration only; no provider is contacted.
+        """
+        if self._connectors is None:
+            from assistant.connectors import build_connectors
+
+            self._connectors = build_connectors(self._config)
+        return self._connectors
 
     async def __aenter__(self) -> Self:
         await self.start()
@@ -202,12 +278,14 @@ class JamieApplication:
         tools: ToolExecutor | None = None,
         max_steps: int = MAX_STEPS,
         timeout_seconds: float = TIMEOUT_SECONDS,
+        plan: str = "never",
     ) -> TurnResult:
         """Run one chat or tool-using turn with the initialized services.
 
         ``thinking`` is forwarded only when set, so backends without it keep working.
         Passing ``tools`` enables the agent action protocol and Python permission policy;
-        ``max_steps`` and ``timeout_seconds`` then bound the agent.
+        ``max_steps`` and ``timeout_seconds`` then bound the agent. ``plan`` is "never",
+        "auto" (multi-step requests use the planner), or "always".
         A cancelled turn raises TurnCancelled once the model request has stopped, and
         its answer is never stored. With ``conversation_id`` the exchange is appended
         to that resumable conversation only after it succeeds; otherwise each turn is
@@ -231,6 +309,7 @@ class JamieApplication:
                 event_sink=event_sink,
                 max_steps=max_steps,
                 timeout_seconds=timeout_seconds,
+                plan=plan,
             )
 
         event_sink(TurnStarted(prompt))
@@ -240,8 +319,7 @@ class JamieApplication:
                 session_id = memory.start_session("ask")
                 memory.add_message(session_id, "user", prompt)
             # The conversation's own exchanges are already in the history.
-            recalled = memory.search_memories(prompt, exclude_session=conversation_id)
-            memory_context = format_memory_context(recalled)
+            memory_context = self._memory_context(memory, prompt, conversation_id)
             messages = []
             if memory_context is not None:
                 messages.append(Message(role="system", content=memory_context))
@@ -270,6 +348,7 @@ class JamieApplication:
             else:
                 memory.save_exchange(conversation_id, prompt, text, str(Path.cwd()))
                 memory.remember_exchange(conversation_id, prompt, text)
+            await asyncio.to_thread(self._extract, prompt, session_id or conversation_id)
         except BaseException as exc:
             if session_id is not None:
                 self._finish_failed_session(session_id)
@@ -330,6 +409,7 @@ class JamieApplication:
         event_sink: EventSink,
         max_steps: int,
         timeout_seconds: float,
+        plan: str = "never",
     ) -> TurnResult:
         memory = self._require_memory()
         session_id = conversation_id
@@ -346,23 +426,39 @@ class JamieApplication:
             if standalone:
                 session_id = memory.start_session("agent")
                 memory.add_message(session_id, "user", prompt)
-            recalled = memory.search_memories(prompt, exclude_session=conversation_id)
-            context = format_memory_context(recalled)
+            context = self._memory_context(memory, prompt, conversation_id)
             backend = _AgentTurnBackend(
                 self._backend, self, temperature, max_tokens, thinking, len(history or [])
             )
-            answer = await asyncio.to_thread(
-                run_agent,
-                backend,
-                RememberingTools(tools, memory, session_id),
-                prompt,
-                history=history,
-                memory_context=context,
-                event_sink=observe,
-                cancel=cancel,
-                max_steps=max_steps,
-                timeout_seconds=timeout_seconds,
-            )
+            recorded = RememberingTools(tools, memory, session_id)
+            answer = None
+            self.last_plan = None
+            from assistant.planning import PlanningError, needs_plan, run_plan
+
+            if plan == "always" or (plan == "auto" and needs_plan(prompt)):
+                try:
+                    outcome = await asyncio.to_thread(
+                        run_plan, backend, recorded, prompt, memory_context=context,
+                        event_sink=observe, cancel=cancel,
+                    )  # fmt: skip
+                except PlanningError:
+                    outcome = None  # no usable plan; the agent loop handles the request
+                if outcome is not None:
+                    self.last_plan = outcome
+                    answer = outcome.answer
+            if answer is None:
+                answer = await asyncio.to_thread(
+                    run_agent,
+                    backend,
+                    recorded,
+                    prompt,
+                    history=history,
+                    memory_context=context,
+                    event_sink=observe,
+                    cancel=cancel,
+                    max_steps=max_steps,
+                    timeout_seconds=timeout_seconds,
+                )
             if cancel is not None:
                 cancel.raise_if_cancelled()
             if standalone:
@@ -372,6 +468,7 @@ class JamieApplication:
             else:
                 memory.save_exchange(session_id, prompt, answer, str(Path.cwd()))
                 memory.remember_exchange(session_id, prompt, answer)
+            await asyncio.to_thread(self._extract, prompt, session_id)
         except BaseException:
             if standalone and session_id is not None:
                 self._finish_failed_session(session_id)

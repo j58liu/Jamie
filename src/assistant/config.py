@@ -2,8 +2,43 @@
 
 import tomllib
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+
+class GoogleConfig(BaseModel):
+    """A Google Cloud "Desktop app" OAuth client used for Gmail and Calendar."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    client_secrets_path: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.client_secrets_path or self.client_id)
+
+
+class RemindersConfig(BaseModel):
+    """Apple Reminders through the native EventKit helper."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    enabled: bool = False
+    helper_path: str | None = None
+
+
+class MemoryConfig(BaseModel):
+    """Personal memory settings."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    # "cue": after a turn whose message looks personal ("I prefer...", "remember..."),
+    # ask the model which statements to remember. "off": never extract automatically.
+    extraction: Literal["cue", "off"] = "cue"
+    personal_context_tokens: int = Field(default=400, ge=0, le=4000)
 
 
 class ProjectConfig(BaseModel):
@@ -13,13 +48,38 @@ class ProjectConfig(BaseModel):
 
     color: bool = True
     memory_path: str | None = None
+    tasks_path: str | None = None
+    timezone: str | None = None
+    google: GoogleConfig = GoogleConfig()
+    reminders: RemindersConfig = RemindersConfig()
+    memory: MemoryConfig = MemoryConfig()
 
-    @field_validator("memory_path")
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"Unknown timezone {value!r}.") from exc
+        return value
+
+    @field_validator("memory_path", "tasks_path")
     @classmethod
     def validate_memory_path(cls, value: str | None) -> str | None:
         if value is not None and (not value.strip() or "\x00" in value):
             raise ValueError("Memory path must not be blank or contain null characters.")
         return value
+
+    def resolved_tasks_path(self) -> Path:
+        if self.tasks_path is not None:
+            return Path(self.tasks_path).expanduser()
+        from assistant.tasks.store import default_tasks_path
+
+        return default_tasks_path()
 
     def resolved_memory_path(self) -> Path:
         if self.memory_path is not None:

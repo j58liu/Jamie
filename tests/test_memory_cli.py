@@ -17,6 +17,8 @@ class MemoryBackend:
     def chat(self, messages, *, temperature=0.6, max_tokens=1024):
         self.calls.append(list(messages))
         prompt = messages[-1].content
+        if messages[0].content.startswith("You extract long-term memory"):
+            return LLMResponse('{"items": []}')  # the memory extraction pass
         if "Remember that" in prompt:
             return LLMResponse(
                 '{"action":"finish","message":"I will remember that we chose SQLite."}'
@@ -47,7 +49,7 @@ def test_agent_recalls_a_previous_cli_conversation(tmp_path: Path, monkeypatch: 
     assert first.exit_code == 0, first.output
     assert second.exit_code == 0, second.output
     assert "SQLite" in second.stdout
-    assert len(backend.calls) == 2
+    assert len(backend.calls) == 3  # two answers plus one extraction for "Remember that"
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 2
         assert connection.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 4

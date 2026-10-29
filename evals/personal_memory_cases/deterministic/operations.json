@@ -1,0 +1,365 @@
+[
+  {
+    "id": "ops-correction-wins",
+    "tags": [
+      "correction"
+    ],
+    "operations": [
+      {
+        "op": "remember",
+        "type": "preference",
+        "key": "meeting_time",
+        "value": "morning"
+      },
+      {
+        "op": "correct",
+        "ref": 0,
+        "value": "afternoon"
+      },
+      {
+        "op": "expect_active",
+        "key": "meeting_time",
+        "value": "afternoon"
+      }
+    ]
+  },
+  {
+    "id": "ops-correction-beats-later-inference",
+    "tags": [
+      "correction"
+    ],
+    "operations": [
+      {
+        "op": "remember",
+        "type": "profile",
+        "key": "working_hours",
+        "value": "9 to 5"
+      },
+      {
+        "op": "correct",
+        "ref": 0,
+        "value": "10 to 6"
+      },
+      {
+        "op": "remember",
+        "type": "profile",
+        "key": "working_hours",
+        "value": "8 to 4",
+        "source": "inference"
+      },
+      {
+        "op": "expect_active",
+        "key": "working_hours",
+        "value": "10 to 6"
+      }
+    ]
+  },
+  {
+    "id": "ops-correction-of-relationship",
+    "tags": [
+      "correction"
+    ],
+    "operations": [
+      {
+        "op": "remember",
+        "type": "relationship",
+        "subject": "Alex Chen",
+        "key": "relationship",
+        "value": "manager"
+      },
+      {
+        "op": "correct",
+        "ref": 0,
+        "value": "project collaborator"
+      },
+      {
+        "op": "expect_active",
+        "subject": "Alex Chen",
+        "key": "relationship",
+        "value": "project collaborator"
+      },
+      {
+        "op": "expect_recall",
+        "query": "who is Alex",
+        "contains": [
+          "project collaborator"
+        ],
+        "excludes": [
+          "manager"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ops-statement-supersedes",
+    "tags": [
+      "correction"
+    ],
+    "operations": [
+      {
+        "op": "remember",
+        "type": "preference",
+        "key": "coffee",
+        "value": "latte"
+      },
+      {
+        "op": "remember",
+        "type": "preference",
+        "key": "coffee",
+        "value": "black coffee"
+      },
+      {
+        "op": "expect_active",
+        "key": "coffee",
+        "value": "black coffee"
+      }
+    ]
+  },
+  {
+    "id": "ops-inference-does-not-override",
+    "tags": [
+      "contradiction"
+    ],
+    "operations": [
+      {
+        "op": "remember",
+        "type": "preference",
+        "key": "meeting_time",
+        "value": "morning"
+      },
+      {
+        "op": "remember",
+        "type": "preference",
+        "key": "meeting_time",
+        "value": "evening",
+        "source": "inference"
+      },
+      {
+        "op": "expect_active",
+        "key": "meeting_time",
+        "value": "morning"
+      }
+    ]
+  },
+  {
+    "id": "ops-forget-erases",
+    "tags": [
+      "deletion"
+    ],
+    "operations": [
+      {
+        "op": "remember",
+        "type": "profile",
+        "key": "doctor",
+        "value": "Dr. Patel"
+      },
+      {
+        "op": "forget",
+        "ref": 0
+      },
+      {
+        "op": "expect_absent",
+        "value": "Patel"
+      },
+      {
+        "op": "expect_recall",
+        "query": "doctor Patel",
+        "excludes": [
+          "Patel"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ops-recall-relevant-only",
+    "tags": [
+      "privacy"
+    ],
+    "operations": [
+      {
+        "op": "remember",
+        "type": "preference",
+        "key": "meeting_time",
+        "value": "morning"
+      },
+      {
+        "op": "remember",
+        "type": "profile",
+        "key": "medication",
+        "value": "insulin"
+      },
+      {
+        "op": "expect_recall",
+        "query": "schedule a meeting with Sam",
+        "contains": [
+          "morning"
+        ],
+        "excludes": [
+          "insulin"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ops-recall-by-person",
+    "tags": [
+      "filters"
+    ],
+    "operations": [
+      {
+        "op": "remember",
+        "type": "relationship",
+        "subject": "Priya",
+        "key": "relationship",
+        "value": "manager"
+      },
+      {
+        "op": "remember",
+        "type": "preference",
+        "key": "lunch",
+        "value": "sushi"
+      },
+      {
+        "op": "expect_recall",
+        "query": "",
+        "person": "Priya",
+        "contains": [
+          "manager"
+        ],
+        "excludes": [
+          "sushi"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ops-gate-explicit",
+    "tags": [
+      "extraction"
+    ],
+    "operations": [
+      {
+        "op": "gate",
+        "message": "I prefer morning meetings.",
+        "accepted": true,
+        "proposal": {
+          "statement": "explicit_user_statement",
+          "type": "preference",
+          "subject": "user",
+          "key": "meeting_time",
+          "value": "morning",
+          "evidence": "I prefer morning meetings"
+        }
+      }
+    ]
+  },
+  {
+    "id": "ops-gate-quoted",
+    "tags": [
+      "extraction"
+    ],
+    "operations": [
+      {
+        "op": "gate",
+        "message": "Alex wrote \"I prefer morning meetings\" in his email.",
+        "accepted": false,
+        "proposal": {
+          "statement": "explicit_user_statement",
+          "type": "preference",
+          "subject": "user",
+          "key": "meeting_time",
+          "value": "morning",
+          "evidence": "I prefer morning meetings"
+        }
+      }
+    ]
+  },
+  {
+    "id": "ops-gate-reported",
+    "tags": [
+      "extraction"
+    ],
+    "operations": [
+      {
+        "op": "gate",
+        "message": "Alex said he prefers Friday meetings.",
+        "accepted": false,
+        "proposal": {
+          "statement": "explicit_user_statement",
+          "type": "preference",
+          "subject": "user",
+          "key": "meeting_day",
+          "value": "Friday",
+          "evidence": "he prefers Friday meetings"
+        }
+      }
+    ]
+  },
+  {
+    "id": "ops-gate-invented-evidence",
+    "tags": [
+      "extraction"
+    ],
+    "operations": [
+      {
+        "op": "gate",
+        "message": "Find Alex's email.",
+        "accepted": false,
+        "proposal": {
+          "statement": "explicit_user_statement",
+          "type": "preference",
+          "subject": "user",
+          "key": "meeting_time",
+          "value": "morning",
+          "evidence": "I prefer mornings"
+        }
+      }
+    ]
+  },
+  {
+    "id": "ops-gate-suggestion",
+    "tags": [
+      "extraction"
+    ],
+    "operations": [
+      {
+        "op": "gate",
+        "message": "Maybe we could do standups on Mondays?",
+        "accepted": false,
+        "proposal": {
+          "statement": "suggestion",
+          "type": "preference",
+          "subject": "user",
+          "key": "standup_day",
+          "value": "Monday",
+          "evidence": "standups on Mondays"
+        }
+      }
+    ]
+  },
+  {
+    "id": "ops-duplicate-consolidates",
+    "tags": [
+      "consolidation"
+    ],
+    "operations": [
+      {
+        "op": "remember",
+        "type": "preference",
+        "key": "meeting_time",
+        "value": "morning"
+      },
+      {
+        "op": "remember",
+        "type": "preference",
+        "key": "Meeting Time",
+        "value": "Morning"
+      },
+      {
+        "op": "expect_active",
+        "key": "meeting_time",
+        "value": "morning"
+      }
+    ]
+  }
+]

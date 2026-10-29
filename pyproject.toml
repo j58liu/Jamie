@@ -37,6 +37,10 @@ packages = ["src/assistant"]
 "evals/memory_cases" = "assistant/memory_eval_cases"
 "evals/interactive_cases" = "assistant/interactive_eval_cases"
 "evals/benchmark_cases" = "assistant/benchmark_eval_cases"
+"evals/planning_cases" = "assistant/planning_eval_cases"
+"evals/cross_app_cases" = "assistant/cross_app_eval_cases"
+"evals/personal_memory_cases" = "assistant/personal_memory_eval_cases"
+"evals/safety_cases" = "assistant/safety_eval_cases"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

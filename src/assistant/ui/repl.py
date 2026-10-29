@@ -28,12 +28,13 @@ from assistant.agent.events import (
     ToolStarted,
     TurnFailed,
 )
-from assistant.agent.loop import AgentError, ToolExecutor
+from assistant.agent.loop import MAX_STEPS, AgentError, ToolExecutor
 from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
 from assistant.llm.base import LLMError
 from assistant.memory import MemoryStoreError, default_memory_path
 from assistant.runtime import JamieApplication, JamieApplicationError
 from assistant.runtime.workspaces import WorkspaceTools
+from assistant.tools.scopes import SCOPE_MAX_STEPS
 from assistant.ui.commands import ReplState, create_command_registry
 from assistant.ui.prompt import JamieCompleter, command_preview, continuation, input_bindings
 from assistant.ui.renderer import EventRenderer, render_error
@@ -92,6 +93,24 @@ def _welcome(console: Console) -> None:
     console.print(Text("Ctrl+D or /quit to leave", style="dim"))
 
 
+def _task_notice(state: ReplState) -> None:
+    """Mention approvals that unattended tasks are waiting on; never block startup."""
+    if state.application is None:
+        return
+    try:
+        from assistant.tasks.store import TaskStore
+        from assistant.tasks_cli import task_summary
+
+        path = state.application.config.resolved_tasks_path()
+        if not path.exists():
+            return
+        notice = task_summary(TaskStore(path))
+    except Exception:
+        return
+    if notice is not None:
+        state.console.print(notice)
+
+
 async def run_repl(
     application: JamieApplication,
     *,
@@ -140,6 +159,7 @@ async def _run_repl(
     session = session or create_prompt_session()
     renderer = EventRenderer(state.console, answer_prefix="Jamie › ", markdown=True)
     _welcome(state.console)
+    _task_notice(state)
 
     if started is not None:
         state.startup_seconds = time.monotonic() - started
@@ -194,7 +214,11 @@ async def _run_repl(
                 state.conversation_id = application.start_conversation()
             with interrupt_cancels(token):
                 agent_options = (
-                    {"tools": workspace_tools.current(state.scope)}
+                    {
+                        "tools": workspace_tools.current(state.scope),
+                        "max_steps": SCOPE_MAX_STEPS.get(state.scope, MAX_STEPS),
+                        "plan": state.plan,
+                    }
                     if workspace_tools is not None and state.mode == "task"
                     else {}
                 )

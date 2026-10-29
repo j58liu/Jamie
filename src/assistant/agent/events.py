@@ -71,6 +71,13 @@ class RequestContext:
     usage: ContextUsage
 
 
+@dataclass(frozen=True)
+class PlanCreated:
+    """The step plan Jamie is about to run (an assistant.planning Plan)."""
+
+    plan: Any
+
+
 type AgentEvent = (
     TurnStarted
     | AssistantDelta
@@ -81,6 +88,7 @@ type AgentEvent = (
     | ApprovalRequested
     | TurnFailed
     | RequestContext
+    | PlanCreated
 )
 type EventSink = Callable[[AgentEvent], None]
 

@@ -19,26 +19,50 @@ from assistant.evaluation import (
 )
 from assistant.llm.base import LLMBackend, LLMError, LLMResponse, Message
 from assistant.tools.registry import ToolRegistry, create_read_only_registry
+from assistant.tools.scopes import SCOPE_MAX_STEPS, ToolScope
+
+
+class PersonalFixture(BaseModel):
+    """In-memory Gmail messages and calendar events for a personal-app case."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    now: str
+    timezone: str
+    messages: list[dict[str, JsonValue]] = Field(default_factory=list)
+    events: list[dict[str, JsonValue]] = Field(default_factory=list)
+
+
+READ_TOOL_NAMES = ("read_file", "list_directory", "find_files", "search_files")
 
 
 class AgentEvalCase(BaseModel):
-    """A workspace, task, and checks for one complete agent run."""
+    """A workspace (or personal-app fixture), task, and checks for one agent run."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
     id: str = Field(min_length=1, pattern=r"^[a-zA-Z0-9_-]+$")
     prompt: str = Field(min_length=1)
-    files: dict[str, str]
-    expected_tool: Literal["read_file", "list_directory", "find_files", "search_files"]
+    files: dict[str, str] = Field(default_factory=dict)
+    personal: PersonalFixture | None = None
+    expected_tool: str
     expected_args: dict[str, JsonValue] = Field(default_factory=dict)
+    required_tools: list[str] = Field(default_factory=list)
+    forbidden_tools: list[str] = Field(default_factory=list)
     tool_output_contains: list[str] = Field(min_length=1)
     answer_contains: list[str] = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_case(self) -> Self:
+        from assistant.tools.integrations import PERSONAL_TOOLS
+
         if not self.prompt.strip():
             raise ValueError("Prompt must not be blank.")
-        if not self.files:
+        allowed = PERSONAL_TOOLS if self.personal is not None else set(READ_TOOL_NAMES)
+        for name in [self.expected_tool, *self.required_tools, *self.forbidden_tools]:
+            if name not in allowed:
+                raise ValueError(f"Unknown tool {name!r} for this case.")
+        if not self.files and self.personal is None:
             raise ValueError("Agent cases require at least one workspace file.")
         for name in self.files:
             path = PurePath(name)
@@ -168,6 +192,26 @@ class _RecordingTools:
         return result
 
 
+def _personal_registry(fixture: PersonalFixture) -> ToolRegistry:
+    """Fake Gmail and Calendar with every approval granted, as if the user said yes."""
+    from zoneinfo import ZoneInfo
+
+    from assistant.connectors import Connectors
+    from assistant.connectors.fakes import FakeCalendar, FakeGmail
+    from assistant.security import CallbackApprovalProvider
+    from assistant.tools.integrations import register_personal_tools
+
+    tz = ZoneInfo(fixture.timezone)
+    now = datetime.fromisoformat(fixture.now)
+    connectors = Connectors(
+        tz=tz,
+        gmail=FakeGmail(list(fixture.messages)),
+        calendar=FakeCalendar(list(fixture.events), tz),
+    )
+    registry = ToolRegistry(approvals=CallbackApprovalProvider(lambda request: True))
+    return register_personal_tools(registry, connectors, now=lambda: now)
+
+
 def load_agent_cases(path: Path | None = None) -> list[AgentEvalCase]:
     return load_case_files(path, AgentEvalCase, "agent_cases", "agent")
 
@@ -192,13 +236,19 @@ def _run_case(
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
         recording_backend = _RecordingBackend(backend)
-        tools = _RecordingTools(create_read_only_registry(root))
+        registry = (
+            _personal_registry(case.personal)
+            if case.personal is not None
+            else create_read_only_registry(root)
+        )
+        tools = _RecordingTools(registry)
         try:
             answer = run_agent(
                 recording_backend,
                 tools,
                 case.prompt,
                 timeout_seconds=timeout_seconds,
+                **({"max_steps": SCOPE_MAX_STEPS[ToolScope.PERSONAL]} if case.personal else {}),
             )
         except (AgentError, LLMError) as exc:
             error = str(exc)
@@ -214,9 +264,21 @@ def _run_case(
         for call in matching_calls
     )
     answer_check = answer is not None and all(text in answer for text in case.answer_contains)
-    success = error is None and expected_tool_called and correct_tool_output and answer_check
+    called = {call.tool for call in tools.calls if call.success}
+    tools_check = set(case.required_tools) <= called and not (
+        {call.tool for call in tools.calls} & set(case.forbidden_tools)
+    )
+    success = (
+        error is None
+        and expected_tool_called
+        and correct_tool_output
+        and answer_check
+        and tools_check
+    )
     if error is not None:
         reason = "agent_error"
+    elif not tools_check:
+        reason = "required_or_forbidden_tools"
     elif not expected_tool_called:
         reason = "expected_tool_not_called"
     elif not correct_tool_output:

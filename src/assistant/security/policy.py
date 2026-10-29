@@ -14,6 +14,7 @@ class PermissionLevel(StrEnum):
     SENSITIVE = "SENSITIVE"
     DESTRUCTIVE = "DESTRUCTIVE"
     EXTERNAL = "EXTERNAL"
+    SEND = "SEND"  # sends a message as the user; confirmed every time
 
 
 class PolicyAction(StrEnum):
@@ -54,20 +55,49 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
         "clipboard_read": PermissionLevel.SENSITIVE,
         "run_shortcut": PermissionLevel.SENSITIVE,
         "run_applescript": PermissionLevel.SENSITIVE,
-        "send_email": PermissionLevel.EXTERNAL,
         "web_search": PermissionLevel.EXTERNAL,
         "fetch_url": PermissionLevel.EXTERNAL,
         "research": PermissionLevel.EXTERNAL,
         "delete_file": PermissionLevel.DESTRUCTIVE,
         "trash_file": PermissionLevel.SAFE_WRITE,
+        # Personal-application connectors. Reads run without asking; anything that
+        # changes or sends data outside this Mac asks first.
+        "connectors_status": PermissionLevel.READ,
+        "gmail_search_messages": PermissionLevel.READ,
+        "gmail_get_message": PermissionLevel.READ,
+        "gmail_get_thread": PermissionLevel.READ,
+        "gmail_get_draft": PermissionLevel.READ,
+        "gmail_create_draft": PermissionLevel.EXTERNAL,
+        "gmail_send_draft": PermissionLevel.SEND,
+        "calendar_list_events": PermissionLevel.READ,
+        "calendar_check_availability": PermissionLevel.READ,
+        "calendar_get_event": PermissionLevel.READ,
+        "calendar_create_event": PermissionLevel.EXTERNAL,
+        "calendar_update_event": PermissionLevel.EXTERNAL,
+        "reminders_list": PermissionLevel.READ,
+        "reminders_create": PermissionLevel.SAFE_WRITE,
+        "reminders_complete": PermissionLevel.SAFE_WRITE,
     }
 )
 
 # The user chose to confirm only actions that cannot be taken back: destructive ones,
-# email that reaches other people, and arbitrary shell commands (not registered today).
-# Everything else, including AppleScript, clipboard reads, and network requests carrying
-# model-written text, runs without asking; edits stay reversible with /undo.
-CONFIRM_REQUIRED = frozenset({"send_email", "shell"})
+# anything sent as the user (SEND), every personal-app connector write (Gmail, Calendar,
+# Reminders: invites can reach other people and none of them has /undo), and arbitrary
+# shell commands (not registered today). Everything else, including AppleScript,
+# clipboard reads, and network requests carrying model-written text, runs without
+# asking; edits stay reversible with /undo.
+CONFIRM_REQUIRED = frozenset(
+    {
+        "send_email",
+        "shell",
+        "gmail_create_draft",
+        "calendar_create_event",
+        "calendar_update_event",
+        "reminders_create",
+        "reminders_complete",
+    }
+)
+CONFIRM_LEVELS = frozenset({PermissionLevel.DESTRUCTIVE, PermissionLevel.SEND})
 
 
 class PermissionPolicy:
@@ -96,6 +126,6 @@ class PermissionPolicy:
 
     def decide(self, tool: str) -> PolicyDecision:
         permission = self.permission_for(tool)
-        confirm = permission is PermissionLevel.DESTRUCTIVE or tool in CONFIRM_REQUIRED
+        confirm = permission in CONFIRM_LEVELS or tool in CONFIRM_REQUIRED
         action = PolicyAction.CONFIRM if confirm else PolicyAction.ALLOW
         return PolicyDecision(tool=tool, permission=permission, action=action)

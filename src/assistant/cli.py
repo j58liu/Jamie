@@ -13,10 +13,12 @@ from typer.core import TyperGroup
 from assistant import STARTED, __version__
 from assistant.agent import AgentError
 from assistant.agent.events import EventSink
+from assistant.agent.loop import MAX_STEPS
 from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
 from assistant.config import ConfigurationError, ProjectConfig, load_config
 from assistant.doctor import Status, run_checks
 from assistant.eval_cli import app as eval_app
+from assistant.knowledge_cli import memory_app
 from assistant.llm.base import LLMError, managed_backend
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import (
@@ -26,8 +28,9 @@ from assistant.memory import (
 )
 from assistant.research import ResearchError, ResearchWorkflow
 from assistant.runtime import JamieApplication, JamieApplicationError, TurnResult
+from assistant.tasks_cli import tasks_app, worker_app
 from assistant.tools import WebClient, create_agent_registry
-from assistant.tools.scopes import ToolScope, select_tools
+from assistant.tools.scopes import SCOPE_MAX_STEPS, ToolScope, select_tools
 from assistant.ui.approvals import TerminalApprovalProvider
 from assistant.ui.gui import run_gui
 from assistant.ui.renderer import EventRenderer, OneShotRenderer
@@ -52,6 +55,9 @@ app = typer.Typer(
     add_completion=False,
 )
 app.add_typer(eval_app, name="eval")
+app.add_typer(tasks_app, name="tasks")
+app.add_typer(worker_app, name="worker")
+app.add_typer(memory_app, name="memory")
 
 
 def _start_memory(settings, kind: str, prompt: str) -> tuple[MemoryStore, str, str | None]:
@@ -114,16 +120,25 @@ async def _run_agent(
     max_steps: int,
     timeout: float,
     scope: ToolScope = ToolScope.ALL,
+    plan: str = "auto",
 ) -> None:
     """One agent turn on the shared runtime; Ctrl+C cancels it at the next safe point."""
     console = Console(no_color=not settings.color)
     renderer = EventRenderer(console, Console(stderr=True, no_color=not settings.color))
     backend = LlamaCppBackend()
     token = CancellationToken()
-    async with JamieApplication(settings, backend_factory=lambda: backend) as application:
+    async with JamieApplication(
+        settings,
+        backend_factory=lambda: backend,
+        extract_memories=settings.memory.extraction == "cue",
+    ) as application:
         with WebClient() as web, interrupt_cancels(token):
             tools = create_agent_registry(
-                workspace, approvals=TerminalApprovalProvider(console), web=web, backend=backend
+                workspace,
+                approvals=TerminalApprovalProvider(console),
+                web=web,
+                backend=backend,
+                connectors=application.connectors,
             )
             tools = select_tools(tools, scope)
             await application.run_turn(
@@ -133,6 +148,7 @@ async def _run_agent(
                 timeout_seconds=timeout,
                 cancel=token,
                 event_sink=renderer.handle,
+                plan=plan,
             )
 
 
@@ -167,7 +183,11 @@ async def _run_repl(settings: ProjectConfig) -> None:
         raise StartupError(backend.server_url, str(exc)) from exc
     console = Console(no_color=not settings.color)
     approvals = TerminalApprovalProvider(console)  # one per session, so "allow session" lasts
-    async with JamieApplication(settings, backend_factory=lambda: backend) as application:
+    async with JamieApplication(
+        settings,
+        backend_factory=lambda: backend,
+        extract_memories=settings.memory.extraction == "cue",
+    ) as application:
         with WebClient() as web:
             await run_repl(
                 application,
@@ -175,7 +195,11 @@ async def _run_repl(settings: ProjectConfig) -> None:
                 model=info.model,
                 started=STARTED,
                 agent_tools_factory=lambda: create_agent_registry(
-                    Path.cwd(), approvals=approvals, web=web, backend=backend
+                    Path.cwd(),
+                    approvals=approvals,
+                    web=web,
+                    backend=backend,
+                    connectors=application.connectors,
                 ),
             )
 
@@ -258,13 +282,24 @@ def ask(
 def agent(
     prompt: Annotated[str, typer.Argument(help="Task for the local agent.")],
     workspace: Annotated[Path, typer.Option(help="Workspace available to file tools.")] = Path("."),
-    max_steps: Annotated[int, typer.Option(min=1, help="Maximum number of model actions.")] = 12,
+    max_steps: Annotated[
+        int | None,
+        typer.Option(
+            min=1,
+            help="Maximum number of model actions. Defaults to 12, or 16 for --scope personal.",
+            show_default=False,
+        ),
+    ] = None,
     scope: Annotated[
         ToolScope, typer.Option(help="Tools available for this task.")
     ] = ToolScope.ALL,
     timeout: Annotated[
         float, typer.Option(min=0.001, help="Maximum seconds for the complete task.")
     ] = 300.0,
+    plan: Annotated[
+        str,
+        typer.Option(help="Use the step planner: auto (multi-step requests), always, or never."),
+    ] = "auto",
     config: Annotated[
         Path | None,
         typer.Option("--config", help="Read a specific TOML configuration file."),
@@ -278,9 +313,18 @@ def agent(
 
     try:
         settings = load_config(config)
+        steps = max_steps if max_steps is not None else SCOPE_MAX_STEPS.get(scope, MAX_STEPS)
+        if plan not in {"auto", "always", "never"}:
+            raise typer.BadParameter("Use auto, always, or never.", param_hint="--plan")
         asyncio.run(
             _run_agent(
-                settings, prompt, workspace, max_steps=max_steps, timeout=timeout, scope=scope
+                settings,
+                prompt,
+                workspace,
+                max_steps=steps,
+                timeout=timeout,
+                scope=scope,
+                plan=plan,
             )
         )
     except TurnCancelled as exc:
@@ -354,6 +398,107 @@ def gui(
         Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
         raise typer.Exit(code=1) from exc
     run_gui(settings, hidden=hidden)
+
+
+connect_app = typer.Typer(help="Connect personal applications to Jamie.")
+app.add_typer(connect_app, name="connect")
+
+
+def _google_session(config: Path | None):
+    from assistant.connectors import build_connectors
+
+    settings = load_config(config)
+    session = build_connectors(settings).google
+    if session is None or not settings.google.enabled:
+        raise ConfigurationError(
+            "Add a [google] section with client_secrets_path to assistant.toml first."
+        )
+    return session
+
+
+@connect_app.command("google")
+def connect_google(
+    scopes: Annotated[
+        str,
+        typer.Option(help="Access level: read, compose (drafts and send), or calendar-write."),
+    ] = "read",
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Read a specific TOML configuration file."),
+    ] = None,
+) -> None:
+    """Sign in to Google in the browser and store the refresh token in Keychain."""
+    import webbrowser
+
+    from assistant.connectors import ConnectorError
+    from assistant.connectors.google.auth import SCOPE_LEVELS
+
+    if scopes not in SCOPE_LEVELS:
+        raise typer.BadParameter(
+            f"Choose one of: {', '.join(SCOPE_LEVELS)}.", param_hint="--scopes"
+        )
+    console = Console()
+    try:
+        session = _google_session(config)
+
+        def open_browser(url: str) -> None:
+            console.print("Opening Google sign-in. If no browser opens, visit:", markup=False)
+            console.print(url, markup=False, highlight=False, soft_wrap=True)
+            webbrowser.open(url)
+
+        granted = session.connect(SCOPE_LEVELS[scopes], open_browser=open_browser)
+    except (ConfigurationError, ConnectorError) as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    names = ", ".join(sorted(scope.rsplit("/", 1)[-1] for scope in granted))
+    console.print(f"Google connected: {names}", markup=False, highlight=False)
+
+
+@app.command()
+def disconnect(
+    provider: Annotated[str, typer.Argument(help="Provider to disconnect: google.")],
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Read a specific TOML configuration file."),
+    ] = None,
+) -> None:
+    """Revoke and delete stored credentials for a provider."""
+    if provider != "google":
+        raise typer.BadParameter("Only google can be disconnected.", param_hint="PROVIDER")
+    try:
+        _google_session(config).disconnect()
+    except ConfigurationError as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    Console().print("Google disconnected.", markup=False, highlight=False)
+
+
+@app.command()
+def connectors(
+    config: Annotated[
+        Path | None,
+        typer.Option("--config", help="Read a specific TOML configuration file."),
+    ] = None,
+) -> None:
+    """Show the status of each personal-app connector."""
+    from assistant.connectors import build_connectors
+
+    try:
+        found = build_connectors(load_config(config)).all()
+    except ConfigurationError as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    console = Console()
+    if not found:
+        console.print("No connectors configured. See docs/design/connectors.md.", markup=False)
+        return
+    for connector in found:
+        info = connector.info()
+        capabilities = ", ".join(sorted(c.value for c in info.capabilities)) or "none"
+        line = f"{info.name:<16} {info.status.value:<18} {capabilities}"
+        console.print(
+            line + (f"  {info.detail}" if info.detail else ""), markup=False, highlight=False
+        )
 
 
 SYMBOLS = {

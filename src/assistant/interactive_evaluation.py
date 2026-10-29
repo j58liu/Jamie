@@ -113,7 +113,7 @@ class InteractiveEvalCase(BaseModel):
     steps: list[InteractiveStep] = Field(min_length=1)
     context_grows: bool = False  # the measured context must grow on every turn
     all_tools: bool = False
-    tool_scope: Literal["all", "files", "read", "web", "macos"] = "all"
+    tool_scope: Literal["all", "files", "read", "web", "macos", "personal"] = "all"
 
     @model_validator(mode="after")
     def validate_case(self) -> Self:

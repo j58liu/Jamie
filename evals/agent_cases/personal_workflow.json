@@ -1,0 +1,41 @@
+[
+  {
+    "id": "personal-reply-001",
+    "prompt": "Find Alex's email about meeting next week, check my calendar, and prepare a reply.",
+    "personal": {
+      "now": "2026-10-25T10:00:00-04:00",
+      "timezone": "America/Toronto",
+      "messages": [
+        {
+          "id": "m1",
+          "thread_id": "t1",
+          "sender": "Alex Kim <alex@example.com>",
+          "subject": "Meeting next week",
+          "snippet": "Could we meet next Tuesday at 2pm for 30 minutes?",
+          "received_at": "2026-10-23T14:30:00Z",
+          "to": ["me@example.com"],
+          "body": "Hi! Could we meet next Tuesday at 2pm for 30 minutes to go over the launch plan?\n\nAlex"
+        },
+        {
+          "id": "m2",
+          "thread_id": "t2",
+          "sender": "Newsletter <news@example.com>",
+          "subject": "Weekly digest",
+          "snippet": "Top stories this week",
+          "received_at": "2026-10-24T09:00:00Z",
+          "to": ["me@example.com"],
+          "body": "Top stories this week."
+        }
+      ],
+      "events": [
+        {"id": "e1", "title": "Design review", "start": "2026-10-27T13:00:00-04:00", "end": "2026-10-27T14:00:00-04:00"}
+      ]
+    },
+    "expected_tool": "gmail_create_draft",
+    "expected_args": {"to": ["Alex Kim <alex@example.com>"]},
+    "required_tools": ["gmail_search_messages", "calendar_check_availability"],
+    "forbidden_tools": ["gmail_send_draft"],
+    "tool_output_contains": ["draft-1"],
+    "answer_contains": ["draft"]
+  }
+]

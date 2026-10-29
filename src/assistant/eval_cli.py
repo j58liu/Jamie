@@ -532,3 +532,118 @@ def evaluate_memory(
     print_memory_summary(console, report, path)
     if not report.summary()["success"]:
         raise typer.Exit(code=1)
+
+
+def _rate_text(value) -> str:
+    return f"{value:.1%}" if value is not None else "N/A"
+
+
+@app.command("scenarios")
+def evaluate_scenarios(
+    runs: Annotated[int, typer.Option(min=1, help="Times to run each scenario.")] = 1,
+    category: Annotated[
+        str | None,
+        typer.Option(help="Only one category: routine, planning, cross_app, memory, safety."),
+    ] = None,
+    cases: Annotated[
+        Path | None, typer.Option(help="A JSON case file or directory of case files.")
+    ] = None,
+    timeout: Annotated[float, typer.Option(min=1, help="Seconds per turn.")] = 300.0,
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory for the timestamped JSON report.")
+    ] = Path("evals/results"),
+    config: Annotated[
+        Path | None, typer.Option(help="Read a specific TOML configuration file.")
+    ] = None,
+) -> None:
+    """Run planning, cross-app, memory, and safety workflows against fake apps."""
+    from assistant.scenario_evaluation import TARGETS, load_scenario_cases, run_scenario_evaluation
+
+    try:
+        settings = load_config(config)
+        loaded = load_scenario_cases(cases, category=category)
+        console = Console(no_color=not settings.color)
+
+        def on_result(result, completed: int) -> None:
+            mark = "PASS" if result.success else "FAIL"
+            detail = f"  {result.failures[0]}" if result.failures else ""
+            console.print(
+                f"[{completed}/{len(loaded) * runs}] {mark} {result.case_id}{detail}",
+                markup=False,
+                highlight=False,
+            )
+
+        with managed_backend(LlamaCppBackend()) as backend:
+            report, path = run_scenario_evaluation(
+                backend,
+                loaded,
+                runs=runs,
+                output_dir=output_dir,
+                timeout_seconds=timeout,
+                on_result=on_result,
+            )
+    except (ConfigurationError, EvaluationError) as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    summary = report.summary()
+    table = Table(show_header=True, box=None, padding=(0, 2))
+    table.add_column("Metric")
+    table.add_column("Result")
+    table.add_column("Target")
+    table.add_row("Passed", f"{summary['passed']}/{summary['attempts']}", "")
+    for name, counts in summary["categories"].items():
+        table.add_row(f"  {name}", f"{counts['passed']}/{counts['attempts']}", "")
+    table.add_row(
+        "Routine tool + arguments",
+        _rate_text(summary["routine_accuracy"]),
+        f">= {TARGETS['routine_accuracy']:.0%}",
+    )
+    table.add_row(
+        "Workflow completion",
+        _rate_text(summary["workflow_completion"]),
+        f">= {TARGETS['workflow_completion']:.0%}",
+    )
+    table.add_row("Approval violations", str(summary["approval_violations"]), "0")
+    table.add_row("Duplicate external writes", str(summary["duplicate_writes"]), "0")
+    if summary["median_latency_seconds"] is not None:
+        table.add_row("Median scenario time", f"{summary['median_latency_seconds']:.1f}s", "")
+    console.print(table)
+    console.print(f"Report: {path}", markup=False, highlight=False)
+    if summary["approval_violations"] or summary["duplicate_writes"]:
+        raise typer.Exit(code=1)
+
+
+@app.command("personal-memory")
+def evaluate_personal_memory(
+    cases: Annotated[
+        Path | None, typer.Option(help="A JSON case file or directory of case files.")
+    ] = None,
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory for the timestamped JSON report.")
+    ] = Path("evals/results"),
+) -> None:
+    """Check memory corrections, deletion, retrieval, and the extraction gate (no model)."""
+    from assistant.scenario_evaluation import load_memory_ops_cases, run_memory_ops_evaluation
+
+    try:
+        report, path = run_memory_ops_evaluation(
+            load_memory_ops_cases(cases), output_dir=output_dir
+        )
+    except EvaluationError as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    console = Console()
+    for result in report.results:
+        mark = "PASS" if result.success else "FAIL"
+        detail = f"  {'; '.join(result.failures)}" if result.failures else ""
+        console.print(f"{mark} {result.case_id}{detail}", markup=False, highlight=False)
+    summary = report.summary()
+    console.print(
+        f"{summary['passed']}/{summary['cases']} passed · memory corrections "
+        f"{_rate_text(summary['memory_corrections'])} (target 100%)",
+        markup=False,
+        highlight=False,
+    )
+    console.print(f"Report: {path}", markup=False, highlight=False)
+    if not summary["success"]:
+        raise typer.Exit(code=1)

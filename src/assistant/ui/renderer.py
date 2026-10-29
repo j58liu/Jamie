@@ -13,6 +13,7 @@ from assistant.agent.events import (
     AgentEvent,
     AssistantDelta,
     AssistantFinished,
+    PlanCreated,
     ToolFailed,
     ToolFinished,
     ToolStarted,
@@ -231,6 +232,13 @@ class EventRenderer:
                 self._status("✗", tool_summary(event, self._args(tool)), "red")
                 for detail in error_lines(error):
                     self._console.print(Text(f"    {detail}", style="red"))
+            case PlanCreated(plan=plan):
+                self._console.print(Text(f"  Plan: {plan.goal}", style="bold dim"))
+                for number, step in enumerate(plan.steps, 1):
+                    after = f" (after {', '.join(step.depends_on)})" if step.depends_on else ""
+                    self._console.print(
+                        Text(f"    {number}. {step.description} · {step.tool}{after}", style="dim")
+                    )
             case AssistantDelta(text=text):
                 if not self._streaming:
                     self._console.out(self._prefix, end="", highlight=False)

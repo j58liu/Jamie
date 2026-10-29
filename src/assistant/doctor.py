@@ -109,6 +109,61 @@ def check_browser_runtime() -> Check:
     return Check("Browser runtime", Status.SKIP, "not used; web tools fetch pages over HTTP")
 
 
+def check_connectors(settings: ProjectConfig | None) -> list[Check]:
+    """Report each configured personal-app connector; nothing is contacted."""
+    if settings is None:
+        return [Check("Personal connectors", Status.SKIP, "needs a valid configuration")]
+    from assistant.connectors import ConnectionStatus, build_connectors
+
+    connectors = build_connectors(settings).all()
+    if not connectors:
+        return [Check("Personal connectors", Status.SKIP, "none configured in assistant.toml")]
+    checks = []
+    for connector in connectors:
+        try:
+            info = connector.info()
+        except Exception as exc:  # a status check must never break doctor
+            checks.append(Check(f"Connector {connector.name}", Status.WARN, str(exc)))
+            continue
+        ok = info.status is ConnectionStatus.CONNECTED
+        detail = info.status.value.replace("_", " ")
+        if info.capabilities:
+            detail += f" ({', '.join(sorted(c.value for c in info.capabilities))})"
+        if info.detail:
+            detail += f"; {info.detail}"
+        checks.append(Check(f"Connector {info.name}", Status.PASS if ok else Status.WARN, detail))
+    return checks
+
+
+def check_tasks(settings: ProjectConfig | None) -> list[Check]:
+    """Report persistent tasks and the background worker; nothing is created."""
+    if settings is None:
+        return [Check("Persistent tasks", Status.SKIP, "needs a valid configuration")]
+    from assistant.tasks.models import TaskState
+    from assistant.tasks.worker import launch_agent_path
+
+    path = settings.resolved_tasks_path()
+    if not path.exists():
+        tasks = Check("Persistent tasks", Status.SKIP, "no tasks yet")
+    else:
+        try:
+            from assistant.tasks.store import TaskStore
+
+            store = TaskStore(path)
+            waiting = store.count(TaskState.WAITING_APPROVAL)
+            detail = f"{store.count(TaskState.READY)} ready, {waiting} waiting for approval"
+            tasks = Check("Persistent tasks", Status.WARN if waiting else Status.PASS, detail)
+        except Exception as exc:
+            tasks = Check("Persistent tasks", Status.FAIL, str(exc))
+    if sys.platform != "darwin":
+        worker = Check("Background worker", Status.SKIP, "launchd is macOS only")
+    elif launch_agent_path().exists():
+        worker = Check("Background worker", Status.PASS, "installed (every 5 minutes)")
+    else:
+        worker = Check("Background worker", Status.SKIP, "not installed; jamie worker install")
+    return [tasks, worker]
+
+
 def check_macos() -> Check:
     if sys.platform != "darwin":
         return Check("macOS tools", Status.WARN, f"unavailable on {sys.platform}")
@@ -147,4 +202,6 @@ def run_checks(config: Path | None, backend: LlamaCppBackend) -> list[Check]:
         check_browser_runtime(),
         check_macos(),
         check_desktop_app(),
+        *check_connectors(settings),
+        *check_tasks(settings),
     ]
