@@ -29,6 +29,9 @@ _STOP = {
     "i", "in", "is", "it", "me", "my", "of", "on", "or", "please", "the", "to", "what",
     "when", "where", "which", "who", "with", "you", "your", "about", "should", "would",
 }  # fmt: skip
+# Only a question about the user as a whole brings every profile fact; a passing "my"
+# must not pull in sensitive ones the request does not need.
+_ABOUT_ME = re.compile(r"\b(who am i|about me|know me|myself)\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,9 @@ def recall(
                 (match,),
             ):
                 candidates[row["rowid"]] = -row["rank"]  # bm25: lower is better
+        if _ABOUT_ME.search(query):  # "who am I" has no searchable word
+            for record in memory.records(types=(MemoryType.PROFILE,)):
+                candidates.setdefault(record.id, 1.0)
         for name in filter(None, (filters.person, filters.project)):
             found = memory.find_entity(name)
             if found is None:

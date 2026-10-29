@@ -13,6 +13,7 @@ from assistant.agent.events import AssistantFinished, TurnStarted
 from assistant.llm.base import ContextUsage, LLMResponse, ServerInfo
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.runtime import TurnResult
+from assistant.runtime.application import IDENTITY
 
 
 def chat_backend(transport):
@@ -318,7 +319,10 @@ def test_ask_prints_literal_answer_and_sends_prompt(chat_http):
     assert result.stderr == ""
     assert len(requests) == 1
     assert json.loads(requests[0].content) == {
-        "messages": [{"role": "user", "content": "hello"}],
+        "messages": [
+            {"role": "system", "content": IDENTITY},
+            {"role": "user", "content": "hello"},
+        ],
         "temperature": 0.6,
         "max_tokens": 1024,
         "stream": True,

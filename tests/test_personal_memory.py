@@ -126,6 +126,15 @@ def test_retrieval_is_relevant_filtered_and_budgeted(memory):
     assert "stated by user" in context and "memory " in context
 
 
+def test_who_am_i_recalls_profile_facts_but_a_passing_my_does_not(memory):
+    memory.remember(fact("name", "James", type_=MemoryType.PROFILE))
+    memory.remember(fact("meeting_time", "morning"))
+
+    assert [r.record.value for r in recall(memory, "Who am I?")] == ["James"]
+    assert [r.record.value for r in recall(memory, "what do you know about me")] == ["James"]
+    assert recall(memory, "open my downloads folder") == []
+
+
 def test_recent_and_authoritative_facts_rank_first(memory, clock):
     memory.remember(fact("lunch", "sushi on fridays", source=MemorySource.INFERENCE))
     clock.now += timedelta(days=200)

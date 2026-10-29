@@ -549,7 +549,11 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
             push({"type": "status", "text": text})
 
         info = await asyncio.to_thread(ensure_server, backend, status)
-        application = JamieApplication(settings, backend_factory=lambda: backend)
+        application = JamieApplication(
+            settings,
+            backend_factory=lambda: backend,
+            extract_memories=settings.memory.extraction == "cue",
+        )
         await application.start()
         web = resources.enter_context(WebClient())
         tools = WorkspaceTools(

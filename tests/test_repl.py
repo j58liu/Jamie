@@ -32,7 +32,7 @@ from assistant.config import ProjectConfig
 from assistant.llm.base import LLMError, LLMResponse, Message
 from assistant.memory import MemoryStore
 from assistant.runtime import JamieApplication, TurnResult
-from assistant.runtime.application import COMPACT_REQUEST
+from assistant.runtime.application import COMPACT_REQUEST, IDENTITY
 from assistant.security import CallbackApprovalProvider
 from assistant.tools import CommandResult, create_macos_registry
 from assistant.tools.registry import create_workspace_registry
@@ -86,6 +86,7 @@ def test_repl_keeps_transcript_between_turns_and_exits_on_quit(tmp_path: Path):
     assert "Jamie › You asked hello" in output
     assert "local assistant" in output and "Esc+Enter adds a line" in output
     assert backend.requests[1] == [
+        Message("system", IDENTITY),
         Message("user", "hello"),
         Message("assistant", "Hello there"),
         Message("user", "what did I just ask?"),
@@ -227,7 +228,9 @@ def test_multiline_prompt_reaches_the_model_as_one_turn(tmp_path: Path):
 
     _run_with_history(tmp_path, "first line\x1b\r    second line\r\x04", backend)
 
-    assert backend.requests == [[Message("user", "first line\n    second line")]]
+    assert backend.requests == [
+        [Message("system", IDENTITY), Message("user", "first line\n    second line")]
+    ]
 
 
 @pytest.mark.usefixtures("confirm_every_tool")
@@ -325,6 +328,7 @@ def test_compact_replaces_the_history_sent_with_later_turns(tmp_path: Path):
     assert "Nothing to compact yet." in output
     assert "Compacted 2 messages into a summary" in output
     assert backend.requests[-1] == [
+        Message("system", IDENTITY),
         Message("user", COMPACT_REQUEST),
         Message("assistant", "The user's favorite color is teal."),
         Message("user", "What is it?"),
@@ -338,6 +342,7 @@ def test_failed_compaction_keeps_the_full_history(tmp_path: Path):
 
     assert "Error: Compaction failed: model offline" in output
     assert backend.requests[-1] == [
+        Message("system", IDENTITY),
         Message("user", "teal"),
         Message("assistant", "Noted."),
         Message("user", "What is it?"),
@@ -372,7 +377,10 @@ def test_slash_commands_stay_local_and_new_resets_the_conversation(tmp_path: Pat
     assert "Messages: 0 (0 exchanges)" in output
     assert re.search(r"Turns\s+2\n", output)
     assert re.search(r"Generated tokens\s+3\n", output)
-    assert backend.requests == [[Message("user", "first")], [Message("user", "second")]]
+    assert backend.requests == [
+        [Message("system", IDENTITY), Message("user", "first")],
+        [Message("system", IDENTITY), Message("user", "second")],
+    ]
     assert backend.close_calls == 1
 
 

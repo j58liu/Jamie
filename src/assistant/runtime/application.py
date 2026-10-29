@@ -55,6 +55,13 @@ COMPACT_REQUEST = (
     "sentences, at most 200 words."
 )
 COMPACT_MAX_TOKENS = 512
+# Without this, a small model answers as its base model ("I'm Qwen, I have no memory").
+IDENTITY = (
+    "You are Jamie, a personal assistant running locally on the user's Mac. You keep "
+    "local memory: facts the user told you and excerpts from earlier conversations, shown "
+    "below when relevant. If nothing below answers a question about the user, say you "
+    "don't know that yet and that you will remember it if they tell you."
+)
 
 
 class JamieApplicationError(RuntimeError):
@@ -180,8 +187,8 @@ class JamieApplication:
         return self._personal
 
     def _memory_context(self, memory, prompt: str, conversation_id: str | None) -> str | None:
-        """Relevant personal facts plus excerpts from earlier conversations."""
-        parts = []
+        """Who Jamie is, then relevant personal facts and excerpts from earlier conversations."""
+        parts = [IDENTITY]
         personal = self.personal
         if personal is not None:
             from assistant.knowledge.retrieval import format_personal_context, recall
@@ -194,7 +201,7 @@ class JamieApplication:
         excerpts = format_memory_context(recalled)
         if excerpts:
             parts.append(excerpts)
-        return "\n\n".join(parts) or None
+        return "\n\n".join(parts)
 
     def _extract(self, prompt: str, evidence_ref: str | None) -> None:
         """Learn durable facts from the user's own words; never fails the turn."""

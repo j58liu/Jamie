@@ -15,6 +15,7 @@ from assistant.config import ProjectConfig
 from assistant.llm.base import ContextUsage, LLMError, LLMResponse, Message
 from assistant.memory import MemoryStore
 from assistant.runtime import JamieApplication
+from assistant.runtime.application import IDENTITY
 from assistant.ui.commands import ago
 from assistant.ui.repl import run_repl
 
@@ -133,7 +134,7 @@ def test_recall_skips_the_active_conversation_but_not_others(tmp_path: Path):
 
     asyncio.run(run())
     same, other = backend.requests[1], backend.requests[2]
-    assert not any(m.role == "system" for m in same)
+    assert [m.content for m in same if m.role == "system"] == [IDENTITY]
     assert "Kyoto in April." in other[0].content and other[0].role == "system"
 
 
@@ -196,6 +197,7 @@ def test_conversation_survives_exit_and_resumes_without_reloading(
     assert f"Working directory: {project.resolve()}" in output
     assert Path.cwd() == project.resolve()
     assert backend.requests[0] == [
+        Message("system", IDENTITY),
         Message("user", "Research Python free threading"),
         Message("assistant", "Threads."),
         Message("user", "What about the GIL?"),
@@ -254,6 +256,6 @@ def test_status_bar_context_is_remeasured_after_each_turn(tmp_path: Path):
     backend = MeasuringBackend([LLMResponse("one"), LLMResponse("two")])
     output = _repl(tmp_path, "first\nsecond\n/context\n/quit\n", backend)
 
-    assert "Used:         300 tokens" in output  # complete last request, before its answer
+    assert "Used:         400 tokens" in output  # complete last request, before its answer
     assert "Answer reserve: 1,024 tokens" in output
     assert "Maximum:    8,192 tokens" in output
