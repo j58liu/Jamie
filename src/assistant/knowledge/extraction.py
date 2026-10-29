@@ -132,6 +132,17 @@ _REPORTED = re.compile(
 )
 
 
+_ASKS = re.compile(r"(?:what|whats|who|whos|where|when|why|how|which)\b", re.IGNORECASE)
+
+
+def _is_question(sentence: str) -> bool:
+    """A wh-question, or one ending in "?" unless it asks Jamie to remember something."""
+    text = _normalize(sentence).replace("'", "")
+    if _ASKS.match(text):
+        return True
+    return text.endswith("?") and "remember" not in text
+
+
 def _quoted_spans(message: str) -> list[str]:
     return [_normalize(m.group(0)) for m in _QUOTED.finditer(message)]
 
@@ -153,6 +164,8 @@ def gate(message: str, item: ProposedItem, *, now: datetime,
         spoken_from = len(_normalize(sentence[: reported.start()]))
         if _normalize(sentence).find(evidence) >= spoken_from:
             return Decision(item, False, "reported speech, treated as third party")
+    if _is_question(sentence):  # "whats my name" once overwrote the user's name
+        return Decision(item, False, "a question, not a statement")
     if item.statement == "commitment" or item.type == "commitment":
         return Decision(item, True, "commitment")
     try:

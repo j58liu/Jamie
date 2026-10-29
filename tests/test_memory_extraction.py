@@ -40,6 +40,20 @@ def test_other_peoples_words_suggestions_and_temporary_context_are_not_stored(
     assert not decision.accepted and reason in decision.reason
 
 
+NAME = {"type": "profile", "key": "name", "value": "James"}
+
+
+@pytest.mark.parametrize("message", ["whats my name", "What's my name?", "Is my name James?"])
+def test_questions_are_never_stored_as_facts(message):
+    decision = gate(message, item(evidence=message, **NAME), now=NOW)
+    assert not decision.accepted and "question" in decision.reason
+
+
+@pytest.mark.parametrize("message", ["my name is James", "Can you remember that my name is James?"])
+def test_statements_and_requests_to_remember_are_stored(message):
+    assert gate(message, item(evidence=message, **NAME), now=NOW).accepted
+
+
 def test_inference_is_stored_with_low_authority_and_capped_expiry():
     decision = gate("I prefer morning meetings", item(statement="inference", expires_in_days=500),
                     now=NOW)  # fmt: skip
