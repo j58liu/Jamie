@@ -58,7 +58,6 @@ COMMAND_WIDTH = 88  # command output is shown in a monospace block
 COMMANDS = create_command_registry()
 SCHEDULE_POLL_SECONDS = 30.0
 NOTIFICATION_CHARACTERS = 240
-NO_RUNNER = "This window runs no scheduled tasks; open Jamie.app to run it now."
 
 type Payload = dict[str, Any]
 type Submit = Callable[[Coroutine[Any, Any, None]], object]
@@ -311,15 +310,6 @@ class GuiSession:
                 close()
         self._notify(title, result.message)
 
-    async def _run_now(self, task_id: int, token: CancellationToken) -> None:
-        tasks = self.state.application.memory.schedules()
-        task = next((task for task in tasks if task.id == task_id), None)
-        if task is None or self._scheduled_tools is None:
-            missing = f"No scheduled task {task_id}. Type /schedule to list tasks."
-            self._send({"type": "command", "text": missing if task is None else NO_RUNNER})
-            return
-        await self._scheduled(task, token, on_request=True)
-
     def _notify(self, title: str, body: str) -> None:
         if self._notifier is not None:
             self._notifier.send(title, short_title(body, NOTIFICATION_CHARACTERS))
@@ -330,10 +320,14 @@ class GuiSession:
         if name.lower() == "/schedule" and argument.strip() and self._notifier is not None:
             self._notifier.ask_permission()  # once; macOS remembers the answer
         action, _, task_id = argument.strip().partition(" ")
-        if name.lower() == "/schedule" and action.lower() == "run" and task_id.strip().isdigit():
-            await self._run_now(int(task_id), token)
-            return
-        if line.split(" ", 1)[0].lower() == "/clear":
+        if name.lower() == "/schedule" and action.lower() == "run" and self._scheduled_tools:
+            # Anything not found falls through to the command, which says so.
+            tasks = state.application.memory.schedules()
+            task = next((t for t in tasks if str(t.id) == task_id.strip()), None)
+            if task is not None:
+                await self._scheduled(task, token, on_request=True)
+                return
+        if name.lower() == "/clear":
             self._send({"type": "clear"})  # the page clears itself; nothing else changes
             return
         conversation = state.conversation_id
