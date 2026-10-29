@@ -16,7 +16,7 @@ from assistant.agent.loop import ToolResult
 from assistant.llm.base import Message
 from assistant.security.audit import redact_arguments
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_MEMORY_LIMIT = 5
 MAX_MEMORY_CONTENT = 12_000
 MAX_CONTEXT_CHARACTERS = 4_000
@@ -130,10 +130,12 @@ END;
 CREATE TABLE IF NOT EXISTS schedules (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     prompt TEXT NOT NULL,
-    repeat TEXT NOT NULL CHECK (repeat IN ('daily', 'once')),
+    repeat TEXT NOT NULL CHECK (repeat IN ('daily', 'weekly', 'every', 'once')),
     time TEXT NOT NULL,
     next_run TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    missed TEXT NOT NULL DEFAULT 'run' CHECK (missed IN ('run', 'skip', 'ask')),
+    held INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sources (
@@ -197,13 +199,19 @@ def _fts_query(query: str) -> str | None:
 
 @dataclass(frozen=True)
 class ScheduledTask:
-    """A prompt Jamie runs by itself; ``time`` is local HH:MM, ``next_run`` is UTC."""
+    """A prompt Jamie runs by itself; ``time`` is local (see schedule.parse), ``next_run`` UTC.
+
+    ``missed`` says what happens to a run missed while the Mac slept: run, skip, or ask.
+    A held task is a missed one-off waiting for /schedule run or /unschedule.
+    """
 
     id: int
     prompt: str
     repeat: str
     time: str
     next_run: datetime
+    missed: str = "run"
+    held: bool = False
 
 
 @dataclass(frozen=True)
@@ -235,11 +243,19 @@ class MemoryStore:
             self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             with self._connect() as connection:
                 version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-                if version not in {0, SCHEMA_VERSION}:
+                if version not in {0, 1, SCHEMA_VERSION}:
                     raise MemoryStoreError(
                         f"Memory database schema version {version} is not supported."
                     )
+                if version == 1:  # SQLite cannot widen a CHECK, so rebuild schedules
+                    connection.execute("ALTER TABLE schedules RENAME TO schedules_v1")
                 connection.executescript(_SCHEMA)
+                if version == 1:
+                    connection.executescript(
+                        "INSERT INTO schedules(id, prompt, repeat, time, next_run, created_at) "
+                        "SELECT id, prompt, repeat, time, next_run, created_at FROM schedules_v1;"
+                        "DROP TABLE schedules_v1;"
+                    )
                 connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             self.path.chmod(0o600)
         except (OSError, sqlite3.Error) as exc:
@@ -508,8 +524,8 @@ class MemoryStore:
         try:
             with self._connect() as connection:
                 rows = connection.execute(
-                    "SELECT id, prompt, repeat, time, next_run FROM schedules "
-                    "WHERE ? IS NULL OR next_run <= ? ORDER BY next_run, id",
+                    "SELECT id, prompt, repeat, time, next_run, missed, held FROM schedules "
+                    "WHERE ? IS NULL OR (next_run <= ? AND NOT held) ORDER BY next_run, id",
                     (cutoff, cutoff),
                 ).fetchall()
         except sqlite3.Error as exc:
@@ -521,9 +537,33 @@ class MemoryStore:
                 repeat=str(row["repeat"]),
                 time=str(row["time"]),
                 next_run=datetime.fromisoformat(row["next_run"]),
+                missed=str(row["missed"]),
+                held=bool(row["held"]),
             )
             for row in rows
         ]
+
+    def update_schedule(
+        self,
+        task_id: int,
+        *,
+        prompt: str | None = None,
+        missed: str | None = None,
+        held: bool | None = None,
+    ) -> bool:
+        """Change a task's prompt, missed-run policy, or hold; False when it does not exist."""
+        changes = {"prompt": prompt, "missed": missed, "held": held}
+        changes = {column: value for column, value in changes.items() if value is not None}
+        assignments = ", ".join(f"{column} = ?" for column in changes)  # fixed column names
+        try:
+            with self._connect() as connection:
+                cursor = connection.execute(
+                    f"UPDATE schedules SET {assignments} WHERE id = ?",
+                    (*changes.values(), task_id),
+                )
+        except sqlite3.Error as exc:
+            raise MemoryStoreError("Cannot update the scheduled task.") from exc
+        return cursor.rowcount == 1
 
     def reschedule(self, task_id: int, next_run: datetime | None) -> None:
         """Move a task to its next run, or remove it when ``next_run`` is None."""

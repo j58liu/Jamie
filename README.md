@@ -25,8 +25,7 @@ Jamie runs a small language model on your own Mac through [llama.cpp](https://gi
 | | |
 | --- | --- |
 | **Personal apps** | Search and read Gmail, save reply drafts, check Google Calendar availability, create and update events, and manage Apple Reminders through a native EventKit helper. |
-| **Persistent tasks** | `jamie tasks add "…" --every daily@08:00`. Tasks have explicit states, durable steps, crash recovery, and DST-aware schedules. |
-| **Deferred approvals** | Unattended tasks pause and notify you. Approve from the terminal later, and Jamie runs exactly what you approved. |
+| **Scheduled prompts** | `/schedule daily 08:00 …`, weekly, every few hours, or once on a date. Jamie.app runs them with read and web tools only, saves each as a conversation, and sends a macOS notification. |
 | **Safe file editing** | Workspace-confined edits with per-turn diffs, one-command undo, and enforced read-back verification. |
 | **Cited web research** | Concurrent search and retrieval, cross-checked answers, and citations validated against verbatim quotes. |
 | **Personal memory** | Typed facts (preferences, people, projects) with evidence and authority. Corrections win and keep history, and only relevant facts reach the prompt. |
@@ -59,14 +58,13 @@ Jamie › You're free Tuesday 2:00–2:30pm. I saved a reply in the thread
         as a draft; nothing has been sent.
 ```
 
-The same request can run unattended:
+Jamie can also start work by itself, in Jamie.app:
 
 ```text
-$ jamie tasks add "Reply to new meeting requests from Alex" --on-email "from:alex meeting"
-$ jamie worker install          # checks every 5 minutes with launchd
-…later, a macOS notification: "Jamie needs approval: gmail create draft"
-$ jamie tasks approvals
-$ jamie tasks approve 3f9c2a1e --run
+/schedule weekly mon 09:00 Summarize the news I should know about this week
+/schedule every 2h Check the Python release notes for a new version
+/schedule missed 1 ask      # if the Mac was asleep, notify instead of running late
+/schedule run 1             # run it now
 ```
 
 ## Quickstart
@@ -94,10 +92,9 @@ Then:
 jamie                                   # interactive session
 jamie "summarize README.md"             # one task with tools
 jamie research "What changed in Python 3.13?"
-jamie tasks add "Morning brief of my calendar" --every daily@08:00 --scope personal
 ```
 
-Design notes cover [personal memory](docs/design/memory.md), [planning](docs/design/planning.md), and [tasks](docs/design/tasks.md).
+Design notes cover [personal memory](docs/design/memory.md) and [planning](docs/design/planning.md).
 
 To connect Gmail, Google Calendar, and Apple Reminders, see [docs/design/connectors.md](docs/design/connectors.md). It covers a Google desktop OAuth client, `jamie connect google`, and building the Reminders helper.
 

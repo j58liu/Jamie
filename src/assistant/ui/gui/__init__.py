@@ -58,6 +58,7 @@ COMMAND_WIDTH = 88  # command output is shown in a monospace block
 COMMANDS = create_command_registry()
 SCHEDULE_POLL_SECONDS = 30.0
 NOTIFICATION_CHARACTERS = 240
+NO_RUNNER = "This window runs no scheduled tasks; open Jamie.app to run it now."
 
 type Payload = dict[str, Any]
 type Submit = Callable[[Coroutine[Any, Any, None]], object]
@@ -189,21 +190,40 @@ class GuiSession:
                 return False
             token = self._token = CancellationToken()
         command = "\n" not in prompt and prompt.startswith("/")
-        self._submit(self._run(self._command(prompt) if command else self._turn(prompt, token)))
+        work = self._command(prompt, token) if command else self._turn(prompt, token)
+        self._submit(self._run(work))
         return True
 
     def run_due(self, now: datetime | None = None) -> bool:
-        """Start the earliest due scheduled task, unless something is already running."""
+        """Start the earliest due scheduled task, unless something is already running.
+
+        A task missed by more than ``schedule.LATE`` follows its policy: run it late,
+        skip to its next time, or ask (notify; a missed one-off waits for the user).
+        """
         if self._scheduled_tools is None:
             return False
+        now = now or datetime.now(UTC)
+        memory = self.state.application.memory
         with self._lock:
             if self._token is not None:
                 return False
-            due = self.state.application.memory.schedules(due_by=now or datetime.now(UTC))
-            if not due:
+            for task in memory.schedules(due_by=now):
+                if now - task.next_run <= schedule.LATE or task.missed == "run":
+                    token = self._token = CancellationToken()
+                    break
+                following = schedule.after_run(task.repeat, task.time, now)
+                if task.missed == "ask":
+                    if following is None:
+                        memory.update_schedule(task.id, held=True)
+                    self._notify(
+                        short_title(task.prompt),
+                        f"Missed its time. Type /schedule run {task.id} in Jamie to run it now.",
+                    )
+                if following is not None or task.missed == "skip":
+                    memory.reschedule(task.id, following)
+            else:
                 return False
-            token = self._token = CancellationToken()
-        self._submit(self._run(self._scheduled(due[0], token)))
+        self._submit(self._run(self._scheduled(task, token)))
         return True
 
     def cancel(self) -> None:
@@ -253,14 +273,20 @@ class GuiSession:
         )
         state.record_turn(prompt, result, time.monotonic() - started)
 
-    async def _scheduled(self, task: ScheduledTask, token: CancellationToken) -> None:
-        """Run a task in its own saved conversation, with tools safe to use unattended."""
+    async def _scheduled(
+        self, task: ScheduledTask, token: CancellationToken, *, on_request: bool = False
+    ) -> None:
+        """Run a task in its own saved conversation, with tools safe to use unattended.
+
+        ``on_request`` (/schedule run) leaves a repeating task's next time alone.
+        """
         application = self.state.application
         # Move it on first, so a failure or a quit never runs the same task twice.
-        application.memory.reschedule(
-            task.id, schedule.after_run(task.repeat, task.time, datetime.now(UTC))
-        )
-        self._send({"type": "scheduled", "prompt": task.prompt, "time": task.time})
+        if not on_request or task.repeat == "once":
+            following = schedule.after_run(task.repeat, task.time, datetime.now(UTC))
+            application.memory.reschedule(task.id, following)
+        label = schedule.describe(task.repeat, task.time)
+        self._send({"type": "scheduled", "prompt": task.prompt, "time": label})
         tools = self._scheduled_tools()
         title = short_title(task.prompt)
         try:
@@ -285,15 +311,28 @@ class GuiSession:
                 close()
         self._notify(title, result.message)
 
+    async def _run_now(self, task_id: int, token: CancellationToken) -> None:
+        tasks = self.state.application.memory.schedules()
+        task = next((task for task in tasks if task.id == task_id), None)
+        if task is None or self._scheduled_tools is None:
+            missing = f"No scheduled task {task_id}. Type /schedule to list tasks."
+            self._send({"type": "command", "text": missing if task is None else NO_RUNNER})
+            return
+        await self._scheduled(task, token, on_request=True)
+
     def _notify(self, title: str, body: str) -> None:
         if self._notifier is not None:
             self._notifier.send(title, short_title(body, NOTIFICATION_CHARACTERS))
 
-    async def _command(self, line: str) -> None:
+    async def _command(self, line: str, token: CancellationToken) -> None:
         state = self.state
         name, _, argument = line.partition(" ")
         if name.lower() == "/schedule" and argument.strip() and self._notifier is not None:
             self._notifier.ask_permission()  # once; macOS remembers the answer
+        action, _, task_id = argument.strip().partition(" ")
+        if name.lower() == "/schedule" and action.lower() == "run" and task_id.strip().isdigit():
+            await self._run_now(int(task_id), token)
+            return
         if line.split(" ", 1)[0].lower() == "/clear":
             self._send({"type": "clear"})  # the page clears itself; nothing else changes
             return

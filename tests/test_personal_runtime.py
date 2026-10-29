@@ -78,7 +78,7 @@ def test_extraction_learns_from_the_users_words_after_the_turn(tmp_path):
                            "evidence": "I prefer morning meetings"}]}  # fmt: skip
     backend = Backend("Noted.", proposal)
     application = JamieApplication(
-        ProjectConfig(memory_path=str(database), tasks_path=str(tmp_path / "tasks.sqlite3")),
+        ProjectConfig(memory_path=str(database)),
         backend_factory=lambda: backend, extract_memories=True,
     )  # fmt: skip
     run(application, "From now on, I prefer morning meetings.")

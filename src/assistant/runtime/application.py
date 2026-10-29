@@ -206,18 +206,11 @@ class JamieApplication:
         if not likely_personal(prompt):
             return
 
-        def commitment(text: str, evidence: str) -> None:
-            from assistant.tasks.models import TaskState
-            from assistant.tasks.store import TaskStore
-
-            store = TaskStore(self._config.resolved_tasks_path())
-            store.create_task(f"Commitment: {text[:80]}", text, state=TaskState.SCHEDULED)
-
         try:
             self.model_calls += 1
-            self.last_extraction = MemoryExtractor(
-                self._backend, personal, on_commitment=commitment
-            ).process(prompt, evidence_ref=evidence_ref, force=True)
+            self.last_extraction = MemoryExtractor(self._backend, personal).process(
+                prompt, evidence_ref=evidence_ref, force=True
+            )
         except Exception:  # memory is best effort; the answer already succeeded
             self.last_extraction = None
 

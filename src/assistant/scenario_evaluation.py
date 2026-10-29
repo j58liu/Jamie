@@ -299,8 +299,7 @@ def run_scenario(backend, case: ScenarioCase, run: int, timeout_seconds: float =
             ToolRegistry(approvals=CallbackApprovalProvider(decide)), connectors,
             now=lambda: now)  # fmt: skip
         recorder = _Recorder(registry, decisions)
-        settings = ProjectConfig(memory_path=str(memory_path),
-                                 tasks_path=str(root / "tasks.sqlite3"))  # fmt: skip
+        settings = ProjectConfig(memory_path=str(memory_path))
         shared = _SharedBackend(backend)
         plan = {"agent": "never", "plan": "always", "auto": "auto"}[case.mode]
         try:

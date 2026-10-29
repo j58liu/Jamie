@@ -38,7 +38,7 @@ from assistant.planning.validation import (
     is_read,
     validate_plan,
 )
-from assistant.tasks.context import current_operation_key
+from assistant.tools.integrations import current_operation_key
 from assistant.tools.registry import _compact_schema as _compact
 
 MAX_RESULT_CHARACTERS = 1500

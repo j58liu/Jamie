@@ -2,7 +2,7 @@
 
 The complete command, protocol, security, and evaluation reference. For an overview,
 see the [README](../README.md). Design notes: [connectors](design/connectors.md),
-[tasks](design/tasks.md), [personal memory](design/memory.md), and
+[personal memory](design/memory.md), and
 [planning](design/planning.md).
 
 ## Workflow evaluations
@@ -232,14 +232,22 @@ registration, so it needs no Accessibility permission. Quit with ⌘Q, the Dock
 menu, or `/quit`.
 
 Jamie can also start work by itself. `/schedule daily 08:00 Give me a morning
-briefing` runs that prompt every day at 08:00 local time; `/schedule at 15:30
-Remind me to call Alex` runs once at the next 15:30. `/schedule` lists tasks and
-`/unschedule <id>` removes one. Jamie.app runs due tasks while it is open, one at
+briefing` runs that prompt every day at 08:00 local time. The other forms are
+`weekly mon 09:00`, `every 2h` (or `30m`, `1d`; at least 5 minutes apart),
+`at 15:30` (once, at the next 15:30), and `on 2026-11-03 15:30` (once, on that
+date). `/schedule` lists tasks and `/unschedule <id>` removes one.
+`/schedule run <id>` runs a task now without moving its next time,
+`/schedule edit <id> <prompt>` changes what it asks, and
+`/schedule missed <id> run|skip|ask` says what happens to a run missed while the
+Mac slept or Jamie was closed. Jamie.app runs due tasks while it is open, one at
 a time and never during your own turn, shows each in the window, saves it as its
 own conversation, and sends a macOS notification with the answer; clicking it
 brings Jamie forward. macOS asks once whether Jamie may send notifications. A
-task missed while the Mac slept runs once when Jamie next checks, and a daily
-task then moves to its next time instead of catching up on every missed day.
+run more than 10 minutes late counts as missed. By default (`run`) it runs once
+when Jamie next checks; `skip` moves on silently; `ask` sends a notification
+instead, and a missed one-off task then waits until you run or remove it. A
+repeating task always moves to its next time instead of catching up on every
+missed run.
 Nobody is there to approve a scheduled task, so it gets only the read and web
 tools: it can read files and search or read the web, but cannot change files or
 control apps, and anything that would need approval is declined.
@@ -819,7 +827,7 @@ deferred until broader evaluations show a retrieval gap.
 
 `jamie doctor` checks Python 3.12+, the configuration, the inference backend and
 model files, the application data directory, macOS tools, each configured
-connector, persistent tasks, and the background worker. It exits with code `1`
+connector, and the desktop app. It exits with code `1`
 when a check fails. Apart from asking the local llama.cpp server for its
 properties, it performs no network requests and creates no files.
 
@@ -830,9 +838,9 @@ If that file is absent, built-in defaults are used:
 color = true
 ```
 
-Set `color = false` for uncolored output. `memory_path` and `tasks_path` are
-optional and default to Jamie's macOS application-support directory
-(`JAMIE_MEMORY_PATH` and `JAMIE_TASKS_PATH` override them). `timezone`, `[google]`,
+Set `color = false` for uncolored output. `memory_path` is
+optional and defaults to Jamie's macOS application-support directory
+(`JAMIE_MEMORY_PATH` overrides it). `timezone`, `[google]`,
 and `[reminders]` configure the connectors. Unknown fields, incorrect types
 (including strings instead of booleans), and malformed TOML are rejected.
 Commands accept an explicit configuration file:
@@ -861,8 +869,7 @@ works independently of configuration and reads the installed package version.
 - `macos/`: Jamie.app launcher, Info.plist, icon source, and build script.
 - `src/assistant/tools/`: filesystem, editing, macOS, web, and connector tools plus the registry.
 - `src/assistant/connectors/`: Gmail, Google Calendar, and Apple Reminders connectors.
-- `src/assistant/tasks/`: persistent tasks, scheduler, deferred approvals, recovery, worker.
-- `src/assistant/tasks_cli.py`: `jamie tasks` and `jamie worker` commands.
+- `src/assistant/schedule.py`: when `/schedule` tasks run.
 - `native/reminders-helper/`: the EventKit helper for Apple Reminders.
 - `src/assistant/security/`: permission policy, trusted approvals, and audit records.
 - `src/assistant/research.py`: bounded search, retrieval, cross-checking, and cited synthesis.

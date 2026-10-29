@@ -1,7 +1,7 @@
 import asyncio
 import json
 import subprocess
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -433,12 +433,14 @@ class Notifier:
         self.asked += 1
 
 
-def due_task(session, prompt="Morning briefing", repeat="daily"):
+def due_task(session, prompt="Morning briefing", repeat="daily", late=1, missed="run"):
     from datetime import UTC, datetime, timedelta
 
     memory = session.state.application.memory
-    when = datetime.now(UTC) - timedelta(minutes=1)
-    return memory.add_schedule(prompt, repeat, "08:00", when)
+    when = datetime.now(UTC) - timedelta(minutes=late)
+    task_id = memory.add_schedule(prompt, repeat, "08:00", when)
+    memory.update_schedule(task_id, missed=missed)
+    return task_id
 
 
 def test_a_due_task_runs_unattended_in_its_own_conversation(session_for, tmp_path):
@@ -456,7 +458,11 @@ def test_a_due_task_runs_unattended_in_its_own_conversation(session_for, tmp_pat
     assert not session.run_due()  # moved to tomorrow before it ran
 
     assert kinds(pushed) == ["scheduled", "answer", "idle"]
-    assert pushed[0] == {"type": "scheduled", "prompt": "Morning briefing", "time": "08:00"}
+    assert pushed[0] == {
+        "type": "scheduled",
+        "prompt": "Morning briefing",
+        "time": "every day at 08:00",
+    }
     assert notifier.sent == [("Morning briefing", "Sunny, 18 °C.")]
     tool_names = backend.requests[0][0].content
     assert "read_file" in tool_names and "write_file" not in tool_names
@@ -488,6 +494,57 @@ def test_due_tasks_wait_for_the_running_turn_and_failures_still_move_on(session_
         ("Remind me to stretch", "Jamie could not finish this: model went away")
     ]
     assert kinds(pushed)[-3:] == ["scheduled", "error", "idle"]
+
+
+def test_missed_runs_follow_each_tasks_policy(session_for, tmp_path):
+    notifier = Notifier()
+    session, pushed = session_for(
+        Backend(finish("Ran late.")),
+        scheduled_tools=lambda: create_workspace_registry(tmp_path),
+        notifier=notifier,
+    )
+    memory = session.state.application.memory
+    skipped = due_task(session, "Skip me", late=120, missed="skip")
+    asked_daily = due_task(session, "Ask about me", late=120, missed="ask")
+    asked_once = due_task(session, "Ask once", repeat="once", late=120, missed="ask")
+    gone = due_task(session, "Skip once", repeat="once", late=120, missed="skip")
+    late = due_task(session, "Run me late", late=120)
+
+    assert session.run_due()  # only the run-late task runs
+    assert pushed[0]["prompt"] == "Run me late"
+    remaining = {task.id: task for task in memory.schedules()}
+    assert gone not in remaining and late in remaining
+    assert remaining[asked_once].held  # waits for /schedule run or /unschedule
+    for task_id in (skipped, asked_daily, late):
+        assert remaining[task_id].next_run > datetime.now(UTC)
+    assert [title for title, _ in notifier.sent[:2]] == ["Ask about me", "Ask once"]
+    assert "/schedule run" in notifier.sent[1][1]
+
+
+def test_schedule_run_starts_a_task_now(session_for, tmp_path):
+    pending = []
+    session, pushed = session_for(
+        Backend(finish("Done now."), finish("Held one done.")),
+        pending,
+        scheduled_tools=lambda: create_workspace_registry(tmp_path),
+    )
+    memory = session.state.application.memory
+    later = datetime.now(UTC) + timedelta(days=1)
+    daily = memory.add_schedule("Daily one", "daily", "08:00", later)
+    held = due_task(session, "Held one", repeat="once", late=120)
+    memory.update_schedule(held, held=True)
+
+    session.send(f"/schedule run {daily}")
+    asyncio.run(pending.pop())
+    session.send(f"/schedule run {held}")
+    asyncio.run(pending.pop())
+    session.send("/schedule run 99")
+    asyncio.run(pending.pop())
+
+    assert [p["prompt"] for p in pushed if p["type"] == "scheduled"] == ["Daily one", "Held one"]
+    (task,) = memory.schedules()  # the held one-off ran and is gone
+    assert task.id == daily and task.next_run == later  # a repeating task keeps its time
+    assert "No scheduled task 99" in pushed[-2]["text"]
 
 
 def test_nothing_due_and_no_scheduler_mean_no_run(session_for):

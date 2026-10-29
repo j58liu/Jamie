@@ -213,7 +213,7 @@ class MemoryExtractor:
             outcome.decisions.append(decision)
             if not decision.accepted:
                 continue
-            if decision.candidate is None:  # a commitment goes to the task database
+            if decision.candidate is None:  # a commitment is reported, not stored as a fact
                 text = item.value.strip() or item.evidence.strip()
                 outcome.commitments.append(text)
                 if self._on_commitment is not None:

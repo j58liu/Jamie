@@ -93,24 +93,6 @@ def _welcome(console: Console) -> None:
     console.print(Text("Ctrl+D or /quit to leave", style="dim"))
 
 
-def _task_notice(state: ReplState) -> None:
-    """Mention approvals that unattended tasks are waiting on; never block startup."""
-    if state.application is None:
-        return
-    try:
-        from assistant.tasks.store import TaskStore
-        from assistant.tasks_cli import task_summary
-
-        path = state.application.config.resolved_tasks_path()
-        if not path.exists():
-            return
-        notice = task_summary(TaskStore(path))
-    except Exception:
-        return
-    if notice is not None:
-        state.console.print(notice)
-
-
 async def run_repl(
     application: JamieApplication,
     *,
@@ -159,7 +141,6 @@ async def _run_repl(
     session = session or create_prompt_session()
     renderer = EventRenderer(state.console, answer_prefix="Jamie › ", markdown=True)
     _welcome(state.console)
-    _task_notice(state)
 
     if started is not None:
         state.startup_seconds = time.monotonic() - started

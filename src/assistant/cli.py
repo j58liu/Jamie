@@ -28,7 +28,6 @@ from assistant.memory import (
 )
 from assistant.research import ResearchError, ResearchWorkflow
 from assistant.runtime import JamieApplication, JamieApplicationError, TurnResult
-from assistant.tasks_cli import tasks_app, worker_app
 from assistant.tools import WebClient, create_agent_registry
 from assistant.tools.scopes import SCOPE_MAX_STEPS, ToolScope, select_tools
 from assistant.ui.approvals import TerminalApprovalProvider
@@ -55,8 +54,6 @@ app = typer.Typer(
     add_completion=False,
 )
 app.add_typer(eval_app, name="eval")
-app.add_typer(tasks_app, name="tasks")
-app.add_typer(worker_app, name="worker")
 app.add_typer(memory_app, name="memory")
 
 

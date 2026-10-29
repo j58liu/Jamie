@@ -502,15 +502,24 @@ def _schedule(state: ReplState, argument: str) -> None:
         state.say("Scheduled tasks are not available.")
         return
     memory = state.application.memory
+    action, _, rest = argument.partition(" ")
+    action = action.lower()
+    if action in {"run", "edit", "missed"}:
+        _manage_schedule(state, action, rest.strip())
+        return
     if argument:
         try:
             repeat, time, prompt = schedule.parse(argument)
         except ValueError as exc:
             state.say(str(exc))
             return
-        first = schedule.next_occurrence(time, datetime.now(UTC))
+        now = datetime.now(UTC)
+        first = schedule.next_run(repeat, time, now)
+        if first <= now:
+            state.say("That time has already passed.")
+            return
         task_id = memory.add_schedule(prompt, repeat, time, first)
-        how = f"every day at {time}" if repeat == "daily" else f"once at {time}"
+        how = schedule.describe(repeat, time)
         state.say(f"Scheduled task {task_id}: {how}, next {_when(first)}.")
         state.say("Jamie.app runs it and sends a notification; /startup on keeps the app running.")
         return
@@ -520,10 +529,42 @@ def _schedule(state: ReplState, argument: str) -> None:
         return
     state.say("Scheduled tasks")
     for task in tasks:
-        how = f"daily {task.time}" if task.repeat == "daily" else f"once {task.time}"
-        when = _when(task.next_run)
-        state.say(f"  {task.id:>3}  {how:<11} next {when}  {short_title(task.prompt)}")
-    state.say("Remove one with /unschedule <id>. Tasks run while Jamie.app is open.")
+        how = schedule.describe(task.repeat, task.time)
+        when = "missed, waiting" if task.held else f"next {_when(task.next_run)}"
+        missed = "" if task.missed == "run" else f"  (if missed: {task.missed})"
+        state.say(f"  {task.id:>3}  {how:<24} {when}  {short_title(task.prompt)}{missed}")
+    state.say(
+        "/schedule run|edit|missed <id> manages one; /unschedule <id> removes it. "
+        "Tasks run while Jamie.app is open."
+    )
+
+
+def _manage_schedule(state: ReplState, action: str, rest: str) -> None:
+    """``run <id>``, ``edit <id> <prompt>``, and ``missed <id> run|skip|ask``."""
+    usage = {
+        "run": "Usage: /schedule run <id>",
+        "edit": "Usage: /schedule edit <id> <new prompt>",
+        "missed": "Usage: /schedule missed <id> run|skip|ask",
+    }[action]
+    task_id, _, value = rest.partition(" ")
+    value = value.strip()
+    if not task_id.isdigit() or (action == "run") == bool(value):
+        state.say(usage)
+        return
+    memory = state.application.memory
+    if action == "run":
+        # Jamie.app intercepts this and runs the task; the terminal has no task runner.
+        found = any(task.id == int(task_id) for task in memory.schedules())
+        state.say("Open Jamie.app to run it now." if found else f"No scheduled task {task_id}.")
+        return
+    if action == "missed" and value.lower() not in schedule.MISSED:
+        state.say(usage)
+        return
+    changes = {"prompt": value} if action == "edit" else {"missed": value.lower()}
+    if memory.update_schedule(int(task_id), **changes):
+        state.say(f"Updated scheduled task {task_id}.")
+    else:
+        state.say(f"No scheduled task {task_id}. Type /schedule to list tasks.")
 
 
 def _unschedule(state: ReplState, argument: str) -> None:
@@ -640,74 +681,6 @@ def _plan(state: ReplState, argument: str) -> None:
     state.say(f"Planner: {state.plan}")
 
 
-def _task_store(state: ReplState):
-    from assistant.config import ProjectConfig
-    from assistant.tasks.store import TaskStore, TaskStoreError
-
-    settings = getattr(state.application, "config", None) or ProjectConfig()
-    path = settings.resolved_tasks_path()
-    if not path.exists():  # reading tasks never creates the database
-        state.say('No tasks yet. Add one with: jamie tasks add "..."')
-        return None
-    try:
-        return TaskStore(path)
-    except TaskStoreError as exc:
-        state.say(f"Tasks unavailable: {exc}")
-        return None
-
-
-def _tasks(state: ReplState, argument: str) -> None:
-    from assistant.ui.tasks import ACTIVE_STATES, pending_approvals, task_rows
-
-    store = _task_store(state)
-    if store is None:
-        return
-    for line in task_rows(store.list_tasks(ACTIVE_STATES)):
-        state.say(line)
-    waiting = len(pending_approvals(store))
-    if waiting:
-        state.say(f"{waiting} waiting for approval · /approvals")
-
-
-def _approvals(state: ReplState, argument: str) -> None:
-    from assistant.ui.tasks import approval_view, pending_approvals
-
-    store = _task_store(state)
-    if store is None:
-        return
-    pending = pending_approvals(store)
-    if not pending:
-        state.say("Nothing is waiting for approval.")
-        return
-    for approval in pending:
-        state.console.print(approval_view(store, approval))
-    state.say("Decide with /approve <id> or /reject <id>.")
-
-
-def _decide(approving: bool) -> CommandHandler:
-    def handler(state: ReplState, argument: str) -> None:
-        from assistant.tasks.approvals import ApprovalError, approve, reject
-
-        store = _task_store(state)
-        if store is None:
-            return
-        approval = store.find_approval_by_prefix(argument.strip()) if argument.strip() else None
-        if approval is None:
-            state.say(f"Usage: {'/approve' if approving else '/reject'} <approval id>")
-            return
-        try:
-            decided = (approve if approving else reject)(store, approval.id)
-        except ApprovalError as exc:
-            state.say(str(exc))
-            return
-        if approving:
-            state.say(f"Approved. Task {decided.task_id[:8]} continues on the next worker pass.")
-        else:
-            state.say(f"Rejected. Task {decided.task_id[:8]} was cancelled.")
-
-    return handler
-
-
 def create_command_registry() -> CommandRegistry:
     registry = CommandRegistry()
     for command in (
@@ -783,17 +756,13 @@ def create_command_registry() -> CommandRegistry:
             "[auto|always|never]",
             completions=("auto", "always", "never"),
         ),
-        SlashCommand("/tasks", "List persistent tasks.", _tasks),
-        SlashCommand("/approvals", "Show task actions waiting for approval.", _approvals),
-        SlashCommand("/approve", "Approve a waiting task action.", _decide(True), "<id>"),
-        SlashCommand("/reject", "Reject a waiting task action.", _decide(False), "<id>"),
         SlashCommand("/stats", "Show turn, token, and timing totals.", _stats),
         SlashCommand(
             "/schedule",
-            "List tasks, or run a prompt daily or once at a time.",
+            "List, add, or manage tasks Jamie runs by itself.",
             _schedule,
-            "[daily|at HH:MM <prompt>]",
-            completions=("daily", "at"),
+            "[daily|weekly|every|at|on ... <prompt> | run|edit|missed <id>]",
+            completions=("daily", "weekly", "every", "at", "on", "run", "edit", "missed"),
         ),
         SlashCommand("/unschedule", "Remove a scheduled task.", _unschedule, "<id>"),
         SlashCommand("/memories", "Show what Jamie recalls for some words.", _memories, "<words>"),

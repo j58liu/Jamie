@@ -48,7 +48,6 @@ class ProjectConfig(BaseModel):
 
     color: bool = True
     memory_path: str | None = None
-    tasks_path: str | None = None
     timezone: str | None = None
     google: GoogleConfig = GoogleConfig()
     reminders: RemindersConfig = RemindersConfig()
@@ -67,19 +66,12 @@ class ProjectConfig(BaseModel):
             raise ValueError(f"Unknown timezone {value!r}.") from exc
         return value
 
-    @field_validator("memory_path", "tasks_path")
+    @field_validator("memory_path")
     @classmethod
     def validate_memory_path(cls, value: str | None) -> str | None:
         if value is not None and (not value.strip() or "\x00" in value):
             raise ValueError("Memory path must not be blank or contain null characters.")
         return value
-
-    def resolved_tasks_path(self) -> Path:
-        if self.tasks_path is not None:
-            return Path(self.tasks_path).expanduser()
-        from assistant.tasks.store import default_tasks_path
-
-        return default_tasks_path()
 
     def resolved_memory_path(self) -> Path:
         if self.memory_path is not None:

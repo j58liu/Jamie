@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from contextvars import ContextVar
 from datetime import date, datetime
 
 from pydantic import AwareDatetime, Field, field_validator, model_validator
@@ -16,7 +17,10 @@ from assistant.connectors import Connectors
 from assistant.connectors.base import ConnectorInput, ConnectorTool, to_json
 from assistant.connectors.timeutil import describe_now
 from assistant.security.policy import PermissionLevel
-from assistant.tasks.context import current_operation_key
+
+# The stable key of the planner step being executed, so a retried step reuses the same
+# Gmail draft or Calendar event instead of creating a second one.
+current_operation_key: ContextVar[str | None] = ContextVar("current_operation_key", default=None)
 
 _ID = re.compile(r"^[A-Za-z0-9_:.\-]{1,256}$")
 _EMAIL = re.compile(r"^[^@\s,<>]+@[^@\s,<>]+\.[^@\s,<>]+$")

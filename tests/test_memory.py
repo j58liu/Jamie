@@ -8,6 +8,7 @@ import pytest
 from assistant.agent.loop import ToolResult
 from assistant.memory import (
     MAX_CONTEXT_CHARACTERS,
+    SCHEMA_VERSION,
     MemoryStore,
     MemoryStoreError,
     format_memory_context,
@@ -31,7 +32,7 @@ def test_store_creates_requested_tables_and_fts5_index(tmp_path: Path):
     assert "memories_fts" in names
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
 
 
 def test_fts_retrieves_relevant_conversation_with_porter_stemming(tmp_path: Path):
@@ -124,6 +125,6 @@ def test_invalid_database_path_has_clear_error(tmp_path: Path):
 def test_newer_database_schema_is_not_overwritten(tmp_path: Path):
     path = tmp_path / "future.sqlite3"
     with sqlite3.connect(path) as connection:
-        connection.execute("PRAGMA user_version = 2")
-    with pytest.raises(MemoryStoreError, match="version 2 is not supported"):
+        connection.execute("PRAGMA user_version = 3")
+    with pytest.raises(MemoryStoreError, match="version 3 is not supported"):
         MemoryStore(path)

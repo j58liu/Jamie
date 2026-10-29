@@ -7,7 +7,7 @@ Jamie keeps two kinds of memory in `memory.sqlite3`:
 | Conversation memory | Earlier user and assistant messages | FTS5 search over past exchanges |
 | Personal memory | Typed facts about the user, with evidence | FTS5 plus filters, recency, and authority |
 
-Commitments, such as "I promised to reply to Sam", go to the task database as scheduled tasks. Run `jamie tasks start` to queue one.
+Commitments, such as "I promised to reply to Sam", are recognized but not stored as facts. Ask Jamie to create a reminder, or use `/schedule`, to act on one.
 
 ## Records
 
