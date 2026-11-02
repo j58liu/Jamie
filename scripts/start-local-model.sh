@@ -6,7 +6,7 @@ usage() {
     'Usage: scripts/start-local-model.sh [PATH_TO_GGUF]' \
     '' \
     'Start the local Qwen model at http://127.0.0.1:8080 without internet access.' \
-    'With no path, use Qwen3.5-2B Q4_K_M already stored in the llama.cpp cache.' \
+    'With no path, use Qwen3.5-4B Q4_K_M already stored in the llama.cpp cache.' \
     'Alternatively, supply the path to an existing local GGUF file.' \
     '' \
     'Install llama.cpp and download the model once using the README setup steps.' \
@@ -21,7 +21,7 @@ fi
 
 context_size=${JAMIE_CONTEXT_SIZE:-32768}
 cache_ram_mib=${JAMIE_CACHE_RAM_MIB:-512}
-model_repo=${JAMIE_MODEL_REPO:-unsloth/Qwen3.5-2B-GGUF:Q4_K_M}
+model_repo=${JAMIE_MODEL_REPO:-unsloth/Qwen3.5-4B-GGUF:Q4_K_M}
 
 if [[ ! $context_size =~ ^[1-9][0-9]{3,5}$ ]] || \
   (( context_size < 2048 || context_size > 131072 )); then

@@ -33,7 +33,7 @@ def test_default_launch_uses_cached_model_offline_and_local_gpu(launcher_environ
 
     assert result.returncode == 0
     args = result.stdout.rstrip("\0").split("\0")
-    assert args[:2] == ["-hf", "unsloth/Qwen3.5-2B-GGUF:Q4_K_M"]
+    assert args[:2] == ["-hf", "unsloth/Qwen3.5-4B-GGUF:Q4_K_M"]
     assert "--offline" in args
     assert "--no-mmproj" in args
     assert args[args.index("--host") + 1] == "127.0.0.1"
@@ -54,12 +54,12 @@ def test_launcher_accepts_measured_context_cache_and_cached_model_choices(launch
             **launcher_environment,
             "JAMIE_CONTEXT_SIZE": "8192",
             "JAMIE_CACHE_RAM_MIB": "0",
-            "JAMIE_MODEL_REPO": "unsloth/Qwen3.5-4B-GGUF:Q4_K_M",
+            "JAMIE_MODEL_REPO": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
         }
     )
     assert result.returncode == 0
     args = result.stdout.rstrip("\0").split("\0")
-    assert args[1] == "unsloth/Qwen3.5-4B-GGUF:Q4_K_M"
+    assert args[1] == "unsloth/Qwen3.5-2B-GGUF:Q4_K_M"
     assert args[args.index("--ctx-size") + 1] == "8192"
     assert args[args.index("--cache-ram") + 1] == "0"
     assert "--offline" in args

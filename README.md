@@ -17,7 +17,7 @@ Jamie runs a small language model on your own Mac through [llama.cpp](https://gi
 - **Permission-first.** Every action has a fixed risk class. Reads run freely, changes ask first, and sending a message asks every time. Approvals are bound to the exact operation.
 - **Persistent.** Tasks survive restarts, run on schedules or when new mail arrives, and resume exactly where they paused.
 - **Remembers you, carefully.** Jamie learns only from your own words, never from the emails or pages it reads. It never treats a model's guess as fact, and you can correct or erase any memory.
-- **Built for small models.** Grammar-constrained actions, scoped tool lists, and compact tool results make a 2B-parameter model reliable for everyday work.
+- **Built for small models.** Grammar-constrained actions, scoped tool lists, and compact tool results make a 4B-parameter model reliable for everyday work.
 - **Measured.** A built-in evaluation suite covers the model, the agent, research, memory, and performance, and saves reproducible reports.
 
 ## Highlights
@@ -77,9 +77,9 @@ git clone https://github.com/j58liu/j_cli.git && cd j_cli
 python3 -m venv .venv && source .venv/bin/activate
 python -m pip install -e '.[dev]'
 
-# 2. Install llama.cpp and download the model once (Qwen3.5-2B, about 1.3 GB)
+# 2. Install llama.cpp and download the model once (Qwen3.5-4B, about 2.7 GB)
 brew install llama.cpp
-llama-server -hf unsloth/Qwen3.5-2B-GGUF:Q4_K_M --no-mmproj --port 8080   # Ctrl+C after download
+llama-server -hf unsloth/Qwen3.5-4B-GGUF:Q4_K_M --no-mmproj --port 8080   # Ctrl+C after download
 
 # 3. Start the local model (offline, cached) and check the setup
 ./scripts/start-local-model.sh

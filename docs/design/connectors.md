@@ -27,7 +27,7 @@ Replacing Gmail with another mail provider means writing a new connector with th
 | `reminders_list` | READ | no |
 | `reminders_create`, `reminders_complete` | SAFE_WRITE | yes |
 
-Use `--scope personal` (or `/scope personal` in the REPL). The model then sees only the connector tools, which keeps the prompt small for the 2B model. This scope also raises the step limit to 16, because a reply workflow chains five or six calls.
+Use `--scope personal` (or `/scope personal` in the REPL). The model then sees only the connector tools, which keeps the prompt small for a small model. This scope also raises the step limit to 16, because a reply workflow chains five or six calls.
 
 Results are kept small:
 - A search returns `id`, `thread_id`, `sender`, `subject`, `snippet`, and `received_at`.

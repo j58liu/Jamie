@@ -57,9 +57,9 @@ running server.
 ## Ask the local model
 
 The selected model is
-[Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B). For llama.cpp, use
-[Unsloth's GGUF release](https://huggingface.co/unsloth/Qwen3.5-2B-GGUF),
-specifically `Qwen3.5-2B-Q4_K_M.gguf` (about 1.28 GB). The linked source model
+[Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B). For llama.cpp, use
+[Unsloth's GGUF release](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF),
+specifically `Qwen3.5-4B-Q4_K_M.gguf` (about 2.7 GB). The linked source model
 contains Transformers weights; the GGUF release is the format llama.cpp loads.
 
 Install llama.cpp on macOS with Homebrew:
@@ -74,7 +74,7 @@ selected GGUF into llama.cpp's model cache and start the server:
 
 ```sh
 llama-server \
-  -hf unsloth/Qwen3.5-2B-GGUF:Q4_K_M --no-mmproj \
+  -hf unsloth/Qwen3.5-4B-GGUF:Q4_K_M --no-mmproj \
   --host 127.0.0.1 --port 8080 \
   --ctx-size 32768 --parallel 1 \
   --jinja --reasoning-format deepseek \
@@ -98,7 +98,7 @@ files. It requires a recent llama.cpp build that supports `--offline` and
 `--cache-ram`. If you already have a GGUF file elsewhere, pass its path instead:
 
 ```sh
-./scripts/start-local-model.sh "/path/to/Qwen3.5-2B-Q4_K_M.gguf"
+./scripts/start-local-model.sh "/path/to/Qwen3.5-4B-Q4_K_M.gguf"
 ```
 
 With the model installed, local conversations and local file tools work without
