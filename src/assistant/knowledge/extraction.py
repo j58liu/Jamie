@@ -33,9 +33,10 @@ MAX_EXPIRY_DAYS = 90
 _CUES = re.compile(
     r"\b(remember|don't forget|i prefer|i'd prefer|i like|i love|i hate|i dislike|"
     r"i always|i never|i usually|i work|i'm working|i am working|my (?:name|manager|boss|"
-    r"professor|partner|wife|husband|team|project|working hours|timezone|birthday)|"
+    r"professor|partner|wife|husband|team|project|working hours|timezone|birthday)"
+    r"(?:'s|\s+(?:is|are|was))|"  # "my name is", not the question "what's my name"
     r"call me|i promised|i'll reply|i will reply|i need to reply|i'm a|i am a|"
-    r"is my|are my|actually,? i|from now on|going forward)\b",
+    r"is my|are my|actually,? i|i'm actually|i am actually|from now on|going forward)\b",
     re.IGNORECASE,
 )
 
@@ -54,6 +55,7 @@ Classify each candidate statement:
 Types: profile, preference, relationship, project, commitment.
 "evidence" must be copied exactly from the user's message. Use short snake_case keys.
 For a relationship, subject is the person's name and key describes the relationship.
+A question states nothing, even one with typos ("whats my name"): return an empty list.
 Return at most 5 items, or an empty list when nothing should be remembered."""
 
 SCHEMA = {

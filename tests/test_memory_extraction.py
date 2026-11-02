@@ -67,6 +67,18 @@ def test_cue_filter_skips_ordinary_requests():
     assert not likely_personal("Find Alex's email about the budget.")
 
 
+@pytest.mark.parametrize(
+    "message", ["my name is james", "My name's James", "my team is Infra", "i am actually jason"]
+)
+def test_saying_what_something_is_is_a_cue(message):
+    assert likely_personal(message)
+
+
+@pytest.mark.parametrize("message", ["whats my name", "Wheats my name", "who is on my team"])
+def test_asking_about_it_is_not(message):
+    assert not likely_personal(message)
+
+
 class ScriptedBackend:
     def __init__(self, *responses):
         self.responses = list(responses)
