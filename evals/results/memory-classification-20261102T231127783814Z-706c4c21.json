@@ -1,0 +1,953 @@
+{
+  "model": "unsloth/Qwen3.5-4B-GGUF:Q4_K_M",
+  "started_at": "2026-11-02T23:11:27.783814+00:00",
+  "results": [
+    {
+      "message": "my name is james",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9861,
+      "seconds": 0.725
+    },
+    {
+      "message": "My name's Priya.",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9193,
+      "seconds": 0.672
+    },
+    {
+      "message": "I'm a software engineer at a startup",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9988,
+      "seconds": 0.674
+    },
+    {
+      "message": "i work at shopify",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9981,
+      "seconds": 0.667
+    },
+    {
+      "message": "I prefer morning meetings",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9886,
+      "seconds": 0.662
+    },
+    {
+      "message": "I'm vegetarian",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9943,
+      "seconds": 0.645
+    },
+    {
+      "message": "im allergic to peanuts",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.7161,
+      "seconds": 0.65
+    },
+    {
+      "message": "I live in Toronto",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9915,
+      "seconds": 0.654
+    },
+    {
+      "message": "my birthday is march 3",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.98,
+      "seconds": 0.659
+    },
+    {
+      "message": "My manager is Sam Lee",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9864,
+      "seconds": 0.653
+    },
+    {
+      "message": "Alex is my sister",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9731,
+      "seconds": 0.643
+    },
+    {
+      "message": "I usually work from 9 to 5",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9952,
+      "seconds": 0.637
+    },
+    {
+      "message": "I hate long meetings",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9744,
+      "seconds": 0.637
+    },
+    {
+      "message": "I love hiking on weekends",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9961,
+      "seconds": 0.642
+    },
+    {
+      "message": "call me Jay",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9334,
+      "seconds": 0.634
+    },
+    {
+      "message": "People call me Carl",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9451,
+      "seconds": 0.649
+    },
+    {
+      "message": "I go by Carl",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9322,
+      "seconds": 0.655
+    },
+    {
+      "message": "Carl here",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.5357,
+      "seconds": 0.643
+    },
+    {
+      "message": "I'm working on a project called Jamie",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9864,
+      "seconds": 0.637
+    },
+    {
+      "message": "I'm studying computer science at Waterloo",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9969,
+      "seconds": 0.634
+    },
+    {
+      "message": "my timezone is eastern",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9367,
+      "seconds": 0.634
+    },
+    {
+      "message": "I drink my coffee black",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9845,
+      "seconds": 0.633
+    },
+    {
+      "message": "I have two cats named Miso and Tofu",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9964,
+      "seconds": 0.647
+    },
+    {
+      "message": "my partner's name is Dana",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9858,
+      "seconds": 0.655
+    },
+    {
+      "message": "I speak French and English",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9853,
+      "seconds": 0.654
+    },
+    {
+      "message": "Remember that I take the 8am train",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9758,
+      "seconds": 0.655
+    },
+    {
+      "message": "please remember my wife is allergic to shellfish",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9954,
+      "seconds": 0.656
+    },
+    {
+      "message": "fyi i dont eat pork",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9739,
+      "seconds": 0.656
+    },
+    {
+      "message": "I'm vegetarian, can you find me a restaurant nearby?",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.961,
+      "seconds": 0.663
+    },
+    {
+      "message": "I live in Ottawa so check the weather there",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.8956,
+      "seconds": 0.668
+    },
+    {
+      "message": "As a teacher, I need help grading essays",
+      "expected": "A",
+      "predicted": "D",
+      "confidence": 0.6496,
+      "seconds": 0.65
+    },
+    {
+      "message": "I'm left handed",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9676,
+      "seconds": 0.655
+    },
+    {
+      "message": "my favourite colour is green",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.997,
+      "seconds": 0.653
+    },
+    {
+      "message": "I use a MacBook Air",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9897,
+      "seconds": 0.658
+    },
+    {
+      "message": "From now on, reply in short sentences",
+      "expected": "A",
+      "predicted": "D",
+      "confidence": 0.9669,
+      "seconds": 0.656
+    },
+    {
+      "message": "I'd rather you not use emojis",
+      "expected": "A",
+      "predicted": "D",
+      "confidence": 0.695,
+      "seconds": 0.657
+    },
+    {
+      "message": "im james btw",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.8868,
+      "seconds": 0.64
+    },
+    {
+      "message": "nam is james",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.8543,
+      "seconds": 0.631
+    },
+    {
+      "message": "my nmae is jmaes",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9655,
+      "seconds": 0.646
+    },
+    {
+      "message": "I am a night owl",
+      "expected": "A",
+      "predicted": "A",
+      "confidence": 0.9925,
+      "seconds": 0.649
+    },
+    {
+      "message": "My name is actually Carl",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.698,
+      "seconds": 0.653
+    },
+    {
+      "message": "My name is not James but Sanchez",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.905,
+      "seconds": 0.641
+    },
+    {
+      "message": "i am actually jason",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.6521,
+      "seconds": 0.631
+    },
+    {
+      "message": "Actually it's Carl, not James",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.984,
+      "seconds": 0.635
+    },
+    {
+      "message": "You got my name wrong, it is Carl",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.9945,
+      "seconds": 0.635
+    },
+    {
+      "message": "No, I moved to Montreal last month",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.8605,
+      "seconds": 0.646
+    },
+    {
+      "message": "That's wrong, I work at Google now",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.744,
+      "seconds": 0.655
+    },
+    {
+      "message": "I don't live in Toronto anymore, I'm in Vancouver",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.8452,
+      "seconds": 0.657
+    },
+    {
+      "message": "correction: my manager is Priya, not Sam",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.997,
+      "seconds": 0.655
+    },
+    {
+      "message": "i'm not vegetarian anymore",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.9479,
+      "seconds": 0.642
+    },
+    {
+      "message": "Actually I prefer afternoon meetings now",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.8295,
+      "seconds": 0.635
+    },
+    {
+      "message": "my birthday is the 4th, not the 3rd",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.9898,
+      "seconds": 0.637
+    },
+    {
+      "message": "nope, my name's Jason",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.648,
+      "seconds": 0.633
+    },
+    {
+      "message": "you have it wrong, I'm a designer not an engineer",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.6874,
+      "seconds": 0.648
+    },
+    {
+      "message": "I changed jobs, I'm at Stripe now",
+      "expected": "B",
+      "predicted": "A",
+      "confidence": 0.7846,
+      "seconds": 0.65
+    },
+    {
+      "message": "Forget that I like coffee, I switched to tea",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.9888,
+      "seconds": 0.643
+    },
+    {
+      "message": "Its jason not james",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.992,
+      "seconds": 0.633
+    },
+    {
+      "message": "update: I got married, my wife is Ana",
+      "expected": "B",
+      "predicted": "A",
+      "confidence": 0.8043,
+      "seconds": 0.636
+    },
+    {
+      "message": "no im 24 not 23",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.9976,
+      "seconds": 0.635
+    },
+    {
+      "message": "Wrong city, I'm in Boston",
+      "expected": "B",
+      "predicted": "B",
+      "confidence": 0.9413,
+      "seconds": 0.634
+    },
+    {
+      "message": "whats my name",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9665,
+      "seconds": 0.632
+    },
+    {
+      "message": "Wheats my name",
+      "expected": "C",
+      "predicted": "A",
+      "confidence": 0.6242,
+      "seconds": 0.645
+    },
+    {
+      "message": "wat is my name",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.977,
+      "seconds": 0.653
+    },
+    {
+      "message": "What's my name?",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9806,
+      "seconds": 0.658
+    },
+    {
+      "message": "is my name carl",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.8449,
+      "seconds": 0.659
+    },
+    {
+      "message": "Do you know my name?",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9367,
+      "seconds": 0.656
+    },
+    {
+      "message": "who am i",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9962,
+      "seconds": 0.656
+    },
+    {
+      "message": "what do you remember about me",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.971,
+      "seconds": 0.656
+    },
+    {
+      "message": "What do you know about me?",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9623,
+      "seconds": 0.653
+    },
+    {
+      "message": "where do I live?",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9874,
+      "seconds": 0.652
+    },
+    {
+      "message": "who is my manager",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9836,
+      "seconds": 0.65
+    },
+    {
+      "message": "what's the capital of France?",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9957,
+      "seconds": 0.653
+    },
+    {
+      "message": "how far is the moon",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9221,
+      "seconds": 0.656
+    },
+    {
+      "message": "What time is it in Tokyo?",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.7594,
+      "seconds": 0.654
+    },
+    {
+      "message": "why is the sky blue",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9988,
+      "seconds": 0.655
+    },
+    {
+      "message": "is it going to rain tomorrow",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9924,
+      "seconds": 0.657
+    },
+    {
+      "message": "how do I center a div",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.5113,
+      "seconds": 0.656
+    },
+    {
+      "message": "what did we talk about yesterday",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9859,
+      "seconds": 0.656
+    },
+    {
+      "message": "Do I have any meetings today?",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9651,
+      "seconds": 0.657
+    },
+    {
+      "message": "whats 15% of 80",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.582,
+      "seconds": 0.66
+    },
+    {
+      "message": "who won the game last night?",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.991,
+      "seconds": 0.644
+    },
+    {
+      "message": "what does my calendar look like",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.495,
+      "seconds": 0.634
+    },
+    {
+      "message": "am I free on friday",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9853,
+      "seconds": 0.632
+    },
+    {
+      "message": "whos alex",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9811,
+      "seconds": 0.632
+    },
+    {
+      "message": "what languages do i speak",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9818,
+      "seconds": 0.643
+    },
+    {
+      "message": "Wht is my favourite colour",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9704,
+      "seconds": 0.651
+    },
+    {
+      "message": "how old am I",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.998,
+      "seconds": 0.655
+    },
+    {
+      "message": "What's in this folder?",
+      "expected": "C",
+      "predicted": "D",
+      "confidence": 0.8747,
+      "seconds": 0.655
+    },
+    {
+      "message": "When is my birthday?",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9949,
+      "seconds": 0.656
+    },
+    {
+      "message": "what's a good name for a cat",
+      "expected": "C",
+      "predicted": "C",
+      "confidence": 0.9534,
+      "seconds": 0.66
+    },
+    {
+      "message": "open safari",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9918,
+      "seconds": 0.652
+    },
+    {
+      "message": "Search the web for today's top story",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9983,
+      "seconds": 0.654
+    },
+    {
+      "message": "summarize README.md",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9979,
+      "seconds": 0.654
+    },
+    {
+      "message": "find my resume",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.7712,
+      "seconds": 0.656
+    },
+    {
+      "message": "make me a calculator app with python",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9988,
+      "seconds": 0.654
+    },
+    {
+      "message": "check my email",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9837,
+      "seconds": 0.654
+    },
+    {
+      "message": "Draft a reply to Alex saying Tuesday works",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9821,
+      "seconds": 0.657
+    },
+    {
+      "message": "remind me to call mom at 5",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9295,
+      "seconds": 0.655
+    },
+    {
+      "message": "copy this to my clipboard",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9907,
+      "seconds": 0.635
+    },
+    {
+      "message": "rename report.txt to final.txt",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9946,
+      "seconds": 0.644
+    },
+    {
+      "message": "translate hello into spanish",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9946,
+      "seconds": 0.651
+    },
+    {
+      "message": "write a haiku about rain",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9988,
+      "seconds": 0.655
+    },
+    {
+      "message": "list the files in Downloads",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9981,
+      "seconds": 0.653
+    },
+    {
+      "message": "schedule a meeting with Sam next week",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9751,
+      "seconds": 0.655
+    },
+    {
+      "message": "play some music",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.999,
+      "seconds": 0.651
+    },
+    {
+      "message": "Tell me a joke",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9887,
+      "seconds": 0.652
+    },
+    {
+      "message": "fix the bug in main.py",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9966,
+      "seconds": 0.653
+    },
+    {
+      "message": "convert 5 miles to km",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9986,
+      "seconds": 0.652
+    },
+    {
+      "message": "explain recursion simply",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9238,
+      "seconds": 0.654
+    },
+    {
+      "message": "organize my downloads folder",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9962,
+      "seconds": 0.659
+    },
+    {
+      "message": "Alex said he prefers mornings, set up the call then",
+      "expected": "D",
+      "predicted": "A",
+      "confidence": 0.8422,
+      "seconds": 0.66
+    },
+    {
+      "message": "my manager wants the report by friday, draft it",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9977,
+      "seconds": 0.658
+    },
+    {
+      "message": "put 'buy milk' on my reminders",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9977,
+      "seconds": 0.641
+    },
+    {
+      "message": "send the draft to Priya",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.9949,
+      "seconds": 0.635
+    },
+    {
+      "message": "look up flights to Paris",
+      "expected": "D",
+      "predicted": "D",
+      "confidence": 0.999,
+      "seconds": 0.647
+    },
+    {
+      "message": "hi",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9993,
+      "seconds": 0.651
+    },
+    {
+      "message": "hello there",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9995,
+      "seconds": 0.652
+    },
+    {
+      "message": "how are you?",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9984,
+      "seconds": 0.656
+    },
+    {
+      "message": "thanks!",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9996,
+      "seconds": 0.641
+    },
+    {
+      "message": "ok",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9827,
+      "seconds": 0.63
+    },
+    {
+      "message": "lol",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9978,
+      "seconds": 0.641
+    },
+    {
+      "message": "good morning",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9996,
+      "seconds": 0.662
+    },
+    {
+      "message": "nice",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9986,
+      "seconds": 0.697
+    },
+    {
+      "message": "bye",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9993,
+      "seconds": 0.735
+    },
+    {
+      "message": "that's cool",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9983,
+      "seconds": 0.769
+    },
+    {
+      "message": "hmm",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9826,
+      "seconds": 0.824
+    },
+    {
+      "message": "never mind",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9513,
+      "seconds": 0.903
+    },
+    {
+      "message": "yes",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.8264,
+      "seconds": 0.978
+    },
+    {
+      "message": "great job",
+      "expected": "E",
+      "predicted": "E",
+      "confidence": 0.9923,
+      "seconds": 1.042
+    },
+    {
+      "message": "test",
+      "expected": "E",
+      "predicted": "A",
+      "confidence": 0.5713,
+      "seconds": 1.112
+    }
+  ],
+  "summary": {
+    "cases": 130,
+    "label_accuracy": 0.9307692307692308,
+    "should_learn": 60,
+    "should_not_learn": 70,
+    "cutoffs": {
+      "0.3": {
+        "false_saves": 3,
+        "missed": 3
+      },
+      "0.4": {
+        "false_saves": 3,
+        "missed": 3
+      },
+      "0.5": {
+        "false_saves": 3,
+        "missed": 3
+      },
+      "0.6": {
+        "false_saves": 2,
+        "missed": 4
+      },
+      "0.7": {
+        "false_saves": 1,
+        "missed": 8
+      },
+      "0.8": {
+        "false_saves": 1,
+        "missed": 11
+      },
+      "0.9": {
+        "false_saves": 0,
+        "missed": 18
+      }
+    },
+    "median_seconds": 0.653
+  }
+}

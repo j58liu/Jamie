@@ -20,6 +20,38 @@ def completion(content: str = "Hello!") -> dict:
     }
 
 
+def test_option_probabilities_read_one_token_of_letter_scores():
+    import math
+
+    sent = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        top = [
+            {"token": "B", "logprob": math.log(0.7)},
+            {"token": " B", "logprob": math.log(0.1)},  # the same letter, another token
+            {"token": "A", "logprob": math.log(0.15)},
+            {"token": "The", "logprob": math.log(0.05)},
+        ]
+        payload = completion("B")
+        payload["choices"][0]["logprobs"] = {"content": [{"token": "B", "top_logprobs": top}]}
+        return httpx.Response(200, json=payload)
+
+    backend = LlamaCppBackend(transport=httpx.MockTransport(handler))
+    scores = backend.option_probabilities([Message("user", "x")], "ABC")
+
+    assert scores == pytest.approx({"A": 0.15, "B": 0.8, "C": 0.0})
+    assert sent[0]["max_tokens"] == 1 and sent[0]["logprobs"] is True
+
+
+def test_option_probabilities_fail_clearly_without_scores():
+    backend = LlamaCppBackend(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=completion("A")))
+    )
+    with pytest.raises(LLMError, match="no token probabilities"):
+        backend.option_probabilities([Message("user", "x")], "AB")
+
+
 def test_chat_posts_messages_and_reads_response():
     requests: list[httpx.Request] = []
 

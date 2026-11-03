@@ -534,6 +534,59 @@ def evaluate_memory(
         raise typer.Exit(code=1)
 
 
+@app.command("memory-classifier")
+def evaluate_memory_classifier(
+    cases: Annotated[Path | None, typer.Option(help="A JSON file of labelled messages.")] = None,
+    output_dir: Annotated[
+        Path, typer.Option(help="Directory for the timestamped JSON report.")
+    ] = Path("evals/results"),
+    server_url: Annotated[
+        str, typer.Option(help="The llama.cpp server to classify with.")
+    ] = "http://127.0.0.1:8080",
+) -> None:
+    """Score which messages Jamie would learn facts from, with the running model."""
+    from assistant.classification_evaluation import (
+        load_classification_cases,
+        run_classification_evaluation,
+    )
+    from assistant.knowledge.extraction import CONFIDENCE
+
+    console = Console()
+    try:
+        loaded = load_classification_cases(cases)
+        with managed_backend(LlamaCppBackend(server_url)) as backend:
+            model = backend.server_info().model
+            report, path = run_classification_evaluation(
+                backend, loaded, output_dir=output_dir, model=model
+            )
+    except (EvaluationError, LLMError) as exc:
+        Console(stderr=True).print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=1) from exc
+    for result in report.results:
+        if result.predicted != result.expected:
+            console.print(
+                f"{result.expected}→{result.predicted} {result.confidence:.2f}  {result.message}",
+                markup=False,
+                highlight=False,
+            )
+    summary = report.summary()
+    table = Table(title=f"Learn decision · {summary['cases']} messages · {model}")
+    table.add_column("Cutoff")
+    table.add_column(f"False saves (of {summary['should_not_learn']})", justify="right")
+    table.add_column(f"Missed (of {summary['should_learn']})", justify="right")
+    for cutoff, row in summary["cutoffs"].items():
+        mark = " (default)" if float(cutoff) == CONFIDENCE else ""
+        table.add_row(cutoff + mark, str(row["false_saves"]), str(row["missed"]))
+    console.print(table)
+    console.print(
+        f"Label accuracy {_rate_text(summary['label_accuracy'])} · "
+        f"median {summary['median_seconds']:.2f}s per message",
+        markup=False,
+        highlight=False,
+    )
+    console.print(f"Report: {path}", markup=False, highlight=False)
+
+
 def _rate_text(value) -> str:
     return f"{value:.1%}" if value is not None else "N/A"
 

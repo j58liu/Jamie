@@ -44,15 +44,17 @@ When a new value conflicts with an active record in the same slot (same type, su
 
 ## Extraction
 
-After a turn, Jamie may learn from **the user's own message only**. It never reads tool output, emails, or its own replies for this. Two steps keep it cheap and safe:
-1. A keyword filter ("I prefer", "remember", "my manager", "from now on", and similar) decides whether to spend a model call at all.
+After a turn, Jamie learns in the background from **the user's own message only**. It never reads tool output, emails, or its own replies for this. Two steps keep it cheap and safe:
+1. The model labels the whole message: A) tells Jamie something about the user, B) corrects something, C) asks a question, D) asks for a task, E) small talk. It writes no answer: Jamie reads the probability of each option letter from one generated token, which takes well under a second. Only A or B at a probability of at least 0.7 goes on to step 2. No keyword list is involved, so typos and new phrasings work; "Wheats my name" is a question, not a name.
 2. The model classifies candidates as an explicit statement, inference, third-party statement, suggestion, temporary context, or commitment. Python then rejects:
    - evidence that is not the user's verbatim words,
    - text inside quotation marks or `>` quotes,
    - reported speech ("Alex said…"),
    - suggestions and temporary context.
 
-Extraction is controlled by `[memory] extraction = "cue" | "off"` in `assistant.toml`.
+Extraction is controlled by `[memory] extraction = "cue" | "off"` in `assistant.toml` ("cue" means on).
+
+`jamie eval memory-classifier` scores step 1 on `evals/memory_classification/cases.json`, a labelled set of statements, corrections, questions (with typos), requests, and small talk. It prints the wrong saves and missed facts at each cutoff, so a new phrasing is one more line in that file, not a new rule. On Qwen3.5-4B (130 messages) it labelled 93% correctly. At the 0.7 cutoff it made 1 wrong save, which the reported-speech rule then rejects, and missed 8 of 60 facts. Recorded in `evals/results/memory-classification-*.json`.
 
 ## Retrieval
 

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import pytest
 
 from assistant.knowledge import MemorySource, PersonalMemory
-from assistant.knowledge.extraction import MemoryExtractor, ProposedItem, gate, likely_personal
+from assistant.knowledge.extraction import CONFIDENCE, MemoryExtractor, ProposedItem, classify, gate
 from assistant.llm.base import LLMResponse, current_response_schema
 
 NOW = datetime(2026, 10, 25, tzinfo=UTC)
@@ -40,20 +40,6 @@ def test_other_peoples_words_suggestions_and_temporary_context_are_not_stored(
     assert not decision.accepted and reason in decision.reason
 
 
-NAME = {"type": "profile", "key": "name", "value": "James"}
-
-
-@pytest.mark.parametrize("message", ["whats my name", "What's my name?", "Is my name James?"])
-def test_questions_are_never_stored_as_facts(message):
-    decision = gate(message, item(evidence=message, **NAME), now=NOW)
-    assert not decision.accepted and "question" in decision.reason
-
-
-@pytest.mark.parametrize("message", ["my name is James", "Can you remember that my name is James?"])
-def test_statements_and_requests_to_remember_are_stored(message):
-    assert gate(message, item(evidence=message, **NAME), now=NOW).accepted
-
-
 def test_inference_is_stored_with_low_authority_and_capped_expiry():
     decision = gate("I prefer morning meetings", item(statement="inference", expires_in_days=500),
                     now=NOW)  # fmt: skip
@@ -61,28 +47,18 @@ def test_inference_is_stored_with_low_authority_and_capped_expiry():
     assert (decision.candidate.expires_at - NOW).days == 90
 
 
-def test_cue_filter_skips_ordinary_requests():
-    assert likely_personal("From now on, call me Jay.")
-    assert likely_personal("Remember that my manager is Priya.")
-    assert not likely_personal("Find Alex's email about the budget.")
-
-
-@pytest.mark.parametrize(
-    "message", ["my name is james", "My name's James", "my team is Infra", "i am actually jason"]
-)
-def test_saying_what_something_is_is_a_cue(message):
-    assert likely_personal(message)
-
-
-@pytest.mark.parametrize("message", ["whats my name", "Wheats my name", "who is on my team"])
-def test_asking_about_it_is_not(message):
-    assert not likely_personal(message)
-
-
 class ScriptedBackend:
-    def __init__(self, *responses):
+    """Answers the classifier with ``label`` at ``confidence``, then each scripted chat."""
+
+    def __init__(self, *responses, label="A", confidence=0.9):
         self.responses = list(responses)
         self.schemas = []
+        self.scores = {label: confidence}
+        self.classified = []
+
+    def option_probabilities(self, messages, options):
+        self.classified.append(messages[-1].content)
+        return {option: self.scores.get(option, 0.0) for option in options}
 
     def chat(self, messages, **options):
         self.schemas.append(current_response_schema())
@@ -116,10 +92,37 @@ def test_extractor_writes_accepted_items_and_routes_commitments(tmp_path):
     assert memory.find_entity("Priya") is not None
 
 
-def test_extractor_ignores_invalid_output_and_skips_without_cues(tmp_path):
+def test_extractor_ignores_invalid_output(tmp_path):
     memory = PersonalMemory(tmp_path / "memory.sqlite3")
-    assert MemoryExtractor(ScriptedBackend("not json"), memory).process(
-        "I prefer tea", force=True).written == []  # fmt: skip
-    backend = ScriptedBackend()
-    assert MemoryExtractor(backend, memory).process("What's the weather?").decisions == []
-    assert backend.schemas == []
+    assert (
+        MemoryExtractor(ScriptedBackend("not json"), memory).process("I prefer tea").written == []
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "confidence"),
+    [("C", 0.95), ("D", 0.9), ("E", 0.99), ("A", CONFIDENCE - 0.01)],
+)
+def test_questions_requests_and_unsure_answers_never_reach_the_extractor(
+    tmp_path, label, confidence
+):
+    memory = PersonalMemory(tmp_path / "memory.sqlite3")
+    backend = ScriptedBackend(label=label, confidence=confidence)
+    outcome = MemoryExtractor(backend, memory).process("whats my name")
+    assert outcome.decisions == [] and backend.schemas == []  # no extraction call
+    assert (outcome.label, outcome.confidence) == (label, confidence)
+
+
+def test_a_correction_is_extracted():
+    backend = ScriptedBackend(label="B", confidence=0.8)
+    assert classify(backend, "My name is not James but Sanchez") == ("B", 0.8)
+    (question,) = backend.classified  # one call, the message quoted among the options
+    assert question.startswith('Message: "My name is not James but Sanchez"') and "B." in question
+
+
+def test_a_backend_without_probabilities_learns_nothing():
+    class Plain:
+        def chat(self, messages, **options):
+            raise AssertionError("never called")
+
+    assert classify(Plain(), "my name is James") == ("E", 0.0)

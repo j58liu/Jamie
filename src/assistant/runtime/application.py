@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 from collections.abc import Callable
 from copy import deepcopy
@@ -172,6 +173,7 @@ class JamieApplication:
         self._connectors = None
         self._extract_memories = extract_memories
         self._personal = None
+        self._learning: asyncio.Task | None = None
         self.last_extraction = None  # the most recent memory extraction outcome
         self.last_plan = None  # the most recent plan outcome, when the planner ran
 
@@ -209,18 +211,36 @@ class JamieApplication:
         personal = self.personal
         if not self._extract_memories or personal is None or self._backend is None:
             return
-        from assistant.knowledge.extraction import MemoryExtractor, likely_personal
+        from assistant.knowledge.extraction import CONFIDENCE, LEARN, MemoryExtractor
 
-        if not likely_personal(prompt):
-            return
-
+        self.model_calls += 1  # the classifier
         try:
-            self.model_calls += 1
-            self.last_extraction = MemoryExtractor(self._backend, personal).process(
-                prompt, evidence_ref=evidence_ref, force=True
+            outcome = MemoryExtractor(self._backend, personal).process(
+                prompt, evidence_ref=evidence_ref
             )
         except Exception:  # memory is best effort; the answer already succeeded
             self.last_extraction = None
+            return
+        self.last_extraction = outcome
+        self.model_calls += outcome.label in LEARN and outcome.confidence >= CONFIDENCE
+
+    def _learn(self, prompt: str, evidence_ref: str | None) -> None:
+        """Learn from the turn in the background, in order; close() waits for it."""
+        if not self._extract_memories:
+            return
+        previous = self._learning
+
+        async def learn() -> None:
+            if previous is not None:
+                await previous
+            await asyncio.to_thread(self._extract, prompt, evidence_ref)
+
+        self._learning = asyncio.create_task(learn())
+
+    async def settle(self) -> None:
+        """Wait until facts from earlier turns are learned."""
+        if self._learning is not None:
+            await self._learning
 
     @property
     def config(self) -> ProjectConfig:
@@ -349,7 +369,7 @@ class JamieApplication:
             else:
                 memory.save_exchange(conversation_id, prompt, text, str(Path.cwd()))
                 memory.remember_exchange(conversation_id, prompt, text)
-            await asyncio.to_thread(self._extract, prompt, session_id or conversation_id)
+            self._learn(prompt, session_id or conversation_id)
         except BaseException as exc:
             if session_id is not None:
                 self._finish_failed_session(session_id)
@@ -469,7 +489,7 @@ class JamieApplication:
             else:
                 memory.save_exchange(session_id, prompt, answer, str(Path.cwd()))
                 memory.remember_exchange(session_id, prompt, answer)
-            await asyncio.to_thread(self._extract, prompt, session_id)
+            self._learn(prompt, session_id)
         except BaseException:
             if standalone and session_id is not None:
                 self._finish_failed_session(session_id)
@@ -621,6 +641,8 @@ class JamieApplication:
         if self._closed:
             return
         self._closed = True
+        with contextlib.suppress(Exception):
+            await self.settle()  # finish learning before the backend closes
         backend = self._backend
         self._backend = None
         self._memory = None

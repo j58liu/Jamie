@@ -27,6 +27,9 @@ class Backend:
         self.requests.append(list(messages))
         return LLMResponse(self.responses.pop(0))
 
+    def option_probabilities(self, messages, options):
+        return {option: 0.9 if option == "A" else 0.0 for option in options}
+
     def close(self):
         pass
 
@@ -84,7 +87,7 @@ def test_extraction_learns_from_the_users_words_after_the_turn(tmp_path):
     run(application, "From now on, I prefer morning meetings.")
     [record] = PersonalMemory(database).records()
     assert (record.key, record.value) == ("meeting_time", "morning")
-    assert application.model_calls == 2
+    assert application.model_calls == 3  # the answer, the classifier, the extractor
 
 
 def test_multi_step_requests_use_the_planner_and_fall_back_when_planning_fails(tmp_path):

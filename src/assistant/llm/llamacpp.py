@@ -1,6 +1,7 @@
 """Synchronous llama.cpp chat requests using plain HTTP."""
 
 import asyncio
+import math
 import time
 from collections.abc import Callable
 from contextlib import suppress
@@ -322,6 +323,39 @@ class LlamaCppBackend:
         except (httpx.HTTPError, ValidationError) as exc:
             raise LLMError("llama.cpp did not report context usage.") from exc
         return ContextUsage(used, maximum.default_generation_settings.n_ctx)
+
+    def option_probabilities(self, messages: list[Message], options: str) -> dict[str, float]:
+        """How likely the model's first answer token is each one-letter option.
+
+        One forward pass and one generated token: llama.cpp reports the top token
+        probabilities, which are read here instead of a written answer. Probabilities are
+        raw, not renormalized, so an option the model barely considered stays small.
+        """
+        payload = {
+            "messages": [asdict(message) for message in messages],
+            "temperature": 0.0,
+            "max_tokens": 1,
+            "logprobs": True,
+            "top_logprobs": 20,
+            "chat_template_kwargs": {"enable_thinking": False},
+            "stream": False,
+        }
+        try:
+            response = self._client().post(self._url, json=payload)
+            response.raise_for_status()
+            top = response.json()["choices"][0]["logprobs"]["content"][0]["top_logprobs"]
+            found = {option: 0.0 for option in options}
+            for entry in top:
+                letter = str(entry["token"]).strip().upper()
+                if letter in found:
+                    found[letter] += math.exp(float(entry["logprob"]))
+        except httpx.HTTPStatusError as exc:
+            raise LLMError(_status_error(exc.response, self._url)) from exc
+        except httpx.RequestError as exc:
+            raise LLMError(f"Cannot reach llama.cpp at {self._url}.") from exc
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise LLMError("llama.cpp returned no token probabilities.") from exc
+        return found
 
     def _client_options(self) -> dict:
         return {"timeout": self._timeout, "transport": self._transport, "trust_env": False}

@@ -35,8 +35,9 @@ class MemoryConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    # "cue": after a turn whose message looks personal ("I prefer...", "remember..."),
-    # ask the model which statements to remember. "off": never extract automatically.
+    # "cue": after each turn, the model labels the message and, when it tells Jamie about
+    # the user, extracts what to remember (kept as "cue" for existing config files).
+    # "off": never extract automatically.
     extraction: Literal["cue", "off"] = "cue"
     personal_context_tokens: int = Field(default=400, ge=0, le=4000)
 

@@ -29,6 +29,10 @@ class MemoryBackend:
             '{"action":"finish","message":"We discussed SQLite as the database library."}'
         )
 
+    def option_probabilities(self, messages, options):
+        stated = "Remember that" in messages[-1].content  # the other prompt is a question
+        return {option: 0.9 if option == ("A" if stated else "C") else 0.0 for option in options}
+
 
 def test_agent_recalls_a_previous_cli_conversation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)

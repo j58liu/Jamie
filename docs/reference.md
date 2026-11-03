@@ -76,7 +76,7 @@ selected GGUF into llama.cpp's model cache and start the server:
 llama-server \
   -hf unsloth/Qwen3.5-4B-GGUF:Q4_K_M --no-mmproj \
   --host 127.0.0.1 --port 8080 \
-  --ctx-size 32768 --parallel 1 \
+  --ctx-size 32768 --parallel 2 --kv-unified \
   --jinja --reasoning-format deepseek \
   --chat-template-kwargs '{"enable_thinking":false}' \
   --temp 0.6 --top-p 0.95 --top-k 20

@@ -29,16 +29,41 @@ from assistant.llm.base import LLMBackend, Message, constrained_to
 MAX_ITEMS = 5
 MAX_EXPIRY_DAYS = 90
 
-# Cheap pre-filter so ordinary requests never cost an extra model call.
-_CUES = re.compile(
-    r"\b(remember|don't forget|i prefer|i'd prefer|i like|i love|i hate|i dislike|"
-    r"i always|i never|i usually|i work|i'm working|i am working|my (?:name|manager|boss|"
-    r"professor|partner|wife|husband|team|project|working hours|timezone|birthday)"
-    r"(?:'s|\s+(?:is|are|was))|"  # "my name is", not the question "what's my name"
-    r"call me|i promised|i'll reply|i will reply|i need to reply|i'm a|i am a|"
-    r"is my|are my|actually,? i|i'm actually|i am actually|from now on|going forward)\b",
-    re.IGNORECASE,
-)
+# Before extracting anything, the model classifies the whole message by the probability of
+# each option letter: one forward pass, about one generated token, no phrase lists. Only
+# A and B reach the extractor, and only when the model is confident.
+LABELS = {
+    "A": "The user tells me something about themselves or their life (name, job, home, "
+    "likes, people they know), even alongside a request.",
+    "B": "The user corrects or updates something about themselves.",
+    "C": "The user asks a question, including questions about themselves.",
+    "D": "The user asks me to do a task.",
+    "E": "Greeting, thanks, or small talk only.",
+}
+LEARN = frozenset("AB")
+# Chosen with `jamie eval memory-classifier` on Qwen3.5-4B; see docs/reference.md.
+CONFIDENCE = 0.7
+
+
+def classify(backend: LLMBackend, message: str) -> tuple[str, float]:
+    """The most likely label and its probability; ("E", 0.0) when the backend cannot say.
+
+    The message comes first and the options after it, all in one user turn: on
+    Qwen3.5-4B that labelled 93% correctly, against 53% with the options in a system
+    message and 82% with the options before the message.
+    """
+    choose = getattr(backend, "option_probabilities", None)
+    if choose is None:
+        return "E", 0.0
+    options = "\n".join(f"{letter}. {text}" for letter, text in LABELS.items())
+    question = (
+        f"Message: {json.dumps(message, ensure_ascii=False)}\n\n"
+        f"Which best describes this message?\n{options}\n\nAnswer with the letter only."
+    )
+    scores = choose([Message("user", question)], "".join(LABELS))
+    label = max(scores, key=scores.get)
+    return label, scores[label]
+
 
 StatementKind = str  # explicit_user_statement | inference | third_party | suggestion | ...
 STORABLE = {"explicit_user_statement", "inference"}
@@ -52,10 +77,11 @@ Classify each candidate statement:
 - suggestion: an idea or option, not a settled fact ("maybe we could meet Friday").
 - temporary_context: only matters for the current request ("find the email from today").
 - commitment: the user promised to do something ("I promised to reply to Sam by Friday").
+- question or request: the user asks something or asks for something; never stored.
 Types: profile, preference, relationship, project, commitment.
 "evidence" must be copied exactly from the user's message. Use short snake_case keys.
 For a relationship, subject is the person's name and key describes the relationship.
-A question states nothing, even one with typos ("whats my name"): return an empty list.
+For a correction ("not James but Sanchez"), the value is the new fact only.
 Return at most 5 items, or an empty list when nothing should be remembered."""
 
 SCHEMA = {
@@ -69,7 +95,7 @@ SCHEMA = {
                 "properties": {
                     "statement": {"type": "string", "enum": [
                         "explicit_user_statement", "inference", "third_party", "suggestion",
-                        "temporary_context", "commitment"]},
+                        "temporary_context", "commitment", "question", "request"]},
                     "type": {"type": "string", "enum": [
                         "profile", "preference", "relationship", "project", "commitment"]},
                     "subject": {"type": "string"},
@@ -117,10 +143,8 @@ class ExtractionOutcome:
     decisions: list[Decision] = field(default_factory=list)
     written: list[WriteResult] = field(default_factory=list)
     commitments: list[str] = field(default_factory=list)
-
-
-def likely_personal(message: str) -> bool:
-    return bool(_CUES.search(message))
+    label: str = "E"  # the classifier's answer and confidence, kept for evaluation
+    confidence: float = 0.0
 
 
 def _normalize(text: str) -> str:
@@ -132,17 +156,6 @@ _REPORTED = re.compile(
     r"\b(?:he|she|they|[A-Z][a-z]+)\s+(?:said|says|wrote|writes|thinks|thought|wants|"
     r"asked|told me|mentioned|suggested)\b"
 )
-
-
-_ASKS = re.compile(r"(?:what|whats|who|whos|where|when|why|how|which)\b", re.IGNORECASE)
-
-
-def _is_question(sentence: str) -> bool:
-    """A wh-question, or one ending in "?" unless it asks Jamie to remember something."""
-    text = _normalize(sentence).replace("'", "")
-    if _ASKS.match(text):
-        return True
-    return text.endswith("?") and "remember" not in text
 
 
 def _quoted_spans(message: str) -> list[str]:
@@ -166,8 +179,6 @@ def gate(message: str, item: ProposedItem, *, now: datetime,
         spoken_from = len(_normalize(sentence[: reported.start()]))
         if _normalize(sentence).find(evidence) >= spoken_from:
             return Decision(item, False, "reported speech, treated as third party")
-    if _is_question(sentence):  # "whats my name" once overwrote the user's name
-        return Decision(item, False, "a question, not a statement")
     if item.statement == "commitment" or item.type == "commitment":
         return Decision(item, True, "commitment")
     try:
@@ -217,10 +228,10 @@ class MemoryExtractor:
         except (ValueError, ValidationError):
             return Proposal()
 
-    def process(self, message: str, *, evidence_ref: str | None = None,
-                force: bool = False) -> ExtractionOutcome:  # fmt: skip
+    def process(self, message: str, *, evidence_ref: str | None = None) -> ExtractionOutcome:
         outcome = ExtractionOutcome()
-        if not force and not likely_personal(message):
+        outcome.label, outcome.confidence = classify(self._backend, message)
+        if outcome.label not in LEARN or outcome.confidence < CONFIDENCE:
             return outcome
         now = self._memory.now()
         for item in self.propose(message).items:
