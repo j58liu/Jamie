@@ -15,7 +15,9 @@ def launcher_environment(tmp_path: Path) -> dict[str, str]:
         encoding="utf-8",
     )
     binary.chmod(0o755)
-    return {**os.environ, "PATH": str(tmp_path)}
+    home = tmp_path / "home"
+    home.mkdir()
+    return {**os.environ, "PATH": str(tmp_path), "HOME": str(home)}
 
 
 def run_launcher(environment: dict[str, str], *args: str) -> subprocess.CompletedProcess:
@@ -142,3 +144,24 @@ def test_server_failure_preserves_exit_status_and_cache_hint(launcher_environmen
 
     assert result.returncode == 7
     assert "If the cache is missing" in result.stderr
+
+
+def test_an_installed_fine_tuned_model_is_preferred(launcher_environment):
+    model = (
+        Path(launcher_environment["HOME"])
+        / "Library"
+        / "Application Support"
+        / "Jamie"
+        / "models"
+        / "jamie-4b.gguf"
+    )
+    model.parent.mkdir(parents=True)
+    model.write_bytes(b"GGUF")
+    result = run_launcher(launcher_environment)
+    args = result.stdout.rstrip("\0").split("\0")
+    assert result.returncode == 0
+    assert args[:2] == ["--model", str(model)]
+    assert "fine-tuned model" in result.stderr
+
+    chosen = run_launcher({**launcher_environment, "JAMIE_MODEL_REPO": "unsloth/x-GGUF:Q4_K_M"})
+    assert chosen.stdout.split("\0")[:2] == ["-hf", "unsloth/x-GGUF:Q4_K_M"]

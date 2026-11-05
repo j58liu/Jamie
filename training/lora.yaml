@@ -1,0 +1,25 @@
+# QLoRA settings for Qwen3.5-4B on a 16 GB Apple silicon Mac (mlx-lm 0.32).
+# train.sh fills in model, data, and adapter_path; everything else is here.
+fine_tune_type: lora
+train: true
+batch_size: 1
+grad_accumulation_steps: 4     # an effective batch of 4 without the memory of 4
+iters: 1200                    # about one pass over the default data set
+learning_rate: 1.0e-4
+lr_schedule:
+  name: cosine_decay
+  warmup: 60
+  arguments: [1.0e-4, 1200, 1.0e-6]
+num_layers: 16                 # adapt the top half of the 32 layers
+lora_parameters:
+  rank: 16
+  scale: 20.0
+  dropout: 0.05
+max_seq_length: 8192           # the longest examples (every tool listed) are ~7,900 tokens
+grad_checkpoint: true          # trade some speed for much less memory
+mask_prompt: true              # learn only each example's final reply
+steps_per_report: 20
+steps_per_eval: 200
+val_batches: 25
+save_every: 200
+seed: 7
