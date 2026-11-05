@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head><title>Apply: Data Analyst - Globex</title></head>
+  <body>
+    <h1>Data Analyst application</h1>
+    <form onsubmit="event.preventDefault(); document.body.innerHTML = '<h1>Application submitted</h1><p>We have received your application.</p>';">
+      <section id="p1">
+        <h2>Contact</h2>
+        <div class="label">Full name</div><input name="name" required />
+        <label>Email address <input type="email" name="email" required /></label>
+        <label>Mobile phone number <input name="phone" required /></label>
+        <button type="button" onclick="if ([...document.querySelectorAll('#p1 input')].every(i => i.value)) { p1.hidden = true; p2.hidden = false; }">Next</button>
+      </section>
+      <section id="p2" hidden>
+        <h2>Experience</h2>
+        <label>Upload your resume <input type="file" name="cv" required /></label>
+        <label>Notice period <input name="notice" required /></label>
+        <label>How did you hear about us? <select name="source"><option>Select one</option><option>LinkedIn</option><option>Company website</option><option>Friend</option></select></label>
+        <button type="button" onclick="if ([...document.querySelectorAll('#p2 input')].every(i => i.value || i.files?.length)) { p2.hidden = true; p3.hidden = false; }">Review your application</button>
+      </section>
+      <section id="p3" hidden>
+        <h2>Review</h2>
+        <p>Please check everything before you submit.</p>
+        <button type="submit">Submit application</button>
+      </section>
+    </form>
+  </body>
+</html>

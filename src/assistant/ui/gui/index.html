@@ -405,6 +405,7 @@
         color: var(--done);
       }
       .work-status.failed,
+      .work-status.needs_input,
       .work-status.interrupted {
         color: var(--danger);
       }
@@ -918,6 +919,7 @@
         failed: "Failed",
         cancelled: "Stopped",
         interrupted: "Interrupted",
+        needs_input: "Needs your answers",
       };
       function button(label, kind, action) {
         const node = el("button", kind, label);

@@ -22,7 +22,7 @@ def _when(moment: datetime) -> str:
 
 async def dispatch(application, store, prompt: str, decision: Route, *, source: str) -> str | None:
     """Return Jamie's reply when the request was handled here; None to run it now."""
-    if decision.jobs:
+    if decision.apply:
         if decision.urls:
             from assistant.jobs import queue_applications
 

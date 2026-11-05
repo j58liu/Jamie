@@ -77,6 +77,15 @@ class BrowserConfig(BaseModel):
         return BrowserSession(headless=not self.show_window, channel=self.channel or None)
 
 
+class JobsConfig(BaseModel):
+    """Job applications Jamie fills in the background."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    # Job sites watch for automation; a modest daily pace keeps accounts in good standing.
+    max_per_day: int = Field(default=25, ge=1, le=200)
+
+
 class BackgroundConfig(BaseModel):
     """Tasks Jamie works on while you do something else."""
 
@@ -100,6 +109,7 @@ class ProjectConfig(BaseModel):
     background: BackgroundConfig = BackgroundConfig()
     files: FilesConfig = FilesConfig()
     browser: BrowserConfig = BrowserConfig()
+    jobs: JobsConfig = JobsConfig()
 
     @field_validator("timezone")
     @classmethod

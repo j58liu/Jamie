@@ -69,6 +69,9 @@ class Element:
     options: tuple[str, ...] = ()
     in_form: bool = False
     role: str = ""
+    name: str = ""
+    question: str = ""  # for radio buttons and checkboxes: the question they answer
+    invalid: bool = False
 
     @property
     def clickable(self) -> bool:
@@ -91,6 +94,8 @@ class Element:
     def describe(self) -> str:
         kind = self.tag if self.tag != "input" else f"input {self.type or 'text'}"
         line = f"[{self.ref}] {kind} {self.label!r}" if self.label else f"[{self.ref}] {kind}"
+        if self.question:
+            line += f" for {self.question!r}"
         if self.required:
             line += " (required)"
         if self.options:
@@ -129,9 +134,8 @@ class Snapshot:
 COLLECT = r"""
 (start) => {
   const clip = (t, n) => (t || "").replace(/\s+/g, " ").trim().slice(0, n);
-  for (const e of document.querySelectorAll("[data-jamie-ref]")) {
-    e.removeAttribute("data-jamie-ref");
-  }
+  // Numbers stay with their element for as long as it exists, so a field that appears
+  // while Jamie fills a form never shifts the numbers of the others.
   const visible = (el) => {
     if (el.type === "file") return true;  // often styled away behind a button
     const r = el.getBoundingClientRect();
@@ -178,6 +182,31 @@ COLLECT = r"""
     if (el.type === "submit" || el.type === "button") return clip(el.value, 120);
     return clip(el.placeholder, 120) || nearbyText(el) || clip(el.name || el.title, 120);
   };
+  // The question a radio button or checkbox answers ("Yes" alone means little).
+  const questionOf = (el) => {
+    const set = el.closest("fieldset");
+    if (set && set.querySelector("legend")) return clip(set.querySelector("legend").innerText, 200);
+    const group = el.closest("[role=radiogroup],[role=group]");
+    if (group) {
+      const aria = group.getAttribute("aria-label");
+      if (aria) return clip(aria, 200);
+      const by = group.getAttribute("aria-labelledby");
+      const text = by && document.getElementById(by)?.innerText;
+      if (text) return clip(text, 200);
+    }
+    const own = labelOf(el);
+    let node = el.parentElement;
+    for (let depth = 0; depth < 5 && node; depth++) {
+      let sibling = node.previousElementSibling;
+      while (sibling) {
+        const text = clip(sibling.innerText, 200);
+        if (text && text !== own) return text;
+        sibling = sibling.previousElementSibling;
+      }
+      node = node.parentElement;
+    }
+    return "";
+  };
   const selector = [
     "a[href]", "button", "input:not([type=hidden])", "select", "textarea",
     "[role=button]", "[role=link]", "[role=checkbox]", "[role=radio]", "[role=combobox]",
@@ -187,8 +216,12 @@ COLLECT = r"""
   let n = start;
   for (const el of document.querySelectorAll(selector)) {
     if (!visible(el) || el.disabled) continue;
-    n += 1;
-    el.setAttribute("data-jamie-ref", String(n));
+    let ref = Number(el.getAttribute("data-jamie-ref"));
+    if (!ref) {
+      n += 1;
+      ref = n;
+      el.setAttribute("data-jamie-ref", String(n));
+    }
     const tag = el.tagName.toLowerCase();
     const type = (el.getAttribute("type") || (tag === "select" ? "select" : "")).toLowerCase();
     const checkable = type === "checkbox" || type === "radio";
@@ -198,7 +231,10 @@ COLLECT = r"""
     else if ("value" in el && type !== "file") value = clip(el.value, 200);
     else if (type === "file") value = el.files && el.files.length ? el.files[0].name : "";
     items.push({
-      ref: n, tag, type, role: el.getAttribute("role") || "",
+      ref, tag, type, role: el.getAttribute("role") || "",
+      name: el.getAttribute("name") || "",
+      question: checkable || el.getAttribute("role") === "radio" ? questionOf(el) : "",
+      invalid: el.getAttribute("aria-invalid") === "true",
       label: labelOf(el),
       value,
       checked: checkable ? el.checked
@@ -389,6 +425,7 @@ class BrowserTab:
         self._page = None
         self._generation = -1
         self._frames: dict[int, Any] = {}
+        self._next_ref = 0  # only grows, so numbers are unique across frames and pages
         self.last_snapshot: Snapshot | None = None
 
     def _ensure(self):
@@ -439,7 +476,7 @@ class BrowserTab:
         self._frames = {}
         texts: list[str] = []
         title = ""
-        start = 0
+        start = self._next_ref
         for index, frame in enumerate(page.frames):
             try:
                 data = frame.evaluate(COLLECT, start)
@@ -463,12 +500,16 @@ class BrowserTab:
                         options=tuple(item["options"]),
                         in_form=bool(item["in_form"]),
                         role=item.get("role", ""),
+                        name=item.get("name", ""),
+                        question=item.get("question", ""),
+                        invalid=bool(item.get("invalid")),
                     )
                 )
             heading = " / ".join(data.get("headings", [])[:6])
             body = data.get("body", "")
             if heading or body:
                 texts.append(f"{heading} :: {body}" if heading else body)
+        self._next_ref = start
         text = " | ".join(texts)[:MAX_TEXT]
         snapshot = Snapshot(page.url, title, text, tuple(elements[:MAX_ELEMENTS]))
         self.last_snapshot = snapshot
@@ -490,8 +531,14 @@ class BrowserTab:
 
     def click(self, ref: int) -> Snapshot:
         def act(page):
+            before = len(page.context.pages)
             self.locator(ref).click()
             _settle(page)
+            pages = page.context.pages
+            if len(pages) > before and not pages[-1].is_closed():
+                # The link opened a new tab (an external application form, say): follow it.
+                page = self._page = pages[-1]
+                _settle(page)
             return self._snapshot(page)
 
         return self.run(act)

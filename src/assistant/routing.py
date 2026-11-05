@@ -82,6 +82,7 @@ class Route:
     reason: str = ""
     urls: tuple[str, ...] = ()
     auto_submit: bool = False
+    apply: bool = False  # the user asked to apply (queue applications, no agent turn)
     scores: dict[str, float] = field(default_factory=dict)
 
     @property
@@ -131,15 +132,15 @@ def route(backend, message: str, *, available: set[str] | None = None) -> Route:
     auto_submit = bool(_AUTO_SUBMIT.search(text))
     if _APPLY.search(text):
         timing = SCHEDULE if _SCHEDULE_CUES.search(text) else BACKGROUND
-        return Route(timing, ("jobs",), "jobs", 1.0, "asked to apply", urls, auto_submit)
+        return Route(
+            timing, ("jobs",), "jobs", 1.0, "asked to apply", urls, auto_submit, apply=True
+        )
 
     subjects = _choose(backend, text, "What does this message ask Jamie to work with?", SUBJECTS)
     if subjects:
         ranked = sorted(subjects.items(), key=lambda item: item[1], reverse=True)
         (best, best_p), (second, second_p) = ranked[0], ranked[1]
         subject = SUBJECTS[best][0]
-        if subject == "jobs" and not urls and best_p < SUBJECT_CONFIDENCE:
-            subject = "browser"  # "look at this job" is not a request to apply
         scopes = [subject]
         if subject == "chat" and best_p < CHAT_CONFIDENCE:
             scopes = ["all"]
@@ -165,8 +166,6 @@ def route(backend, message: str, *, available: set[str] | None = None) -> Route:
             kind = TIMINGS[best][0]
             if kind != NOW and timings[best] >= TIMING_CONFIDENCE:
                 timing, reason = kind, f"model ({timings[best]:.2f})"
-    if subject == "jobs":
-        timing = BACKGROUND if timing == NOW else timing
     if timing != NOW and scopes == ["chat"]:
         scopes = ["all"]
     return Route(
@@ -177,7 +176,7 @@ def route(backend, message: str, *, available: set[str] | None = None) -> Route:
         reason,
         urls,
         auto_submit,
-        dict(subjects),
+        scores=dict(subjects),
     )
 
 

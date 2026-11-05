@@ -14,6 +14,7 @@ from assistant.background.worker import (
     FanOutNotifier,
     PrintNotifier,
     TaskContext,
+    TaskNeedsInput,
     acquire_worker_lock,
     agent_runner,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "PendingApproval",
     "PrintNotifier",
     "TaskContext",
+    "TaskNeedsInput",
     "acquire_worker_lock",
     "agent_runner",
     "arguments_digest",

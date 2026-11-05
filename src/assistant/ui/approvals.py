@@ -54,6 +54,7 @@ ACTIONS: dict[str, tuple[str, str | None]] = {
     "browser_submit": ("CLICK the final button", "button_text"),
     "browser_upload": ("upload this file to the open web page", "path"),
     "browser_show": ("show its browser window", None),
+    "job_submit": ("SUBMIT the job application", "job"),
 }
 
 # tool: (argument holding the command, the command line the tool runs with it).

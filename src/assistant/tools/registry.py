@@ -292,6 +292,22 @@ class ToolRegistry:
             "browser_show": (
                 '{"action":"tool","tool":"browser_show","args":{"url":"https://www.linkedin.com/login"}}'
             ),
+            "jobs_update_profile": (
+                '{"action":"tool","tool":"jobs_update_profile","args":{"fields":'
+                '{"phone":"+1 415 555 0100","needs_sponsorship":false}}}'
+            ),
+            "jobs_profile_from_resume": (
+                '{"action":"tool","tool":"jobs_profile_from_resume",'
+                '"args":{"path":"~/Documents/Resume 2026.pdf"}}'
+            ),
+            "jobs_answer_questions": (
+                '{"action":"tool","tool":"jobs_answer_questions","args":{"task_id":7,'
+                '"answers":{"Notice period":"Two weeks"}}}'
+            ),
+            "jobs_apply": (
+                '{"action":"tool","tool":"jobs_apply","args":{"urls":'
+                '["https://jobs.lever.co/acme/1234"],"auto_submit":false}}'
+            ),
             "jamie_start_background": (
                 '{"action":"tool","tool":"jamie_start_background",'
                 '"args":{"task":"Research flights to Tokyo in March and list the 3 cheapest"}}'
@@ -578,4 +594,7 @@ def create_agent_registry(
     register_browser_tools(registry, browser, files if files is not None else MacPaths())
     register_web_tools(registry, web if web is not None else WebClient(), backend)
     register_personal_tools(registry, connectors)
+    from assistant.jobs.tools import register_job_tools
+
+    register_job_tools(registry, background, files if files is not None else MacPaths(), backend)
     return register_task_tools(registry, background, memory)

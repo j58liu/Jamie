@@ -104,6 +104,12 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
         "browser_submit": PermissionLevel.SEND,
         "browser_screenshot": PermissionLevel.READ,
         "browser_show": PermissionLevel.SAFE_WRITE,
+        # Job applications. Submitting one is asked separately (job_submit, a SEND).
+        "jobs_show_profile": PermissionLevel.READ,
+        "jobs_update_profile": PermissionLevel.SAFE_WRITE,
+        "jobs_profile_from_resume": PermissionLevel.SAFE_WRITE,
+        "jobs_answer_questions": PermissionLevel.SAFE_WRITE,
+        "jobs_apply": PermissionLevel.SAFE_WRITE,
     }
 )
 

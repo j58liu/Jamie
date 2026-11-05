@@ -16,6 +16,7 @@ from assistant.agent.events import AgentEvent, ToolFailed, ToolStarted
 from assistant.background.approvals import DeferredApprovalProvider, Grant
 from assistant.background.store import (
     CANCELLED,
+    NEEDS_INPUT,
     BackgroundStore,
     BackgroundTask,
     PendingApproval,
@@ -94,6 +95,14 @@ class TaskContext:
 
 
 type Runner = Callable[[BackgroundTask, TaskContext], Awaitable[str]]
+
+
+class TaskNeedsInput(Exception):
+    """A task stopped because only the user can answer; retrying continues it."""
+
+    def __init__(self, message: str, questions: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.questions = list(questions or [])
 
 
 def acquire_worker_lock(path: Path) -> IO[str] | None:
@@ -194,6 +203,11 @@ class BackgroundWorker:
         except (TurnCancelled, asyncio.CancelledError):
             self.store.fail(task.id, "Cancelled.", status=CANCELLED)
             self._notifier.send(title, "Cancelled.")
+        except TaskNeedsInput as exc:
+            questions = "".join(f"\n- {q}" for q in exc.questions)
+            self.store.update_payload(task.id, questions=exc.questions)
+            self.store.fail(task.id, f"{exc}{questions}", status=NEEDS_INPUT)
+            self._notifier.send(title, f"Needs your answers: {short(str(exc), 120)}")
         except Exception as exc:  # noqa: BLE001 - one task's failure never stops the rest
             message = str(exc) or type(exc).__name__
             self.store.fail(task.id, message)

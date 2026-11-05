@@ -104,6 +104,11 @@ def test_default_policy_classifies_named_tools():
         "browser_submit": PermissionLevel.SEND,
         "browser_screenshot": PermissionLevel.READ,
         "browser_show": PermissionLevel.SAFE_WRITE,
+        "jobs_show_profile": PermissionLevel.READ,
+        "jobs_update_profile": PermissionLevel.SAFE_WRITE,
+        "jobs_profile_from_resume": PermissionLevel.SAFE_WRITE,
+        "jobs_answer_questions": PermissionLevel.SAFE_WRITE,
+        "jobs_apply": PermissionLevel.SAFE_WRITE,
     }
 
 

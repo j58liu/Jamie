@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+  <head><title>Software Engineer at Acme</title></head>
+  <body>
+    <h1>Software Engineer</h1>
+    <p>Acme builds rockets. You will write Python and work with the launch team.</p>
+    <form id="application_form" onsubmit="event.preventDefault(); document.body.innerHTML = '<h1>Thank you for applying to Acme!</h1><p>Your application has been submitted.</p>';">
+      <label for="first_name">First Name *</label><input id="first_name" name="first_name" required />
+      <label for="last_name">Last Name *</label><input id="last_name" name="last_name" required />
+      <label for="email">Email *</label><input id="email" type="email" name="email" required />
+      <label for="phone">Phone *</label><input id="phone" type="tel" name="phone" required />
+      <label for="resume">Resume/CV *</label><input id="resume" type="file" name="resume" required />
+      <label for="linkedin">LinkedIn Profile</label><input id="linkedin" name="linkedin" />
+      <label for="auth">Are you legally authorized to work in the United States? *</label>
+      <select id="auth" name="auth" required><option value="">Select...</option><option>Yes</option><option>No</option></select>
+      <fieldset>
+        <legend>Will you now or in the future require visa sponsorship? *</legend>
+        <label><input type="radio" name="sponsor" value="yes" required /> Yes</label>
+        <label><input type="radio" name="sponsor" value="no" required /> No</label>
+      </fieldset>
+      <label for="why">Why do you want to work at Acme? *</label><textarea id="why" name="why" required></textarea>
+      <label for="gender">Gender</label>
+      <select id="gender" name="gender"><option value="">Select...</option><option>Male</option><option>Female</option><option>Decline To Self Identify</option></select>
+      <label for="veteran">Veteran Status</label>
+      <select id="veteran" name="veteran"><option value="">Select...</option><option>I am a veteran</option><option>I am not a veteran</option><option>I don't wish to answer</option></select>
+      <label><input type="checkbox" id="privacy" required /> I agree to the privacy policy</label>
+      <button type="submit">Submit Application</button>
+    </form>
+  </body>
+</html>

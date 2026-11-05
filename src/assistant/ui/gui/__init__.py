@@ -267,7 +267,7 @@ class GuiSession:
         if state.mode == "task" and state.scope is ToolScope.AUTO:
             decision = await self._route(prompt)
             if decision is not None:
-                if decision.scores or decision.timing != "now" or decision.jobs:
+                if decision.scores or decision.timing != "now" or decision.apply:
                     self._send({"type": "route", "text": route_label(decision)})
                 if self._background is not None:
                     from assistant.runtime.dispatch import dispatch

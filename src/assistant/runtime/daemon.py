@@ -50,7 +50,13 @@ def build_runners(
             browser=browser,
         )
 
-    return {"agent": agent_runner(application, registry, max_tokens=max_tokens)}
+    from assistant.jobs import JOB_KIND
+    from assistant.jobs.runner import job_application_runner
+
+    return {
+        "agent": agent_runner(application, registry, max_tokens=max_tokens),
+        JOB_KIND: job_application_runner(application, settings, browser),
+    }
 
 
 async def run_background_service(
@@ -83,11 +89,14 @@ async def run_background_service(
             max_tokens=max_tokens,
             browser=browser,
         )
+        from assistant.jobs.runner import grants_for_task
+
         worker = BackgroundWorker(
             store,
             runners,
             notifier=notifier or PrintNotifier(),
             max_parallel=settings.background.max_parallel,
+            grants_for=grants_for_task,
         )
         await worker.run_forever()
     finally:

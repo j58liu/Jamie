@@ -91,7 +91,7 @@ def test_job_requests_go_to_the_background_with_their_links():
         "Apply to these jobs: https://jobs.lever.co/acme/123, "
         "https://boards.greenhouse.io/x/jobs/9. Go ahead and submit them yourself.",
     )
-    assert decision.jobs and decision.timing == BACKGROUND
+    assert decision.apply and decision.timing == BACKGROUND
     assert decision.urls == (
         "https://jobs.lever.co/acme/123",
         "https://boards.greenhouse.io/x/jobs/9",

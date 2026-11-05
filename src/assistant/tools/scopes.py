@@ -13,6 +13,7 @@ class ToolScope(StrEnum):
     PERSONAL = "personal"
     TASKS = "tasks"  # Jamie's own background work and schedules
     BROWSER = "browser"  # websites and logged-in accounts
+    JOBS = "jobs"  # job applications and the applicant profile
 
 
 READ_TOOLS = {"read_file", "list_directory", "find_files", "search_files"}
@@ -87,6 +88,18 @@ SCOPE_TOOLS[ToolScope.BROWSER] = {
     "browser_show",
     "mac_search_files",
     "web_search",
+}
+
+SCOPE_TOOLS[ToolScope.JOBS] = {
+    "jobs_show_profile",
+    "jobs_update_profile",
+    "jobs_profile_from_resume",
+    "jobs_answer_questions",
+    "jobs_apply",
+    "mac_search_files",
+    "jamie_work_status",
+    "jamie_cancel_work",
+    "browser_show",
 }
 
 # Multi-step personal workflows (search, read, check, draft) need more model actions.

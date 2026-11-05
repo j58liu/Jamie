@@ -57,8 +57,9 @@ DONE = "done"
 FAILED = "failed"
 CANCELLED = "cancelled"
 INTERRUPTED = "interrupted"
+NEEDS_INPUT = "needs_input"  # stopped with questions only the user can answer
 ACTIVE = frozenset({QUEUED, RUNNING, WAITING})
-FINISHED = frozenset({DONE, FAILED, CANCELLED, INTERRUPTED})
+FINISHED = frozenset({DONE, FAILED, CANCELLED, INTERRUPTED, NEEDS_INPUT})
 
 PENDING = "pending"
 APPROVED = "approved"
