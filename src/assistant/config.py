@@ -58,6 +58,25 @@ class FilesConfig(BaseModel):
         return MacPaths(self.roots, self.blocked)
 
 
+class BrowserConfig(BaseModel):
+    """Jamie's own browser profile, used for websites and job applications."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    enabled: bool = True
+    # "chrome" uses the installed Google Chrome (sites trust it more); Jamie falls back to
+    # Playwright's Chromium when Chrome is missing. "" always uses Chromium.
+    channel: str = "chrome"
+    show_window: bool = False  # True: watch Jamie work instead of running hidden
+
+    def session(self):
+        if not self.enabled:
+            return None
+        from assistant.browser import BrowserSession
+
+        return BrowserSession(headless=not self.show_window, channel=self.channel or None)
+
+
 class BackgroundConfig(BaseModel):
     """Tasks Jamie works on while you do something else."""
 
@@ -80,6 +99,7 @@ class ProjectConfig(BaseModel):
     memory: MemoryConfig = MemoryConfig()
     background: BackgroundConfig = BackgroundConfig()
     files: FilesConfig = FilesConfig()
+    browser: BrowserConfig = BrowserConfig()
 
     @field_validator("timezone")
     @classmethod

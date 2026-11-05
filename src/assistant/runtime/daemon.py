@@ -34,6 +34,7 @@ def build_runners(
     backend,
     workspace: Path,
     max_tokens: int,
+    browser=None,
 ) -> dict[str, Any]:
     """Runners by task kind; each builds fresh tools whose approvals wait for the user."""
     from assistant.tools import create_agent_registry
@@ -46,6 +47,7 @@ def build_runners(
             backend=backend,
             connectors=application.connectors,
             files=settings.files.paths(),
+            browser=browser,
         )
 
     return {"agent": agent_runner(application, registry, max_tokens=max_tokens)}
@@ -61,6 +63,7 @@ async def run_background_service(
     notifier: Notifier | None = None,
     workspace: Path | None = None,
     max_tokens: int = 1024,
+    browser=None,
     on_ready: Callable[[bool], object] | None = None,
 ) -> None:
     """Serve until cancelled; without the worker lock it returns at once (another serves)."""
@@ -78,6 +81,7 @@ async def run_background_service(
             backend=backend,
             workspace=workspace or Path.home(),
             max_tokens=max_tokens,
+            browser=browser,
         )
         worker = BackgroundWorker(
             store,
@@ -103,6 +107,7 @@ async def serve(settings: ProjectConfig, *, notifier: Notifier | None = None) ->
         backend_factory=lambda: backend,
         extract_memories=False,
     ) as application:
+        browser = settings.browser.session()
         with WebClient() as web:
 
             def ready(owned: bool) -> None:
@@ -111,14 +116,19 @@ async def serve(settings: ProjectConfig, *, notifier: Notifier | None = None) ->
                 else:
                     print("Jamie is running background tasks. Press Ctrl+C to stop.")
 
-            await run_background_service(
-                application,
-                settings,
-                web=web,
-                backend=backend,
-                notifier=notifier,
-                on_ready=ready,
-            )
+            try:
+                await run_background_service(
+                    application,
+                    settings,
+                    web=web,
+                    backend=backend,
+                    notifier=notifier,
+                    browser=browser,
+                    on_ready=ready,
+                )
+            finally:
+                if browser is not None:
+                    browser.close()
 
 
 def run_serve(settings: ProjectConfig) -> None:

@@ -91,6 +91,19 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
         "mac_copy_file": PermissionLevel.SAFE_WRITE,
         "mac_move_file": PermissionLevel.SAFE_WRITE,
         "mac_create_folder": PermissionLevel.SAFE_WRITE,
+        # Jamie's browser. Final buttons go through browser_submit, confirmed every time.
+        "browser_open": PermissionLevel.EXTERNAL,
+        "browser_snapshot": PermissionLevel.READ,
+        "browser_click": PermissionLevel.EXTERNAL,
+        "browser_type": PermissionLevel.EXTERNAL,
+        "browser_select": PermissionLevel.EXTERNAL,
+        "browser_check": PermissionLevel.EXTERNAL,
+        "browser_scroll": PermissionLevel.READ,
+        "browser_back": PermissionLevel.READ,
+        "browser_upload": PermissionLevel.EXTERNAL,
+        "browser_submit": PermissionLevel.SEND,
+        "browser_screenshot": PermissionLevel.READ,
+        "browser_show": PermissionLevel.SAFE_WRITE,
     }
 )
 
@@ -110,6 +123,7 @@ CONFIRM_REQUIRED = frozenset(
         "reminders_create",
         "reminders_complete",
         "mac_move_file",  # outside the workspace there is no /undo
+        "browser_upload",  # a local file leaves the Mac
     }
 )
 CONFIRM_LEVELS = frozenset({PermissionLevel.DESTRUCTIVE, PermissionLevel.SEND})

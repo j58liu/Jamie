@@ -51,6 +51,9 @@ ACTIONS: dict[str, tuple[str, str | None]] = {
     "mac_copy_file": ("copy", "source"),
     "mac_move_file": ("move (no undo)", "source"),
     "mac_create_folder": ("create the folder", "path"),
+    "browser_submit": ("CLICK the final button", "button_text"),
+    "browser_upload": ("upload this file to the open web page", "path"),
+    "browser_show": ("show its browser window", None),
 }
 
 # tool: (argument holding the command, the command line the tool runs with it).

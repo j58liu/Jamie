@@ -640,6 +640,9 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
         )
         await application.start()
         web = resources.enter_context(WebClient())
+        browser = settings.browser.session()  # starts nothing until a tool uses it
+        if browser is not None:
+            resources.callback(browser.close)
         try:
             store = BackgroundStore()
         except BackgroundStoreError as exc:
@@ -655,6 +658,7 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
                 background=store,
                 memory=lambda: application.memory,
                 files=settings.files.paths(),
+                browser=browser,
             )
         )
         resources.callback(tools.close)
@@ -694,6 +698,7 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
                     web=web,
                     backend=backend,
                     store=store,
+                    browser=browser,
                     notifier=WindowNotifier(notifier, bridge),
                     max_tokens=session.state.max_tokens,
                 )

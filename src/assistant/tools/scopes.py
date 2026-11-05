@@ -12,6 +12,7 @@ class ToolScope(StrEnum):
     MACOS = "macos"
     PERSONAL = "personal"
     TASKS = "tasks"  # Jamie's own background work and schedules
+    BROWSER = "browser"  # websites and logged-in accounts
 
 
 READ_TOOLS = {"read_file", "list_directory", "find_files", "search_files"}
@@ -71,8 +72,25 @@ SCOPE_TOOLS[ToolScope.TASKS] = {
     "jamie_schedule",
 }
 
+SCOPE_TOOLS[ToolScope.BROWSER] = {
+    "browser_open",
+    "browser_snapshot",
+    "browser_click",
+    "browser_type",
+    "browser_select",
+    "browser_check",
+    "browser_scroll",
+    "browser_back",
+    "browser_upload",
+    "browser_submit",
+    "browser_screenshot",
+    "browser_show",
+    "mac_search_files",
+    "web_search",
+}
+
 # Multi-step personal workflows (search, read, check, draft) need more model actions.
-SCOPE_MAX_STEPS = {ToolScope.PERSONAL: 16}
+SCOPE_MAX_STEPS = {ToolScope.PERSONAL: 16, ToolScope.BROWSER: 30}
 
 
 # Scheduled tasks run while nobody is watching: they may read and search, never act.

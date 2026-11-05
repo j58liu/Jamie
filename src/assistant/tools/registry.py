@@ -87,6 +87,11 @@ class ToolRegistry:
         self._approvals = approvals if approvals is not None else DenyAllApprovals()
         self._audit = audit if audit is not None else InMemoryAuditLog()
         self._changes = changes
+        self._closers: list = []
+
+    def on_close(self, callback) -> None:
+        """Release something a tool holds, such as its browser tab, with the registry."""
+        self._closers.append(callback)
 
     @property
     def audit(self) -> AuditSink:
@@ -96,6 +101,12 @@ class ToolRegistry:
         """Release workspace snapshots; shared web clients belong to the caller."""
         if self._changes is not None:
             self._changes.close()
+        closers, self._closers = self._closers, []
+        for close in closers:
+            try:
+                close()
+            except Exception:  # noqa: BLE001 - one failed cleanup must not skip the rest
+                pass
 
     def register(self, tool: Tool) -> None:
         self._policy.validate_declaration(tool.name, tool.risk)
@@ -255,6 +266,31 @@ class ToolRegistry:
             ),
             "mac_create_folder": (
                 '{"action":"tool","tool":"mac_create_folder","args":{"path":"~/Documents/Taxes"}}'
+            ),
+            "browser_open": (
+                '{"action":"tool","tool":"browser_open","args":{"url":"https://www.opentable.com/"}}'
+            ),
+            "browser_click": '{"action":"tool","tool":"browser_click","args":{"ref":12}}',
+            "browser_type": (
+                '{"action":"tool","tool":"browser_type","args":{"ref":4,"text":"Ramen near me",'
+                '"press_enter":true}}'
+            ),
+            "browser_select": (
+                '{"action":"tool","tool":"browser_select","args":{"ref":7,"option":"2 people"}}'
+            ),
+            "browser_check": (
+                '{"action":"tool","tool":"browser_check","args":{"ref":9,"checked":true}}'
+            ),
+            "browser_upload": (
+                '{"action":"tool","tool":"browser_upload","args":{"ref":5,'
+                '"path":"~/Documents/resume.pdf"}}'
+            ),
+            "browser_submit": (
+                '{"action":"tool","tool":"browser_submit","args":{"ref":21,'
+                '"button_text":"Complete reservation","page_url":"https://www.opentable.com/booking"}}'
+            ),
+            "browser_show": (
+                '{"action":"tool","tool":"browser_show","args":{"url":"https://www.linkedin.com/login"}}'
             ),
             "jamie_start_background": (
                 '{"action":"tool","tool":"jamie_start_background",'
@@ -522,6 +558,7 @@ def create_agent_registry(
     background=None,
     memory=None,
     files=None,
+    browser=None,
 ) -> ToolRegistry:
     """Register workspace, macOS, web, and configured personal-app tools.
 
@@ -529,13 +566,16 @@ def create_agent_registry(
     Reminders tools for the connectors that are configured. ``background`` (a
     BackgroundStore) adds tools for Jamie's own tasks; ``memory`` holds its schedules.
     ``files`` (MacPaths) sets the folders the Mac-wide file tools reach; home by default.
+    ``browser`` (a BrowserSession) adds browser tools working in a tab of their own.
     """
+    from assistant.browser.tools import register_browser_tools
     from assistant.tools.integrations import register_personal_tools
-    from assistant.tools.mac_files import register_mac_file_tools
+    from assistant.tools.mac_files import MacPaths, register_mac_file_tools
     from assistant.tools.tasks import register_task_tools
 
     registry = create_macos_registry(root, approvals=approvals, audit=audit, runner=runner)
     register_mac_file_tools(registry, files, runner)
+    register_browser_tools(registry, browser, files if files is not None else MacPaths())
     register_web_tools(registry, web if web is not None else WebClient(), backend)
     register_personal_tools(registry, connectors)
     return register_task_tools(registry, background, memory)
