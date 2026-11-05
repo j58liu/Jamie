@@ -14,6 +14,7 @@ from assistant import STARTED, __version__
 from assistant.agent import AgentError
 from assistant.agent.events import EventSink
 from assistant.agent.loop import MAX_STEPS
+from assistant.background_cli import bg_app, serve_command
 from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
 from assistant.config import ConfigurationError, ProjectConfig, load_config
 from assistant.doctor import Status, run_checks
@@ -55,6 +56,8 @@ app = typer.Typer(
 )
 app.add_typer(eval_app, name="eval")
 app.add_typer(memory_app, name="memory")
+app.add_typer(bg_app, name="bg")
+app.command("serve")(serve_command)
 
 
 def _start_memory(settings, kind: str, prompt: str) -> tuple[MemoryStore, str, str | None]:

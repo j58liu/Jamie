@@ -42,6 +42,15 @@ class MemoryConfig(BaseModel):
     personal_context_tokens: int = Field(default=400, ge=0, le=4000)
 
 
+class BackgroundConfig(BaseModel):
+    """Tasks Jamie works on while you do something else."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    # The launcher starts llama-server with two parallel slots.
+    max_parallel: int = Field(default=2, ge=1, le=4)
+
+
 class ProjectConfig(BaseModel):
     """Local settings; unknown keys and incorrect types are rejected."""
 
@@ -53,6 +62,7 @@ class ProjectConfig(BaseModel):
     google: GoogleConfig = GoogleConfig()
     reminders: RemindersConfig = RemindersConfig()
     memory: MemoryConfig = MemoryConfig()
+    background: BackgroundConfig = BackgroundConfig()
 
     @field_validator("timezone")
     @classmethod
