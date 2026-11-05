@@ -26,6 +26,12 @@ class PreparedRequest:
     usage: ContextUsage | None
 
 
+def effective_reserve(reserve: int, maximum: int) -> int:
+    """Hold back at most half the context for the answer, so long answer limits (8k by
+    default) still leave room for the request on servers with a small context."""
+    return max(1, min(reserve, maximum // 2)) if maximum > 0 else reserve
+
+
 class RequestBudget:
     """Count the actual prompt, reserving output space before every model request."""
 
@@ -48,7 +54,7 @@ class RequestBudget:
         usage = count(messages, **options) if count is not None else None
         if usage is None:
             return None
-        return ContextUsage(usage.used, usage.maximum, reserve)
+        return ContextUsage(usage.used, usage.maximum, effective_reserve(reserve, usage.maximum))
 
     def prepare(
         self,
@@ -60,6 +66,8 @@ class RequestBudget:
     ) -> PreparedRequest:
         check_cancelled()
         usage = self.measure(messages, reserve, thinking)
+        if usage is not None:
+            reserve = usage.output_reserved
         if usage is None or usage.used + reserve <= usage.maximum:
             if usage is not None:
                 emit_event(RequestContext(usage))

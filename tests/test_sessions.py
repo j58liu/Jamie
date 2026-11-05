@@ -257,5 +257,6 @@ def test_status_bar_context_is_remeasured_after_each_turn(tmp_path: Path):
     output = _repl(tmp_path, "first\nsecond\n/context\n/quit\n", backend)
 
     assert "Used:         400 tokens" in output  # complete last request, before its answer
-    assert "Answer reserve: 1,024 tokens" in output
+    # The 8,192-token default is capped at half of this small 8k context.
+    assert "Answer reserve: 4,096 tokens" in output
     assert "Maximum:    8,192 tokens" in output

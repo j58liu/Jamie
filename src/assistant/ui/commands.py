@@ -17,7 +17,7 @@ from rich.console import Console
 from assistant import schedule
 from assistant.agent.events import ToolFailed, ToolFinished
 from assistant.cancellation import CancellationToken, TurnCancelled, interrupt_cancels
-from assistant.llm.base import ContextUsage, LLMError, Message
+from assistant.llm.base import DEFAULT_MAX_TOKENS, ContextUsage, LLMError, Message
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import ConversationSummary
 from assistant.runtime.application import JamieApplicationError
@@ -52,7 +52,7 @@ class ReplState:
     context: ContextUsage | None = None  # last exact measurement of ``history``
     thinking: bool | None = False  # off on launch; /thinking on enables it
     temperature: float = 0.6
-    max_tokens: int = 1024
+    max_tokens: int = DEFAULT_MAX_TOKENS
     model: str | None = None
     # Session statistics; kept in memory only and never written or sent anywhere.
     turns: int = 0

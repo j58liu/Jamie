@@ -324,7 +324,7 @@ def test_ask_prints_literal_answer_and_sends_prompt(chat_http):
             {"role": "user", "content": "hello"},
         ],
         "temperature": 0.6,
-        "max_tokens": 1024,
+        "max_tokens": 8192,
         "stream": True,
         "stream_options": {"include_usage": True},
     }
@@ -358,7 +358,7 @@ def test_ask_uses_shared_application(monkeypatch: pytest.MonkeyPatch):
     assert calls == [
         ("init", True, cli.LlamaCppBackend),
         ("start",),
-        ("run_turn", "hello", 0.6, 1024, None),
+        ("run_turn", "hello", 0.6, 8192, None),
         ("close",),
     ]
 

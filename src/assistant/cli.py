@@ -20,7 +20,7 @@ from assistant.config import ConfigurationError, ProjectConfig, load_config
 from assistant.doctor import Status, run_checks
 from assistant.eval_cli import app as eval_app
 from assistant.knowledge_cli import memory_app
-from assistant.llm.base import LLMError, managed_backend
+from assistant.llm.base import DEFAULT_MAX_TOKENS, LLMError, managed_backend
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import (
     MemoryStore,
@@ -239,7 +239,7 @@ def ask(
     temperature: Annotated[float, typer.Option(min=0.0, help="Sampling temperature.")] = 0.6,
     max_tokens: Annotated[
         int, typer.Option(min=1, help="Maximum number of generated tokens.")
-    ] = 1024,
+    ] = DEFAULT_MAX_TOKENS,
     thinking: Annotated[
         bool | None,
         typer.Option(

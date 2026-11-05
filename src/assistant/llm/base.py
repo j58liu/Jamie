@@ -6,6 +6,10 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
+# The longest answer Jamie writes by default. The context budget shrinks it on servers
+# whose context is too small to hold both a request and this much answer.
+DEFAULT_MAX_TOKENS = 8192
+
 
 @dataclass(frozen=True)
 class Message:

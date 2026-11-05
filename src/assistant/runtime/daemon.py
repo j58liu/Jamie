@@ -68,7 +68,7 @@ async def run_background_service(
     store: BackgroundStore | None = None,
     notifier: Notifier | None = None,
     workspace: Path | None = None,
-    max_tokens: int = 1024,
+    max_tokens: int = 8192,
     browser=None,
     on_ready: Callable[[bool], object] | None = None,
 ) -> None:

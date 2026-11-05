@@ -223,7 +223,7 @@ def agent_runner(
     application,
     registry_factory: Callable[[Any], Any],
     *,
-    max_tokens: int = 1024,
+    max_tokens: int = 8192,
     temperature: float = 0.6,
 ) -> Runner:
     """Run a prompt with the full agent, asking for approvals without blocking the user."""

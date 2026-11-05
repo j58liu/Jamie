@@ -70,7 +70,7 @@ def test_application_initializes_once_reuses_backend_and_closes(tmp_path: Path):
     assert first == TurnResult("First answer", "local-qwen", "stop", 4)
     assert second == TurnResult("Second answer", "local-qwen", "stop", 5)
     assert backend.requests == [
-        ([Message("system", IDENTITY), Message("user", "Alpha request")], 0.6, 1024),
+        ([Message("system", IDENTITY), Message("user", "Alpha request")], 0.6, 8192),
         ([Message("system", IDENTITY), Message("user", "Continue with beta")], 0.2, 64),
     ]
     assert backend.close_calls == 1

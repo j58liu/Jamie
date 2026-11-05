@@ -35,7 +35,13 @@ from assistant.agent.loop import (
 from assistant.cancellation import CancellationToken, cancellation_scope
 from assistant.config import ProjectConfig
 from assistant.llm.answer import answer_text
-from assistant.llm.base import ContextUsage, LLMBackend, LLMResponse, Message
+from assistant.llm.base import (
+    DEFAULT_MAX_TOKENS,
+    ContextUsage,
+    LLMBackend,
+    LLMResponse,
+    Message,
+)
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import (
     ConversationSummary,
@@ -296,7 +302,7 @@ class JamieApplication:
         *,
         history: list[Message] | None = None,
         temperature: float = 0.6,
-        max_tokens: int = 1024,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         thinking: bool | None = None,
         cancel: CancellationToken | None = None,
         conversation_id: str | None = None,
@@ -631,7 +637,9 @@ class JamieApplication:
         if tools is not None:
             messages.insert(0, Message("system", _system_instructions(tools)))
         return (
-            self._budget.measure(messages, max_tokens or 1024) if self._budget is not None else None
+            self._budget.measure(messages, max_tokens or DEFAULT_MAX_TOKENS)
+            if self._budget is not None
+            else None
         )
 
     def _require_memory(self) -> MemoryStore:
