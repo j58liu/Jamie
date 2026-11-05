@@ -853,6 +853,68 @@ jamie ask "hello" --config /path/to/assistant.toml
 An explicitly requested file must exist and be readable. `jamie --version`
 works independently of configuration and reads the installed package version.
 
+Settings for background work, files, the browser, and job applications (the values
+shown are the defaults):
+
+```toml
+[background]
+max_parallel = 2          # tasks run at once; the launcher gives llama-server 2 slots
+
+[files]
+roots = ["~"]             # folders the Mac-wide file tools may search and read
+blocked = []              # added to the private folders that are always refused
+
+[browser]
+enabled = true
+channel = "chrome"        # installed Google Chrome; "" for Playwright's Chromium
+show_window = false       # true to watch Jamie browse
+
+[jobs]
+max_per_day = 25          # applications submitted per day, at most
+```
+
+## Background tasks
+
+Background tasks live in `background.sqlite3` beside Jamie's memory, so every Jamie
+process shares them. Jamie.app runs them while it is open; `jamie serve` runs them
+without the window. Only one process runs tasks at a time (a lock file decides);
+the others can still queue tasks and answer approvals.
+
+```sh
+jamie bg add "Research standing desks under $500"
+jamie bg list [--all]
+jamie bg show <id>
+jamie bg cancel <id>
+jamie bg retry <id>
+jamie bg approvals
+jamie bg approve <approval-id>
+jamie bg deny <approval-id>
+```
+
+A task that needs approval waits and shows the request in the window's tray (with a
+screenshot for job applications) and as a notification. Approvals are bound to the
+exact operation and expire after 24 hours. A task still running when Jamie quits is
+marked `interrupted` rather than run again; `retry` queues it once more. A task that
+stops with `needs_input` lists the questions only the user can answer; answering them
+in conversation saves the answers and restarts it.
+
+## Job applications
+
+The applicant profile is `applicant.json` in Jamie's data folder, which the file tools
+cannot read. Set it up in conversation ("use my résumé to set up job applications",
+"for job applications, I don't need sponsorship"). Each application:
+
+1. opens the posting and follows its Apply button,
+2. fills each page: profile fields by label without the model; open questions drafted by
+   the model from the profile and résumé, or `UNKNOWN`; EEO questions declined by default;
+   consent boxes ticked and listed; the résumé uploaded,
+3. stops at the final button with a screenshot and waits for approval (`job_submit`,
+   a `SEND`), unless the request said to submit without asking,
+4. submits and saves the confirmation page.
+
+Government IDs, bank and card details, and passwords are never filled. Login walls and
+unanswerable required questions stop the task with `needs_input`.
+
 ## Project layout
 
 - `pyproject.toml`: package metadata, dependencies, CLI entry point, and check settings.

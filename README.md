@@ -24,6 +24,12 @@ Jamie runs a small language model on your own Mac through [llama.cpp](https://gi
 
 | | |
 | --- | --- |
+| **Just say it** | In Jamie.app there are no commands to learn. Each message is routed by the local model in a fraction of a second: answer directly, use only the tools it needs, work **in the background** ("…while I work"), or **schedule** it ("every weekday at 8, …"). |
+| **Background work** | Hand Jamie several tasks and keep working. Up to two run at once; progress, results, and anything needing your OK appear in a tray above the message box, with a macOS notification. Ask "what are you working on?" or "stop the flight search" in plain words. |
+| **Job applications** | "Apply to these jobs: <links>". Jamie fills each application (Greenhouse, Lever, Ashby, Workday, LinkedIn Easy Apply, Indeed, and ordinary forms) from your applicant profile and résumé, shows the final page as a screenshot, and submits when you approve, or by itself if you said so. It saves the confirmation page, never fills government IDs or bank details, and hands back questions only you can answer. |
+| **Your whole Mac** | Spotlight search by name or content, recent files, and reading text, PDF, and Word files anywhere in your home folder. Keychains, SSH keys, browser profiles, Messages, and Mail are always off limits. |
+| **Its own browser** | Jamie browses with a saved profile, so you log in to a site once and later tasks reuse it. Buttons that submit, send, pay, or delete always ask first. Jamie never types passwords. |
+| **Fine-tuned for Jamie** | `training/train.sh` fine-tunes the 4B model on your Mac (MLX, about 2-3 hours) on Jamie's own tools and installs it. See [training/README.md](training/README.md). |
 | **Personal apps** | Search and read Gmail, save reply drafts, check Google Calendar availability, create and update events, and manage Apple Reminders through a native EventKit helper. |
 | **Scheduled prompts** | `/schedule daily 08:00 …`, weekly, every few hours, or once on a date. Jamie.app runs them with read and web tools only, saves each as a conversation, and sends a macOS notification. |
 | **Safe file editing** | Workspace-confined edits with per-turn diffs, one-command undo, and enforced read-back verification. |
@@ -84,6 +90,9 @@ llama-server -hf unsloth/Qwen3.5-4B-GGUF:Q4_K_M --no-mmproj --port 8080   # Ctrl
 # 3. Start the local model (offline, cached) and check the setup
 ./scripts/start-local-model.sh
 jamie doctor
+
+# 4. Optional: Jamie's browser uses Google Chrome when installed; otherwise run once
+playwright install chromium
 ```
 
 Then:
@@ -93,6 +102,23 @@ jamie                                   # interactive session
 jamie "summarize README.md"             # one task with tools
 jamie research "What changed in Python 3.13?"
 ```
+
+In Jamie.app (`jamie gui`), just talk:
+
+```text
+What's on my calendar tomorrow?
+Find the lease PDF and tell me when the rent goes up.
+Research standing desks under $500 while I work.
+Every weekday at 8:00, summarize my unread email.
+Use my résumé to set up job applications.
+Apply to these jobs: https://jobs.lever.co/acme/123 https://boards.greenhouse.io/globex/jobs/9
+Open the browser so I can log in to LinkedIn.
+What are you working on?
+```
+
+From a terminal, `jamie bg add "<task>"`, `jamie bg list`, and `jamie bg approvals` /
+`approve <id>` work with the same background queue, and `jamie serve` runs it without
+the window.
 
 Design notes cover [personal memory](docs/design/memory.md) and [planning](docs/design/planning.md).
 
@@ -136,7 +162,7 @@ flowchart LR
 | `EXTERNAL` | Fetch pages, save drafts, create events | Asks; can be allowed for the session |
 | `SENSITIVE` | Clipboard read, Shortcuts, AppleScript | Asks every time |
 | `DESTRUCTIVE` | Reserved | Asks every time |
-| `SEND` | Send an email | Asks every time |
+| `SEND` | Send an email, submit a form or job application | Asks every time |
 
 - **Fail closed.** No approval interface means no action. Blank input, EOF, and Ctrl+C all deny.
 - **Bound approvals.** Deferred approvals are bound to the tool, arguments, account, and task revision. Editing any of them invalidates the approval. Approvals expire after 24 hours and are used once.
