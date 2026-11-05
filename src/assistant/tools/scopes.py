@@ -15,9 +15,18 @@ class ToolScope(StrEnum):
 
 
 READ_TOOLS = {"read_file", "list_directory", "find_files", "search_files"}
+# Files anywhere on the Mac; see assistant.tools.mac_files.
+MAC_READ_TOOLS = {"mac_search_files", "mac_recent_files", "mac_list_folder", "mac_read_file"}
+MAC_FILE_TOOLS = MAC_READ_TOOLS | {
+    "mac_open_file",
+    "mac_copy_file",
+    "mac_move_file",
+    "mac_create_folder",
+}
 SCOPE_TOOLS = {
-    ToolScope.READ: READ_TOOLS,
+    ToolScope.READ: READ_TOOLS | MAC_READ_TOOLS,
     ToolScope.FILES: READ_TOOLS
+    | MAC_FILE_TOOLS
     | {
         "write_file",
         "edit_file",
@@ -67,7 +76,7 @@ SCOPE_MAX_STEPS = {ToolScope.PERSONAL: 16}
 
 
 # Scheduled tasks run while nobody is watching: they may read and search, never act.
-UNATTENDED_TOOLS = READ_TOOLS | SCOPE_TOOLS[ToolScope.WEB]
+UNATTENDED_TOOLS = READ_TOOLS | MAC_READ_TOOLS | SCOPE_TOOLS[ToolScope.WEB]
 
 
 def select_tools(registry, scope: ToolScope | str):

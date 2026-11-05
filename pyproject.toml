@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.28,<1",
     "prompt-toolkit>=3.0,<4",
     "pydantic>=2.10,<3",
+    "pypdf>=5,<7",
     "pywebview>=6.2,<7",
     "pyobjc-framework-UserNotifications>=12,<13",
     "rich>=14,<15",

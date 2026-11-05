@@ -84,6 +84,14 @@ def test_default_policy_classifies_named_tools():
         "jamie_start_background": PermissionLevel.SAFE_WRITE,
         "jamie_cancel_work": PermissionLevel.SAFE_WRITE,
         "jamie_schedule": PermissionLevel.SAFE_WRITE,
+        "mac_search_files": PermissionLevel.READ,
+        "mac_recent_files": PermissionLevel.READ,
+        "mac_list_folder": PermissionLevel.READ,
+        "mac_read_file": PermissionLevel.READ,
+        "mac_open_file": PermissionLevel.SAFE_WRITE,
+        "mac_copy_file": PermissionLevel.SAFE_WRITE,
+        "mac_move_file": PermissionLevel.SAFE_WRITE,
+        "mac_create_folder": PermissionLevel.SAFE_WRITE,
     }
 
 

@@ -82,6 +82,15 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
         "jamie_start_background": PermissionLevel.SAFE_WRITE,
         "jamie_cancel_work": PermissionLevel.SAFE_WRITE,
         "jamie_schedule": PermissionLevel.SAFE_WRITE,
+        # Files anywhere on the Mac (outside the workspace, so without /undo).
+        "mac_search_files": PermissionLevel.READ,
+        "mac_recent_files": PermissionLevel.READ,
+        "mac_list_folder": PermissionLevel.READ,
+        "mac_read_file": PermissionLevel.READ,
+        "mac_open_file": PermissionLevel.SAFE_WRITE,
+        "mac_copy_file": PermissionLevel.SAFE_WRITE,
+        "mac_move_file": PermissionLevel.SAFE_WRITE,
+        "mac_create_folder": PermissionLevel.SAFE_WRITE,
     }
 )
 
@@ -100,6 +109,7 @@ CONFIRM_REQUIRED = frozenset(
         "calendar_update_event",
         "reminders_create",
         "reminders_complete",
+        "mac_move_file",  # outside the workspace there is no /undo
     }
 )
 CONFIRM_LEVELS = frozenset({PermissionLevel.DESTRUCTIVE, PermissionLevel.SEND})

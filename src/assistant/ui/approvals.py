@@ -47,6 +47,10 @@ ACTIONS: dict[str, tuple[str, str | None]] = {
     "calendar_update_event": ("change the calendar event", "event_id"),
     "reminders_create": ("create the reminder", "title"),
     "reminders_complete": ("complete the reminder", "reminder_id"),
+    "mac_open_file": ("open", "path"),
+    "mac_copy_file": ("copy", "source"),
+    "mac_move_file": ("move (no undo)", "source"),
+    "mac_create_folder": ("create the folder", "path"),
 }
 
 # tool: (argument holding the command, the command line the tool runs with it).

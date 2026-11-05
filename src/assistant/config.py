@@ -42,6 +42,22 @@ class MemoryConfig(BaseModel):
     personal_context_tokens: int = Field(default=400, ge=0, le=4000)
 
 
+class FilesConfig(BaseModel):
+    """Folders Jamie may search and read across the Mac (beyond the workspace)."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    roots: list[str] = Field(default_factory=lambda: ["~"])
+    # Added to the private folders that are always excluded (keychains, SSH keys,
+    # browser profiles, Messages, Mail, and Jamie's own data).
+    blocked: list[str] = Field(default_factory=list)
+
+    def paths(self):
+        from assistant.tools.mac_files import MacPaths
+
+        return MacPaths(self.roots, self.blocked)
+
+
 class BackgroundConfig(BaseModel):
     """Tasks Jamie works on while you do something else."""
 
@@ -63,6 +79,7 @@ class ProjectConfig(BaseModel):
     reminders: RemindersConfig = RemindersConfig()
     memory: MemoryConfig = MemoryConfig()
     background: BackgroundConfig = BackgroundConfig()
+    files: FilesConfig = FilesConfig()
 
     @field_validator("timezone")
     @classmethod

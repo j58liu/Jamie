@@ -139,6 +139,7 @@ async def _run_agent(
                 web=web,
                 backend=backend,
                 connectors=application.connectors,
+                files=settings.files.paths(),
             )
             tools = select_tools(tools, scope)
             await application.run_turn(
@@ -200,6 +201,7 @@ async def _run_repl(settings: ProjectConfig) -> None:
                     web=web,
                     backend=backend,
                     connectors=application.connectors,
+                    files=settings.files.paths(),
                 ),
             )
 

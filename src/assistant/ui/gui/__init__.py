@@ -654,6 +654,7 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
                 connectors=application.connectors,
                 background=store,
                 memory=lambda: application.memory,
+                files=settings.files.paths(),
             )
         )
         resources.callback(tools.close)
@@ -666,6 +667,7 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
                 web=web,
                 backend=backend,
                 connectors=application.connectors,
+                files=settings.files.paths(),
             )
             return registry.subset(UNATTENDED_TOOLS)
 

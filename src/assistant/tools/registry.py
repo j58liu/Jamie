@@ -232,6 +232,30 @@ class ToolRegistry:
             "reminders_complete": (
                 '{"action":"tool","tool":"reminders_complete","args":{"reminder_id":"ABC-1"}}'
             ),
+            "mac_search_files": (
+                '{"action":"tool","tool":"mac_search_files","args":{"query":"resume","kind":"pdf"}}'
+            ),
+            "mac_recent_files": '{"action":"tool","tool":"mac_recent_files","args":{"days":2}}',
+            "mac_list_folder": (
+                '{"action":"tool","tool":"mac_list_folder","args":{"path":"~/Downloads"}}'
+            ),
+            "mac_read_file": (
+                '{"action":"tool","tool":"mac_read_file","args":{"path":"~/Documents/lease.pdf"}}'
+            ),
+            "mac_open_file": (
+                '{"action":"tool","tool":"mac_open_file","args":{"path":"~/Desktop/plan.key"}}'
+            ),
+            "mac_copy_file": (
+                '{"action":"tool","tool":"mac_copy_file","args":{"source":"~/Documents/cv.pdf",'
+                '"destination":"~/Desktop"}}'
+            ),
+            "mac_move_file": (
+                '{"action":"tool","tool":"mac_move_file","args":{"source":"~/Downloads/a.pdf",'
+                '"destination":"~/Documents/Taxes"}}'
+            ),
+            "mac_create_folder": (
+                '{"action":"tool","tool":"mac_create_folder","args":{"path":"~/Documents/Taxes"}}'
+            ),
             "jamie_start_background": (
                 '{"action":"tool","tool":"jamie_start_background",'
                 '"args":{"task":"Research flights to Tokyo in March and list the 3 cheapest"}}'
@@ -497,17 +521,21 @@ def create_agent_registry(
     connectors: "Connectors | None" = None,
     background=None,
     memory=None,
+    files=None,
 ) -> ToolRegistry:
     """Register workspace, macOS, web, and configured personal-app tools.
 
     ``backend`` enables the research tool; ``connectors`` adds Gmail, Calendar, and
     Reminders tools for the connectors that are configured. ``background`` (a
     BackgroundStore) adds tools for Jamie's own tasks; ``memory`` holds its schedules.
+    ``files`` (MacPaths) sets the folders the Mac-wide file tools reach; home by default.
     """
     from assistant.tools.integrations import register_personal_tools
+    from assistant.tools.mac_files import register_mac_file_tools
     from assistant.tools.tasks import register_task_tools
 
     registry = create_macos_registry(root, approvals=approvals, audit=audit, runner=runner)
+    register_mac_file_tools(registry, files, runner)
     register_web_tools(registry, web if web is not None else WebClient(), backend)
     register_personal_tools(registry, connectors)
     return register_task_tools(registry, background, memory)

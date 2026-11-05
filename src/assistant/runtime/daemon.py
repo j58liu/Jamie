@@ -45,6 +45,7 @@ def build_runners(
             web=web,
             backend=backend,
             connectors=application.connectors,
+            files=settings.files.paths(),
         )
 
     return {"agent": agent_runner(application, registry, max_tokens=max_tokens)}

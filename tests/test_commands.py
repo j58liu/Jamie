@@ -111,7 +111,9 @@ def test_tools_and_permissions_come_from_the_policy():
     assert "read_file" in output and "READ" in output
     assert "READ (runs without asking)" in output
     assert "EXTERNAL (runs without asking): fetch_url, research, web_search" in output
-    assert "asks for approval" not in output  # no registered tool is irreversible
+    # Moving files outside the workspace is the one registered tool without /undo.
+    assert output.count("asks for approval") == 1
+    assert "SAFE_WRITE (asks for approval): mac_move_file" in output
 
 
 def test_thinking_and_model_report_settings():
