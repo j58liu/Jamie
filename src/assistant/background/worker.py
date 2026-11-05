@@ -81,7 +81,8 @@ class TaskContext:
     def notify_approval(self, approval: PendingApproval) -> None:
         self.notifier.send(
             f"Jamie needs your OK (task {self.task.id})",
-            f"{short(approval.summary, 160)} Approve with: jamie bg approve {approval.id}",
+            f"{short(approval.summary, 160)} Open Jamie to approve or deny "
+            f"(or: jamie bg approve {approval.id}).",
         )
 
     def progress(self, text: str) -> None:
