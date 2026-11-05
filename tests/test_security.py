@@ -80,6 +80,10 @@ def test_default_policy_classifies_named_tools():
         "reminders_list": PermissionLevel.READ,
         "reminders_create": PermissionLevel.SAFE_WRITE,
         "reminders_complete": PermissionLevel.SAFE_WRITE,
+        "jamie_work_status": PermissionLevel.READ,
+        "jamie_start_background": PermissionLevel.SAFE_WRITE,
+        "jamie_cancel_work": PermissionLevel.SAFE_WRITE,
+        "jamie_schedule": PermissionLevel.SAFE_WRITE,
     }
 
 

@@ -77,6 +77,11 @@ DEFAULT_TOOL_PERMISSIONS: Mapping[str, PermissionLevel] = MappingProxyType(
         "reminders_list": PermissionLevel.READ,
         "reminders_create": PermissionLevel.SAFE_WRITE,
         "reminders_complete": PermissionLevel.SAFE_WRITE,
+        # Jamie's own work: background tasks, job applications, and schedules.
+        "jamie_work_status": PermissionLevel.READ,
+        "jamie_start_background": PermissionLevel.SAFE_WRITE,
+        "jamie_cancel_work": PermissionLevel.SAFE_WRITE,
+        "jamie_schedule": PermissionLevel.SAFE_WRITE,
     }
 )
 

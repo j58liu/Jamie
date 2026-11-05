@@ -232,6 +232,17 @@ class ToolRegistry:
             "reminders_complete": (
                 '{"action":"tool","tool":"reminders_complete","args":{"reminder_id":"ABC-1"}}'
             ),
+            "jamie_start_background": (
+                '{"action":"tool","tool":"jamie_start_background",'
+                '"args":{"task":"Research flights to Tokyo in March and list the 3 cheapest"}}'
+            ),
+            "jamie_cancel_work": (
+                '{"action":"tool","tool":"jamie_cancel_work","args":{"kind":"task","id":3}}'
+            ),
+            "jamie_schedule": (
+                '{"action":"tool","tool":"jamie_schedule",'
+                '"args":{"when":"daily 08:00","task":"Summarize my unread email"}}'
+            ),
         }
         registered_examples = "\n".join(
             examples.get(
@@ -484,14 +495,19 @@ def create_agent_registry(
     web: WebClient | None = None,
     backend: LLMBackend | None = None,
     connectors: "Connectors | None" = None,
+    background=None,
+    memory=None,
 ) -> ToolRegistry:
     """Register workspace, macOS, web, and configured personal-app tools.
 
     ``backend`` enables the research tool; ``connectors`` adds Gmail, Calendar, and
-    Reminders tools for the connectors that are configured.
+    Reminders tools for the connectors that are configured. ``background`` (a
+    BackgroundStore) adds tools for Jamie's own tasks; ``memory`` holds its schedules.
     """
     from assistant.tools.integrations import register_personal_tools
+    from assistant.tools.tasks import register_task_tools
 
     registry = create_macos_registry(root, approvals=approvals, audit=audit, runner=runner)
     register_web_tools(registry, web if web is not None else WebClient(), backend)
-    return register_personal_tools(registry, connectors)
+    register_personal_tools(registry, connectors)
+    return register_task_tools(registry, background, memory)

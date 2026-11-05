@@ -243,6 +243,11 @@ class JamieApplication:
             await self._learning
 
     @property
+    def backend(self) -> LLMBackend | None:
+        """The started model backend, for routing and other one-off model calls."""
+        return self._backend
+
+    @property
     def config(self) -> ProjectConfig:
         return self._config
 

@@ -215,18 +215,23 @@ def agent_runner(
     """Run a prompt with the full agent, asking for approvals without blocking the user."""
 
     async def run(task: BackgroundTask, context: TaskContext) -> str:
+        from assistant.tools.scopes import max_steps_for, select_scopes
+
         tools = registry_factory(context.approvals())
+        scopes = task.payload.get("scopes") or ["all"]
+        selected = select_scopes(tools, scopes)
+        steps = max(BACKGROUND_MAX_STEPS, max_steps_for(scopes) or 0)
         try:
             result = await application.run_turn(
                 task.prompt,
-                tools=tools,
+                tools=selected,
                 conversation_id=application.start_conversation(),
                 cancel=context.cancel,
                 event_sink=context.event_sink,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 thinking=False,
-                max_steps=BACKGROUND_MAX_STEPS,
+                max_steps=steps,
                 timeout_seconds=BACKGROUND_TIMEOUT_SECONDS,
                 plan="auto",
             )

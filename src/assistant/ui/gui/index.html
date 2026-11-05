@@ -360,6 +360,98 @@
       .command-output.restored {
         margin-top: 30px;
       }
+      .route {
+        margin: 0 0 6px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .tray {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 38vh;
+        margin-bottom: 10px;
+        overflow-y: auto;
+      }
+      .tray:empty {
+        display: none;
+      }
+      .work {
+        padding: 10px 14px;
+        border: 1px solid var(--card-line);
+        border-radius: 12px;
+        background: var(--card);
+        font-size: 13px;
+      }
+      .work.ask {
+        border-left: 3px solid var(--accent);
+      }
+      .work-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .work-title {
+        flex: 1;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .work-status {
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .work-status.done {
+        color: var(--done);
+      }
+      .work-status.failed,
+      .work-status.interrupted {
+        color: var(--danger);
+      }
+      .work-body {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .work-body.clamped {
+        max-height: 5.2em;
+        overflow: hidden;
+        cursor: pointer;
+      }
+      .work img {
+        display: block;
+        width: 100%;
+        margin-top: 8px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        cursor: zoom-in;
+      }
+      .work img.small {
+        max-height: 120px;
+        object-fit: cover;
+        object-position: top;
+      }
+      .work-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .work-actions button,
+      .work-head button {
+        min-height: 26px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--page);
+        font-size: 11px;
+      }
+      .work-actions .primary {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: var(--page);
+      }
       .approval {
         margin: 6px 0 10px;
         padding: 16px 20px;
@@ -595,22 +687,26 @@
             it.
           </p>
           <div class="suggestions">
-            <button type="button">What files are in this folder?</button>
-            <button type="button">Search the web for today’s top story</button>
-            <button type="button">Open Safari</button>
+            <button type="button">What’s on my calendar tomorrow?</button>
+            <button type="button">Find my latest résumé on this Mac</button>
+            <button type="button">Every weekday at 8:00, summarize my unread email</button>
           </div>
         </section>
       </div>
     </main>
 
     <footer class="column">
+      <div class="tray" id="tray" aria-live="polite"></div>
       <form class="composer" id="composer">
         <textarea id="input" rows="1" placeholder="Message Jamie" aria-label="Message Jamie"></textarea>
         <button class="send" id="send" type="submit" title="Send" disabled>
           <svg class="icon" aria-hidden="true"><use href="#up"></use></svg>
         </button>
       </form>
-      <p class="hint">Enter to send · Shift+Enter for a new line · Esc to stop · /help for commands</p>
+      <p class="hint">
+        Just say what you need, now, in the background, or every morning · Enter to send ·
+        Esc to stop
+      </p>
     </footer>
 
     <script>
@@ -812,6 +908,78 @@
         input.focus();
       }
 
+
+      // Background work: approvals first, then running tasks, then recent results.
+      const STATUS = {
+        queued: "Queued",
+        running: "Working",
+        waiting_approval: "Needs your OK",
+        done: "Done",
+        failed: "Failed",
+        cancelled: "Stopped",
+        interrupted: "Interrupted",
+      };
+      function button(label, kind, action) {
+        const node = el("button", kind, label);
+        node.type = "button";
+        node.addEventListener("click", async () => {
+          node.disabled = true;
+          await action(await api());
+        });
+        return node;
+      }
+      function picture(src, small) {
+        const image = el("img", small ? "small" : "");
+        image.src = src;
+        image.alt = "Screenshot";
+        image.addEventListener("click", () => image.classList.toggle("small"));
+        return image;
+      }
+      function showBackground(payload) {
+        const tray = $("tray");
+        tray.replaceChildren();
+        for (const approval of payload.approvals) {
+          const card = el("div", "work ask");
+          const head = el("div", "work-head");
+          head.append(
+            el("span", "work-title", `Task ${approval.task ?? ""} needs your OK`),
+            el("span", "work-status", approval.tool),
+          );
+          card.append(head, el("div", "work-body", approval.summary));
+          if (approval.image) card.append(picture(approval.image, true));
+          const actions = el("div", "work-actions");
+          actions.append(
+            button("Approve", "primary", (bridge) => bridge.answer_background(approval.id, true)),
+            button("Deny", "", (bridge) => bridge.answer_background(approval.id, false)),
+          );
+          card.append(actions);
+          tray.append(card);
+        }
+        for (const task of [...payload.active, ...payload.recent]) {
+          const card = el("div", "work");
+          const head = el("div", "work-head");
+          head.append(
+            el("span", "work-title", task.title),
+            el("span", `work-status ${task.status}`, STATUS[task.status] ?? task.status),
+          );
+          const finished = !["queued", "running", "waiting_approval"].includes(task.status);
+          head.append(
+            finished
+              ? button("Dismiss", "", (bridge) => bridge.dismiss_background(task.id))
+              : button("Stop", "", (bridge) => bridge.cancel_background(task.id)),
+          );
+          card.append(head);
+          const text = finished ? task.result : task.progress;
+          if (text) {
+            const body = el("div", "work-body clamped", text);
+            body.addEventListener("click", () => body.classList.toggle("clamped"));
+            card.append(body);
+          }
+          if (task.confirmation) card.append(picture(task.confirmation, true));
+          tray.append(card);
+        }
+      }
+
       window.jamie = {
         receive(payload) {
           switch (payload.type) {
@@ -852,6 +1020,9 @@
             case "approval-closed":
               closeApproval(payload);
               return;
+            case "background":
+              showBackground(payload);
+              return;
             case "scheduled": // Jamie starts this one itself, at the task's time
               startTurn(payload.prompt, `Scheduled · ${payload.time}`);
               setBusy(true);
@@ -877,6 +1048,9 @@
               }
               case "approval":
                 turn.thinking.before(approvalCard(payload));
+                break;
+              case "route":
+                note(payload.text, "route");
                 break;
               case "delta":
                 turn.raw += payload.text;

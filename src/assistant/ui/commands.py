@@ -68,7 +68,7 @@ class ReplState:
     running: bool = True
     workspace_tools: WorkspaceTools | None = None
     mode: str = "task"
-    scope: ToolScope = ToolScope.ALL
+    scope: ToolScope = ToolScope.AUTO  # Jamie picks tools per message
     plan: str = "auto"  # auto | always | never: when task mode uses the step planner
 
     def estimated_tokens(self) -> int:
@@ -699,7 +699,7 @@ def create_command_registry() -> CommandRegistry:
             "/scope",
             "Choose the tools sent to the model.",
             _scope,
-            "[all|files|read|web|macos|personal]",
+            "[auto|all|files|read|web|macos|personal]",
             completions=tuple(ToolScope),
         ),
         SlashCommand(

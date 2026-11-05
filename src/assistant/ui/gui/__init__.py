@@ -31,17 +31,19 @@ from assistant.agent.events import (
     ToolFinished,
     ToolStarted,
 )
-from assistant.agent.loop import ToolExecutor
+from assistant.agent.loop import MAX_STEPS, ToolExecutor
 from assistant.cancellation import CancellationToken, TurnCancelled, current_token
 from assistant.config import ProjectConfig
 from assistant.llm.base import LLMError, ServerInfo
 from assistant.llm.llamacpp import LlamaCppBackend
 from assistant.memory import ScheduledTask
-from assistant.runtime import JamieApplication
+from assistant.runtime import JamieApplication, TurnResult
 from assistant.runtime.workspaces import WorkspaceTools
 from assistant.security.approvals import ApprovalRequest
+from assistant.tools.scopes import SCOPE_TOOLS, ToolScope, max_steps_for, select_scopes
 from assistant.ui.approvals import summarize_approval
 from assistant.ui.commands import ReplState, create_command_registry, short_title
+from assistant.ui.gui.work import route_label
 from assistant.ui.renderer import error_lines, tool_summary
 from assistant.ui.status import short_model
 
@@ -166,8 +168,10 @@ class GuiSession:
         on_quit: Callable[[], object] = lambda: None,
         scheduled_tools: Callable[[], ToolExecutor] | None = None,
         notifier: Any = None,
+        background: Any = None,
     ) -> None:
         self._push = push
+        self._background = background  # a BackgroundStore; None runs everything now
         self._submit = submit
         self._on_quit = on_quit
         self._scheduled_tools = scheduled_tools  # None: this window runs no scheduled tasks
@@ -257,8 +261,29 @@ class GuiSession:
         state = self.state
         if state.conversation_id is None:
             state.conversation_id = state.application.start_conversation()
-        tools = state.workspace_tools.current(state.scope) if state.mode == "task" else None
         started = time.monotonic()
+        tools = state.workspace_tools.current(state.scope) if state.mode == "task" else None
+        max_steps = MAX_STEPS
+        if state.mode == "task" and state.scope is ToolScope.AUTO:
+            decision = await self._route(prompt)
+            if decision is not None:
+                if decision.scores or decision.timing != "now" or decision.jobs:
+                    self._send({"type": "route", "text": route_label(decision)})
+                if self._background is not None:
+                    from assistant.runtime.dispatch import dispatch
+
+                    reply = await dispatch(
+                        state.application, self._background, prompt, decision, source="window"
+                    )
+                    if reply is not None:
+                        self._reply(prompt, reply, time.monotonic() - started)
+                        return
+                if decision.chat:
+                    tools = None
+                else:
+                    tools = select_scopes(state.workspace_tools.current(ToolScope.ALL),
+                                          decision.scopes)  # fmt: skip
+                    max_steps = max_steps_for(decision.scopes) or MAX_STEPS
         result = await state.application.run_turn(
             prompt,
             history=state.history,
@@ -269,8 +294,29 @@ class GuiSession:
             conversation_id=state.conversation_id,
             event_sink=self._show,
             tools=tools,
+            max_steps=max_steps,
         )
         state.record_turn(prompt, result, time.monotonic() - started)
+
+    async def _route(self, prompt: str):
+        """Decide from the message what to do; None keeps every tool (the old behavior)."""
+        from assistant.routing import route
+
+        backend = self.state.application.backend
+        if backend is None:
+            return None
+        available = {scope.value for scope in SCOPE_TOOLS} | {"jobs", "tasks"}
+        if self._background is None:
+            available -= {"jobs"}
+        return await asyncio.to_thread(route, backend, prompt, available=available)
+
+    def _reply(self, prompt: str, text: str, seconds: float) -> None:
+        """Answer without a model turn (a task was queued or scheduled), and keep it."""
+        state = self.state
+        state.application.memory.save_exchange(state.conversation_id, prompt, text, str(Path.cwd()))
+        state.application.memory.remember_exchange(state.conversation_id, prompt, text)
+        self._send({"type": "answer", "text": text, "truncated": False})
+        state.record_turn(prompt, TurnResult(text), seconds)
 
     async def _scheduled(
         self, task: ScheduledTask, token: CancellationToken, *, on_request: bool = False
@@ -454,6 +500,22 @@ async def poll_schedules(session: GuiSession, interval: float = SCHEDULE_POLL_SE
         await asyncio.sleep(interval)
 
 
+class WindowNotifier:
+    """Background news: a macOS notification, and the window's panel refreshes at once."""
+
+    def __init__(self, notifier: Any, bridge: Any) -> None:
+        self._notifier = notifier
+        self._bridge = bridge
+
+    def send(self, title: str, body: str) -> None:
+        if self._notifier is not None:
+            self._notifier.send(title, short_title(body, NOTIFICATION_CHARACTERS))
+        try:
+            self._bridge.refresh()
+        except Exception:  # noqa: BLE001 - the poll catches up
+            pass
+
+
 class _RuntimeThread:
     """The asyncio loop that owns the application, beside the window's main thread."""
 
@@ -488,11 +550,14 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
     import webview  # loaded only here, so the terminal never pays for AppKit
     from PyObjCTools import AppHelper
 
+    from assistant.background import BackgroundStore, BackgroundStoreError
+    from assistant.runtime.daemon import run_background_service
     from assistant.security.approvals import DenyAllApprovals
     from assistant.tools import WebClient, create_agent_registry
     from assistant.tools.scopes import UNATTENDED_TOOLS
     from assistant.ui.gui import background, hotkey
     from assistant.ui.gui.notifications import Notifier
+    from assistant.ui.gui.work import BackgroundBridge, poll_background
 
     runtime = _RuntimeThread()
     window = webview.create_window(
@@ -536,7 +601,26 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
     def approve(approval_id: str, choice: str) -> bool:
         return approvals.answer(approval_id, choice)
 
-    window.expose(send, cancel, new_conversation, approve)
+    bridges: list[Any] = []  # the background view, once the store is open
+
+    def answer_background(approval_id: str, approved: bool) -> bool:
+        return bool(bridges) and bridges[0].answer(approval_id, approved)
+
+    def cancel_background(task_id: int) -> bool:
+        return bool(bridges) and bridges[0].cancel(task_id)
+
+    def dismiss_background(task_id: int) -> bool:
+        return bool(bridges) and bridges[0].dismiss(task_id)
+
+    window.expose(
+        send,
+        cancel,
+        new_conversation,
+        approve,
+        answer_background,
+        cancel_background,
+        dismiss_background,
+    )
     resources = ExitStack()
     application: JamieApplication | None = None
 
@@ -556,15 +640,32 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
         )
         await application.start()
         web = resources.enter_context(WebClient())
+        try:
+            store = BackgroundStore()
+        except BackgroundStoreError as exc:
+            print(f"Jamie: background tasks unavailable: {exc}", file=sys.stderr)
+            store = None
         tools = WorkspaceTools(
-            lambda: create_agent_registry(Path.cwd(), approvals=approvals, web=web, backend=backend)
+            lambda: create_agent_registry(
+                Path.cwd(),
+                approvals=approvals,
+                web=web,
+                backend=backend,
+                connectors=application.connectors,
+                background=store,
+                memory=lambda: application.memory,
+            )
         )
         resources.callback(tools.close)
 
         def scheduled_tools() -> ToolExecutor:
             # Nobody is there to approve, so anything that would ask is denied.
             registry = create_agent_registry(
-                Path.cwd(), approvals=DenyAllApprovals(), web=web, backend=backend
+                Path.cwd(),
+                approvals=DenyAllApprovals(),
+                web=web,
+                backend=backend,
+                connectors=application.connectors,
             )
             return registry.subset(UNATTENDED_TOOLS)
 
@@ -577,8 +678,24 @@ def run_gui(settings: ProjectConfig, *, hidden: bool = False) -> None:
             on_quit=quit_jamie,
             scheduled_tools=scheduled_tools,
             notifier=notifier,
+            background=store,
         )
         sessions.append(session)
+        if store is not None:
+            bridge = BackgroundBridge(store, push)
+            bridges.append(bridge)
+            runtime.submit(poll_background(bridge))
+            runtime.submit(
+                run_background_service(
+                    application,
+                    settings,
+                    web=web,
+                    backend=backend,
+                    store=store,
+                    notifier=WindowNotifier(notifier, bridge),
+                    max_tokens=session.state.max_tokens,
+                )
+            )
         if application.memory.schedules():
             notifier.ask_permission()
         runtime.submit(poll_schedules(session))
