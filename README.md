@@ -7,16 +7,16 @@
 ![Local model](https://img.shields.io/badge/inference-llama.cpp%20(local)-4B8BBE)
 ![Ruff](https://img.shields.io/badge/lint-ruff-D7FF64)
 
-Jamie runs a small language model on your own Mac through [llama.cpp](https://github.com/ggml-org/llama.cpp). It has no cloud inference and needs no API key for the model. A Python policy layer, not the model, decides what each action is allowed to do. Jamie remembers unfinished work, runs it on a schedule, and waits for your approval before anything leaves your machine.
+Jamie runs a small language model on your own Mac through [llama.cpp](https://github.com/ggml-org/llama.cpp). It has no cloud inference and needs no API key for the model. A Python policy layer, not the model, decides what each action is allowed to do. Jamie works in the background while you do other things, runs prompts on a schedule, and waits for your approval before anything leaves your machine.
 
 ---
 
 ## Why Jamie
 
-- **Private by default.** Inference, memory, and task state stay on your Mac. Network access happens only through explicit tools: web research, Gmail, and Calendar.
+- **Private by default.** Inference, memory, and task state stay on your Mac. Network access happens only through explicit tools: web research, Jamie's browser, Gmail, and Calendar.
 - **Permission-first.** Every action has a fixed risk class. Reads run freely, changes ask first, and sending a message asks every time. Approvals are bound to the exact operation.
-- **Persistent.** Tasks survive restarts, run on schedules or when new mail arrives, and resume exactly where they paused.
-- **Remembers you, carefully.** Jamie learns only from your own words, never from the emails or pages it reads. It never treats a model's guess as fact, and you can correct or erase any memory.
+- **Persistent.** Background tasks and scheduled prompts are saved to disk. A task cut off by a restart is marked interrupted for you to retry, never silently run twice.
+- **Remembers you, carefully.** Jamie learns only from your own words, never from the emails or pages it reads. The local model first checks whether a message tells Jamie something about you, so questions like "what's my name?" are never saved as facts. You can correct or erase any memory.
 - **Built for small models.** Grammar-constrained actions, scoped tool lists, and compact tool results make a 4B-parameter model reliable for everyday work.
 - **Measured.** A built-in evaluation suite covers the model, the agent, research, memory, and performance, and saves reproducible reports.
 
@@ -34,7 +34,7 @@ Jamie runs a small language model on your own Mac through [llama.cpp](https://gi
 | **Scheduled prompts** | `/schedule daily 08:00 …`, weekly, every few hours, or once on a date. Jamie.app runs them with read and web tools only, saves each as a conversation, and sends a macOS notification. |
 | **Safe file editing** | Workspace-confined edits with per-turn diffs, one-command undo, and enforced read-back verification. |
 | **Cited web research** | Concurrent search and retrieval, cross-checked answers, and citations validated against verbatim quotes. |
-| **Personal memory** | Typed facts (preferences, people, projects) with evidence and authority. Corrections win and keep history, and only relevant facts reach the prompt. |
+| **Personal memory** | Typed facts (preferences, people, projects) with evidence and authority, learned in the background after each message. Corrections ("my name is actually Carl") win and keep history, and only relevant facts reach the prompt. |
 | **Step planner** | Multi-step requests become a validated plan. The runtime enforces dependencies, verifies each write with the provider id, and limits retries and replanning. |
 | **macOS automation** | Open apps, reveal files in Finder, use the clipboard, and run Shortcuts and AppleScript, each behind approval. |
 
@@ -129,17 +129,18 @@ To connect Gmail, Google Calendar, and Apple Reminders, see [docs/design/connect
 ```mermaid
 flowchart LR
     U[You] -->|prompt| A[Agent loop]
-    S[Scheduler / worker] -->|ready task| E[Task engine]
-    E --> A
+    U -->|"…while I work"| W[Background worker]
+    S[Schedules] -->|due prompt| A
+    W --> A
     A <-->|JSON actions| M[(Local model<br/>llama.cpp)]
     A --> R[Tool registry<br/>validates arguments]
     R --> P{Permission policy}
     P -->|READ| T[Tools]
-    P -->|needs approval| AP[Approval<br/>terminal or deferred]
+    P -->|needs approval| AP[Approval<br/>now or later]
     AP -->|approved| T
-    T --> F[Files / macOS / Web]
+    T --> F[Files / macOS / Web / Browser]
     T --> C[Connectors<br/>Gmail · Calendar · Reminders]
-    E <--> DB[(tasks.sqlite3)]
+    W <--> DB[(background.sqlite3)]
     A <--> MEM[(memory.sqlite3)]
 ```
 
@@ -150,8 +151,8 @@ flowchart LR
   - The registry validates arguments.
   - The policy decides whether an action may run.
   - The model only chooses.
-- **Scopes.** `--scope files|read|web|macos|personal` sends the model only the tools it needs, which keeps prompts small and tool choice accurate.
-- **Durability.** Each tool call is recorded before it runs, with a stable operation key, and its outcome is stored afterwards. Tasks are rebuilt from these records after a restart or an approval.
+- **Scopes.** `--scope files|read|web|macos|personal|tasks|browser|jobs` sends the model only the tools it needs, which keeps prompts small and tool choice accurate. Jamie.app picks the scopes for each message by itself.
+- **Durability.** Planned steps carry a stable operation key, so a retried calendar event or draft is not created twice. Background tasks and their pending approvals live in `background.sqlite3`.
 
 ## Security model
 
@@ -165,11 +166,12 @@ flowchart LR
 | `SEND` | Send an email, submit a form or job application | Asks every time |
 
 - **Fail closed.** No approval interface means no action. Blank input, EOF, and Ctrl+C all deny.
-- **Bound approvals.** Deferred approvals are bound to the tool, arguments, account, and task revision. Editing any of them invalidates the approval. Approvals expire after 24 hours and are used once.
-- **No silent duplicates.** Calendar events and drafts carry provider-side idempotency keys. Any other interrupted action is marked ambiguous, and Jamie asks before retrying.
-- **Secrets.** Google refresh tokens are stored in the macOS Keychain, and access tokens stay in memory.
-- **Audit and storage.** Audit records hold argument digests instead of raw values. Task history keeps only argument shapes, and full payloads are deleted when a task finishes.
-- **Confinement.** File tools cannot leave the workspace, and macOS tools use fixed argument arrays with no shell.
+- **Always asked.** Some writes ask every time, even when their level would allow a session-wide OK: Gmail drafts, calendar events, reminders, moving a file outside the workspace, and uploading a file in the browser.
+- **Approvals for background work.** A background task waits for your answer from the app, a notification, or `jamie bg approve`. The approval is bound to the tool and its arguments, and an unanswered request expires after 24 hours and counts as "no".
+- **No silent duplicates.** Calendar events and drafts carry provider-side idempotency keys. An interrupted action is marked ambiguous or interrupted, and Jamie asks before retrying.
+- **Secrets.** Google refresh tokens are stored in the macOS Keychain, and access tokens stay in memory. Jamie never types passwords in its browser.
+- **Audit.** Audit records hold argument digests instead of raw values.
+- **Confinement.** Workspace file tools cannot leave the workspace. Tools for the rest of the Mac stay in your home folder and never touch keychains, SSH keys, browser profiles, Messages, or Mail. macOS tools use fixed argument arrays with no shell.
 
 ## Evaluations
 
@@ -182,7 +184,7 @@ Recorded runs with reports, fixtures, and hashes are kept in [`evals/results/`](
 | [Agent tool use](evals/results/agent-baseline.md), Qwen3.8-9B-Distill | 20/20 attempts passed tool, output, and answer checks |
 | [Action protocol](evals/results/action-protocol-baseline.md) | 100% parse success, 90% exact instruction following (50 attempts) |
 | [Memory retrieval](evals/results/memory-fts-baseline.md) | 100% recall@k, MRR 1.000 (SQLite FTS5, no embeddings) |
-
+| [Memory classifier](evals/memory_classification/cases.json), Qwen3.5-4B | 93% of 130 messages labelled correctly; at the 0.7 cutoff, 1 wrong save of 70 and 8 missed facts of 60; median 0.65 s |
 | [Personal memory, deterministic](evals/personal_memory_cases/deterministic/) | 14/14 cases, including 100% of explicit corrections |
 
 The workflow suite has 59 scenarios across planning, cross-app tasks, personal memory, and safety, including prompt injection inside emails, denied approvals, and recovery from failed or ambiguous writes. Its targets are engineering goals, not current results:
@@ -197,6 +199,7 @@ The workflow suite has 59 scenarios across planning, cross-app tasks, personal m
 ```sh
 jamie eval scenarios --runs 3            # 59 workflows against fake Gmail, Calendar, Reminders
 jamie eval personal-memory               # deterministic, no model needed
+jamie eval memory-classifier             # which messages Jamie learns from
 jamie eval benchmark --runs 3 --scope files
 jamie eval agent --runs 5
 jamie eval research --runs 5
@@ -210,12 +213,18 @@ src/assistant/
   connectors/   Gmail, Google Calendar, Apple Reminders (+ OAuth, Keychain, time handling)
   knowledge/    personal memory: records, extraction gate, retrieval
   planning/     plan schema, validation, executor with verification and budgets
-  tasks/        task store, engine, scheduler, approvals, recovery, worker
-  tools/        file, editing, macOS, web, and connector tools; registry and scopes
+  background/   background task queue, worker, and deferred approvals
+  browser/      Jamie's own browser session and tools
+  jobs/         applicant profile and job application filler
+  training/     scenarios and dataset for fine-tuning on Jamie's tools
+  tools/        file, Mac-wide file, editing, macOS, web, task, and connector tools; registry and scopes
   security/     permission policy, approvals, audit log
-  runtime/      application lifecycle and context budgeting
-  ui/           interactive terminal, approval prompts, rendering
+  runtime/      application lifecycle, routing dispatch, daemon, and context budgeting
+  ui/           interactive terminal, Jamie.app, approval prompts, rendering
+  routing.py    picks what to do and which tools to use for each message
+  schedule.py   /schedule forms and next-run times
 native/reminders-helper/   Swift EventKit helper
+training/                  fine-tuning scripts (MLX LoRA)
 evals/                     evaluation cases and recorded results
 docs/                      reference and design notes
 ```
